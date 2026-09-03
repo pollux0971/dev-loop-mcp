@@ -21,7 +21,9 @@ description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完
 ## 第三步:自動場景
 
 ```
-npx cucumber-js features/<NN-name>/phase-<N>.feature --tags "not @manual"
+# 注意:cucumber 11 會把命令列的位置路徑跟設定檔的 paths「合併」而不是覆蓋,
+# 直接給檔案路徑會跑到整個 repo 的場景。一律用 tag 選:
+npx cucumber-js --tags "@<name> and @phase-<N> and not @manual"
 ```
 
 `features/steps/` 為空時改跑 `npx vitest run`,並把每個非 `@manual` 場景對照到測試名稱,
