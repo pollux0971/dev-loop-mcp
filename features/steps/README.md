@@ -31,6 +31,7 @@ Wave 0 已經在 `common.steps.ts` 定義好的句子(**worker 不要再定義**
 | `it makes no model call` / `no model call is made` / `no network request is made` / `no network connection is attempted` / `no network request leaves the machine` | 你的 fake 把呼叫推進 `this.llmCalls` / `this.networkRequests` |
 | `the original object is unchanged` / `a new object is returned` | 呼叫前 `this.trackInput(input)`,回傳值放 `this.lastResult` |
 | `the result is <X>`(含 `a pass` / `a failure`) | 把結果放 `this.lastResult`;不是原始值就設 `this.resultText` |
+| (規則)`the result is …` **整個前綴**屬於 common:它是 catch-all(`{}` 吃到行尾),任何以它開頭的新句子都會撞。要斷言結果用具體名詞(`the verdict is …`、`the due list has …`),不要以 `the result is` 開頭(來源專案撞過兩次) | | | |
 
 上面這張表是**範例集**,不是完整清單——依你的專案實際需要調整。原則不變:
 只用在 `@manual` 場景的句子不要定義(自動測試會跳過它們,定義了只會跟別人撞)。
