@@ -25,7 +25,12 @@
   ```bash
   git diff --name-only main...<branch> | grep -E '\.test\.ts$|^features/steps/'
   ```
-  有輸出就退回。理由:測試是規格的一部分,worker 改測試等於自己改考卷。
+  有輸出就退回(測試 agent 的 commit 除外)。理由:測試是規格的一部分,worker 改測試等於自己改考卷。
+- **審核清單的其餘四項**(來源專案 Wave 0 實際抓到問題的地方,每一項都對應一次漏網):
+  1. 審核者**自己重跑**變異測試,嚴格級模組看**檔案級**分數,不只看整體(整體達標可能藏著一個 52% 的檔案)
+  2. 交叉比對被測函式有沒有被 app / CLI **真的呼叫**——測著死代碼的綠燈是假的
+  3. 測試不准動 git 追蹤的檔案,要寫就複製到暫存目錄(曾有測試把基準檔刪掉)
+  4. UI phase 審核者**親自起 dev server 看一眼**——自動測試與審核都沒踩到的瀏覽器崩潰,開一次就看到
 - **分叉前先做一次 scaffold commit**(見 `template/README.md` 的步驟 4):workspace 骨架、
   依賴一次裝齊並 commit lock、runner 的 loader 設定、邊界 / standalone 檢查腳本、
   通用步驟只定義一次、落點表——這些都在分叉之前釘好,worktree 只跑 `npm ci`。
