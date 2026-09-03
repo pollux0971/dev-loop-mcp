@@ -14,7 +14,7 @@
 | **協調者**(coordinator) | 開 worktree、依 gherkin 派工、找獨立審核者複查、合併進 main、統一改共用檔與 ADR 編號 | 不自己寫實作 |
 | **技術顧問**(advisor) | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push | 不直接改 worker 的分支 |
 | **開發 worker**(dev) | 只寫實作 | **不新增不修改 `*.test.ts` 與 `features/steps/**`**,可以跑測試但不能改;不 push;共用檔不動,需求寫進自己 `FEATURE.md` 的「待協調」段 |
-| **審核 agent**(reviewer) | 負責**所有測試**:照 `.feature` 寫步驟檔與單元測試、跑變異測試(嚴格級看檔案級分數)、跑單獨執行、交叉比對真實呼叫路徑、UI 親自起 dev server。可與 dev 同時在同一 worktree 工作(檔案不重疊) | 不寫實作程式碼;**同一個 session 反覆測到全過**,不每輪重開(會忘記上一輪抓到什麼) |
+| **審核 agent**(reviewer) | 負責**所有測試**:照 `.feature` 寫步驟檔與單元測試、跑變異測試(嚴格級看檔案級分數)、跑單獨執行、交叉比對真實呼叫路徑、UI 親自起 dev server。可與 dev 同時在同一 worktree 工作(檔案不重疊) | 不寫實作程式碼;每一輪的發現寫進 worktree 裡的 `REVIEW.md`(抓到什麼、退回理由、下一輪要重看什麼),**不要依賴 session 記憶**——多數 agent 平台無法可靠地把下一輪接回同一個 session |
 | **debug session**(debug) | 審核 agent 抓到問題時,在**同一個 worktree** 生成,只修實作;修完交回同一個審核 agent 續測 | 不碰測試檔(碰了一樣退回);不合併 |
 
 一個 phase 的循環:**dev 寫實作 ∥ reviewer 寫測試 → reviewer 跑全部檢查 → 有問題 → debug session 修 → 同一 reviewer 再測 → … → 全過 → 協調者合併進 main → 技術顧問跑完整檢查、push**。
