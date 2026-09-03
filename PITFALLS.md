@@ -28,6 +28,7 @@
 | # | 症狀 | 為什麼 | 範式怎麼防 | 來源 |
 |---|---|---|---|---|
 | P-19 | 審核者在 main 跑完整檢查,結果像「合併把東西弄掉了」(測試數暴跌、舊噪音回來),差點退回一個好的合併 | shell 的 cwd 從上一個指令**殘留在另一個 worktree**(審核者剛在模板 worktree 改檔),檢查跑在錯的 tree;`git log origin/main..main` 這類指令在任何 worktree 都給同樣答案,更難察覺 | 每次檢查的第一行固定是 `cd <repo root> && pwd && git branch --show-current`,報告附上這兩行;所有檢查腳本用 `import.meta.dirname` / `__file__` 定位根目錄而不是 cwd;「結果突然變差」先懷疑 cwd 再懷疑合併 | 專案 A,技術顧問自己踩的 |
+| P-20 | 整合點需要的 phase 全部 `done`,`@e2e` 卻紅:主流程還在呼叫 phase-1 的舊路徑、CLI 入口還寫死「只支援 --fake」、stub 沒換成真模組 | 「phase done」只保證模組自己對;把模組**接起來**是另一件工作,沒人被派到就沒人做 | 整合點 gate 滿足時**第一件事是開「整合工作」工單**:內容 = roadmap 該 IN 段的「整合工作」欄 + 各 FEATURE.md「Wave 0 的重複」表(每個 stub 一行:換成誰、加哪條 allow 邊);e2e 關鍵路徑的接線先做、stub 替換獨立 commit;`/integrate` 的重複清除檢查是最後防線,不是第一道 | 專案 A,I1 |
 | P-12 | 一個 session 遵守著一份「磁碟上、分支上都不存在」的 `CLAUDE.md` / 規則檔;它的 subagent 把那份規則當既成事實推理 | harness 在 session 啟動時從**工作樹**讀 `CLAUDE.md` 與 `.claude/rules/*`,不是從分支讀。共用 checkout 被另一個 session 暫時切到別的分支,這個 session 剛好在那一刻啟動;之後切回去,**已載入的 context 不會回退** | 1. 一個 session 一個 worktree,不共用 checkout(唯一的結構性解);共用的根 checkout 永遠停在 main,任何人不在上面 `git checkout` 別的分支。2. 非得共用時,切分支前先讓對方 session 結束。3. session 自保:一份會改變整個工作方式的規則檔,先 `git show <自己的分支>:CLAUDE.md` 驗證它在自己的分支上存在,再相信 system prompt 的呈現 | 專案 B 協調者(ai-km-32) |
 | P-13 | `@manual` 場景人親手確認了,功能還是壞的 | 人看到的畫面走的是**退化路徑**(fallback 佔位值、兩邊都退化成同一預設值所以相等),確認本身是真的,被確認的東西是假的 | 測試與 harness 記錄「每個測試 / 每次執行走了哪條分支」(退化見證器);`@manual` 確認前先看見證器報告,退化路徑上的綠燈與確認都不算 | 專案 C(nightmare-assault),一天抓到七個 |
 
