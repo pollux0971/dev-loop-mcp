@@ -118,7 +118,8 @@ export class ProjectWorld extends World {
       shell: true,
       encoding: 'utf8',
       timeout: opts.timeoutMs ?? 120_000,
-      env: { ...process.env, ...opts.env },
+      // 去掉 NODE_OPTIONS:cucumber 用 --import=tsx 啟動,子程序若在別的 cwd 會解不到 tsx 而假紅
+      env: { ...withoutNodeOptions(process.env), ...opts.env },
     });
     const stdout = r.stdout ?? '';
     const stderr = r.stderr ?? '';
@@ -147,7 +148,7 @@ export class ProjectWorld extends World {
     const timeoutMs = opts.timeoutMs ?? 60_000;
 
     return new Promise<RunResult>((resolveRun) => {
-      const child = spawn(entry.cmd, { cwd: ROOT, shell: true, env: process.env, detached: true });
+      const child = spawn(entry.cmd, { cwd: ROOT, shell: true, env: withoutNodeOptions(process.env), detached: true });
       let stdout = '';
       let stderr = '';
       let settled = false;
@@ -171,6 +172,12 @@ export class ProjectWorld extends World {
     if (this.dir && existsSync(this.dir)) rmSync(this.dir, { recursive: true, force: true });
     this.dir = undefined;
   }
+}
+
+/** 複製環境變數但拿掉 NODE_OPTIONS(見 runCommand 的註解) */
+function withoutNodeOptions(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { NODE_OPTIONS: _omit, ...rest } = env;
+  return rest;
 }
 
 setWorldConstructor(ProjectWorld);
