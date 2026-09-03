@@ -39,7 +39,7 @@ description: 驗收一個整合點。當某個整合點的所有 phase 都完成
 ## 第四步:自動場景
 
 ```
-npx cucumber-js docs/integration --tags "@<in> and not @manual"
+npm run accept -- --tags "@<in> and not @manual"   # 走 npm script 才有 NODE_OPTIONS=--import=tsx;不給路徑(P-09)
 ```
 
 分開回報三類:

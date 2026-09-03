@@ -23,7 +23,7 @@ description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完
 ```
 # 注意:cucumber 11 會把命令列的位置路徑跟設定檔的 paths「合併」而不是覆蓋,
 # 直接給檔案路徑會跑到整個 repo 的場景。一律用 tag 選:
-npx cucumber-js --tags "@<name> and @phase-<N> and not @manual"
+npm run accept -- --tags "@<name> and @phase-<N> and not @manual"   # 走 npm script 才有 NODE_OPTIONS=--import=tsx,裸跑 cucumber-js 會 ERR_UNKNOWN_FILE_EXTENSION
 ```
 
 `features/steps/` 為空時改跑 `npx vitest run`,並把每個非 `@manual` 場景對照到測試名稱,

@@ -18,7 +18,7 @@
 
 ```bash
 npm run accept:integration                       # 全部
-npx cucumber-js docs/integration --tags '@i2'    # 單一整合點
+npm run accept -- --tags '@i2'                    # 單一整合點(用 tag,不給路徑,見 PITFALLS P-09)
 ```
 
 自動場景需要真的資料目錄與(部分)真的外部呼叫,所以比 `features/` 的慢。
