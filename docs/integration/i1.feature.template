@@ -1,0 +1,45 @@
+@integration @i1
+Feature: (one line: what capability exists after this integration point)
+  (Two or three lines: after this integration point, what can a person actually
+  do end to end that they could not do before? Name the modules that stop
+  being stubs to each other here — this is the point where fakes get replaced
+  by the real thing.)
+
+  Background:
+    Given (shared setup for this integration point, using real modules)
+    And (a second precondition if needed)
+
+  @e2e
+  Scenario: (a person does one complete, meaningful thing end to end)
+    Given (starting state)
+    When (the person performs the real end-to-end action)
+    Then (the first observable, meaningful outcome)
+    And (a second observable outcome)
+    And (a third observable outcome — e2e scenarios usually need several
+    assertions to actually prove the whole path worked, not just the first step)
+
+  Scenario: (a supporting scenario — the pipeline works without any fake in the loop)
+    Given (the fake / stub used during Wave 0 is removed or disabled)
+    When (the real flow runs)
+    Then (it still produces the correct result)
+    And (it fails loudly rather than silently producing a worse result, if that applies)
+
+  Scenario: (a supporting scenario — two independently written pieces agree)
+    When (two modules that both implement some shared rule are run against the same input)
+    Then (they report the same result)
+
+  Scenario: Every standalone entry point still runs
+    When every non interactive command in the standalone manifest is executed
+    Then each exits with status 0
+    And each output contains the expected marker
+
+  @regression
+  Scenario: (the key capability from the previous integration point still works)
+    Given (a precondition from the previous integration point)
+    When (the previous action is repeated)
+    Then (the previous outcome still holds)
+
+  @manual
+  Scenario: (something only a human can judge — quality, feel, readability)
+    When (the person reviews the output)
+    Then (what they should see)
