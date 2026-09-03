@@ -12,9 +12,12 @@
 | 角色 | 負責 | 不做的事 |
 |---|---|---|
 | **協調者**(coordinator) | 開 worktree、依 gherkin 派工、找獨立審核者複查、合併進 main、統一改共用檔與 ADR 編號 | 不自己寫實作 |
-| **技術顧問 / 審核**(advisor-reviewer) | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push | 不直接改 worker 的分支 |
+| **技術顧問**(advisor) | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push | 不直接改 worker 的分支 |
 | **開發 worker**(dev) | 只寫實作 | **不新增不修改 `*.test.ts` 與 `features/steps/**`**,可以跑測試但不能改;不 push;共用檔不動,需求寫進自己 `FEATURE.md` 的「待協調」段 |
-| **測試 agent**(test) | 照 `.feature` 先寫步驟檔與單元測試(紅),交給 dev 做綠;變異不足也由它補 | 不寫實作程式碼 |
+| **審核 agent**(reviewer) | 負責**所有測試**:照 `.feature` 寫步驟檔與單元測試、跑變異測試(嚴格級看檔案級分數)、跑單獨執行、交叉比對真實呼叫路徑、UI 親自起 dev server。可與 dev 同時在同一 worktree 工作(檔案不重疊) | 不寫實作程式碼;**同一個 session 反覆測到全過**,不每輪重開(會忘記上一輪抓到什麼) |
+| **debug session**(debug) | 審核 agent 抓到問題時,在**同一個 worktree** 生成,只修實作;修完交回同一個審核 agent 續測 | 不碰測試檔(碰了一樣退回);不合併 |
+
+一個 phase 的循環:**dev 寫實作 ∥ reviewer 寫測試 → reviewer 跑全部檢查 → 有問題 → debug session 修 → 同一 reviewer 再測 → … → 全過 → 協調者合併進 main → 技術顧問跑完整檢查、push**。
 
 幾條配套規則:
 
