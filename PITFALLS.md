@@ -21,6 +21,7 @@
 | P-15 | 審核者宣稱「檢查跑過、通過」,其實檢查根本沒成功 | 檢查指令的輸出被 `grep`/`tail` 過濾後是**空的**,審核者把「沒輸出」當成「沒問題」;實際是 parse error 被濾掉 | 檢查指令的判定只看**退出碼**與**一行明確的成功訊息**(例如 `N scenarios … passed`);過濾後空輸出一律視為失敗;宣稱通過前把那一行貼進報告 | 專案 A,技術顧問自己踩的 |
 | P-16 | 規格檔(.feature)尾巴多了一行 `</content>` 之類的標記,整個 runner 對所有 feature 掛掉 | 寫檔工具把包裝標記一起寫進檔案;gherkin parser 遇到就全停,不是只停那個檔 | 改完任何 `.feature` 跑一次 `npm run accept -- --dry-run` 看 Parse error;審核清單加這條;`git diff` 看檔尾 | 專案 A,協調者的寫檔工具 |
 | P-17 | 「同一個審核 session 反覆測到全過」做不到:上一輪結束後 terminal 變成不可接續,重接失敗,只能開新 session,上一輪抓到的東西丟了 | agent 平台(Orca 等)在一輪 dispatch 完成後回收 agent 狀態;session 記憶不是可靠的交接媒介 | 審核狀態寫檔不寫腦:worktree 裡的 `REVIEW.md` 記每輪發現、退回理由、下一輪要重看的清單;新 session 開場先讀它。同型:任何「靠 agent 記得」的流程都要換成「靠檔案」 | 專案 A,協調者連續兩個 phase 遇到 |
+| P-18 | 新開的 worktree 分支從**舊的** main commit 分出,worker 一開工就少了別人剛合併的東西,合併時衝突或重做 | 開 worktree 的工具用它記住的 main,不是現在的 main;或 `git worktree add` 沒指定起點 | 開 worktree 一律明確指定起點:`git worktree add -b <branch> <path> main`,開完立刻 `git merge-base --is-ancestor main <branch>` 驗證;派工說明第一步是「確認自己的分支包含 main 最新 commit」 | 專案 A,協調者連續兩次 |
 
 ## 另一類:agent 對規則來源的信任(失敗是靜默的,不會報錯)
 
