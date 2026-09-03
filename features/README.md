@@ -75,6 +75,12 @@ Wave 0 的 phase-1 應該:
 
 - 一個場景只驗一件事
 - 步驟用使用者看得懂的語言,不寫實作細節(不寫 "calls function X",寫 "runs the validator")
+- **能力層用模組的口吻,整合層用使用者的口吻,同一件事兩種句子。** 例:能力層 `the world model lists the key among held items`,
+  整合層 `the key is in the player's possession`。判準是**後端是不是同一個**:整合層走真的管線 / harness,能力層直接呼叫模組,
+  後端不同就不能共用句子——共用會逼步驟定義裡藏一個 if,能力層綠了整合層那邊其實沒驗到(P-04 的形狀)。
+  後端真的相同的句子(退出碼、「沒有模型呼叫」、直接呼叫的純函式)才進 `common.steps`
+- **gherkin 裡的枚舉字要跟 `contracts/types.md` 一模一樣**(phase、verdict、狀態這類),不在步驟定義裡做對映;
+  feature 檔就是契約的測試
 - 多個變體用 `Scenario Outline` + `Examples`
 - 場景名稱是一句敘述,不加編號
 - 每個 phase-1 的第一個場景應該是「單獨跑起來會怎樣」
