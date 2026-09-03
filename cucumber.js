@@ -7,7 +7,9 @@
 // 想要額外的 profile 用具名 export(例如 `export const ci = {...}`),不要塞進這個物件裡。
 export default {
   // 排除 features/_template/**,否則每次跑驗收都會多出幾個 undefined 的示範場景當噪音。
-  paths: ['features/**/*.feature', '!features/_template/**', 'docs/integration/**/*.feature'],
+  // 注意:paths 陣列**不支援** `!` 負向排除(會被原樣回顯但不生效,PITFALLS P-07)。
+  // _template 的樣板檔用 .feature.template 副檔名,自然不會被 *.feature 掃到;複製後要改名。
+  paths: ['features/**/*.feature', 'docs/integration/**/*.feature'],
   import: ['features/steps/**/*.ts'],
   tags: 'not @manual',
   format: ['progress'],
