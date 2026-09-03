@@ -29,7 +29,10 @@ npm run accept -- --tags '@i2'                    # 單一整合點(用 tag,不�
 - `@integration` — 全部整合檔都有
 - `@i1`..`@iN` — 哪個整合點
 - `@e2e` — 端到端的那個關鍵場景(每個檔至少一個)
-- `@regression` — 驗證前一個整合點的能力沒被弄壞
+- `@regression` — 驗證前一個整合點的能力沒被弄壞。**不要再另掛前一個整合點的 `@iN`**:
+  `@iN` 只表示「屬於哪個整合點」,它保護誰寫在場景名裡(`… still works as in I1`)。
+  雙掛會讓 `--tags "@i1"` 把 I2 檔裡的場景也篩進來,在 I2 開工前變成 undefined 噪音(來源專案踩過)。
+  跑單一整合點用 `--tags "@iN and not @manual and not @llm"`,不要用 `not @regression`(會把本整合點自己的回歸場景排掉)
 - `@manual` — 人眼確認
 - `@llm`(如果有外部呼叫成本) — 需要真的呼叫(會花錢,CI 跳過)
 
