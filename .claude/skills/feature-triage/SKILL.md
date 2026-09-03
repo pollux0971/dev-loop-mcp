@@ -124,7 +124,7 @@ Gate:自身 …;整合 …;契約 …
 1. 寫入 / 修改上述 .feature(英文)
 2. 更新 FEATURE.md 的 phase 表
 3. 更新 NEXT.md 的 gate
-4. (新資料夾)從 _template 建立三個檔、更新 features/README.md、更新 roadmap
+4. (新資料夾)從 _template 建立三個檔(`phase-1.feature.template` 要改名成 `phase-1.feature`)、更新 features/README.md、更新 roadmap
 5. (有取捨)寫 ADR
 6. 回報變更清單
 

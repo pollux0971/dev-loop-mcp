@@ -26,7 +26,7 @@ NN-name/
 └── phase-N.feature
 ```
 
-新資料夾從 `_template/` 複製,**三個檔都要**。
+新資料夾從 `_template/` 複製,**三個檔都要**;`phase-1.feature.template` 複製後改名成 `phase-1.feature`(樣板用不同副檔名是為了不被 cucumber 掃到,P-07)。
 
 ## phase-1 的原則
 
