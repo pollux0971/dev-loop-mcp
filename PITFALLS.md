@@ -17,6 +17,7 @@
 | P-09 | `cucumber-js <某個 feature 路徑>` 跑出全 repo 的場景 | cucumber 11 把命令列位置路徑與設定檔 paths **合併**,不是覆蓋 | 一律用 `npm run accept -- --tags "@<name> and @phase-<N>"` 選場景(走 npm script 才帶 loader,裸跑 `cucumber-js` 會 ERR_UNKNOWN_FILE_EXTENSION);skill 與 `standalone.json` 都不用路徑形式 | 專案 B(AI_KM)發現,專案 A 驗證 |
 | P-10 | standalone 指令在步驟裡跑會假紅,手動跑卻正常 | 子程序繼承 cucumber 的 `NODE_OPTIONS=--import=tsx`,在別的 cwd 解不到 tsx | `_world.ts` 起子程序前拿掉 `NODE_OPTIONS`(`withoutNodeOptions`) | 專案 B 發現 |
 | P-11 | 審核 agent 與開發 agent 同時在同一 worktree 工作,撞到未 commit 變更與 git index | 同一份 working tree 被兩個進程操作,跟檔案是否重疊無關 | 循序:審核先寫測試 commit → 開發寫實作 commit → 審核回來重跑;同一 worktree 任一時刻只有一個 agent | 專案 A,協調者 |
+| P-14 | 用 `cat > <編號檔>` 建新的編號檔(工單、ADR、phase)時覆蓋了既有的檔 | 只看 `ls \| tail -1` 就假設中間號碼是空的;shell 重導向不會問 | 建檔前 `test -e` 拒絕覆寫;或編號一律由腳本發(掃現有最大號 +1 並原子建檔);ADR / feature 編號由協調者統一發 | 專案 C 調度者,已還原零損失 |
 
 ## 另一類:agent 對規則來源的信任(失敗是靜默的,不會報錯)
 
