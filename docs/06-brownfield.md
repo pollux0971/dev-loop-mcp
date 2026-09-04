@@ -52,6 +52,7 @@ overclaim(場景宣稱綁到某個測試,實際那個測試根本沒驗到對應
 不需要額外的仲裁。
 | 7 | **守門進 repo 再分叉**:step 撞名、gherkin 逐字重複、每個 phase 至少跑到 1 個場景、doc 連結;掃到 0 也紅 | A:合併後 cucumber 報 duplicate step(P-02)。B:tag 打錯字整個資料夾沒跑而 CI 全綠(P-32) |
 | 8 | **分叉**:每個能力一個 worktree,一次全開沒問題;合併一次一個,合完跑完整檢查再合下一個;切換日起舊狀態來源唯讀、只讀 FEATURE.md,過渡期 ≤ 1 sprint | C:board 雙讀舊 frontmatter 與 FEATURE.md,兩個真相,顧問的 checklist 三處前提隔天就過期 |
+| 9 | **切換包本身要附一份刪除清單**:哪些舊指令 / 舊 slash command / 舊腳本已經被新範式的等價物取代,列出來、標 `DEPRECATED`、寫清楚哪個 sprint 之後就真的刪除——不是標了 `DEPRECATED` 就沒事了,標記後留一個 sprint 沒人再用就要真的執行那份清單 | AI_KM:舊指令標了 `DEPRECATED` 留在指令表裡好幾週沒人真的刪,agent 的 context 裡還讀得到,偶爾被誤用 |
 
 每一步的產出都是**可以 `git ls-files` 到的東西**;做完一步沒有新檔案進 repo,那一步就沒做完。
 
@@ -60,7 +61,7 @@ overclaim(場景宣稱綁到某個測試,實際那個測試根本沒驗到對應
 | 資產 | 做法 | 不要做 |
 |---|---|---|
 | story / epic 規格庫 | **封存不轉換**:tag,`git mv` 到 archive/,頂端 superseded 標頭;真內容蒸餾成凍結的 `00-design.md` + 產品決策唯讀表 `PD-nn`(見 00-design 頂部規則) | 一對一轉成場景——那是「Gherkin 變模板」 |
-| 未完成的 story | 映射成某個資料夾某個 phase 的**素材**;映射完加 `superseded_by`,跑封存腳本(要可重跑,main 還在長) | 保留當工作單位 |
+| 未完成的 story | 映射成某個資料夾某個 phase 的**素材**;映射完加 `superseded_by`,跑封存腳本(要可重跑,main 還在長)。**不要把舊 story 一對一映成 phase**(來源 nightmare-assault MIGRATION 文件)——story 的切法是舊流程的產物,phase 的切法要照這套範式自己的規則(能力 → phase)重新切,兩者剛好對上是巧合不是規則,硬映射會把舊流程的顆粒度原封不動搬進新結構 | 保留當工作單位 |
 | 已完成的 story | 立刻封存,價值已在程式碼與測試裡 | 映射 |
 | 既有測試 | phase-1 場景綁**同一個入口**(同一個工廠函式 / 同一個 build);FEATURE.md 放「回填對照表」(場景 → 測試檔:測試名);綁不到既有測試的行為不准進 phase-1;證明綁的是真入口 = 突變生產碼 → 場景紅 | 重寫、或綁檔案佈局(rebase 後會斷) |
 | 既有 CI | 保留;單一 job 先拆成獨立 job,再加 accept job | 一顆紅燈蓋掉一切 |

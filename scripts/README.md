@@ -33,7 +33,8 @@ CHANGELOG 1.3.2 (C) 修的迴歸:退出碼 127(command not found)以前會被誤
 3. 自動偵測:目標 repo 根有 `pyproject.toml` / `setup.cfg` / `requirements*.txt`,或排除
    `node_modules`、`.git`、本次安裝目錄本身之後找得到任何 `*.py` → 含 `py`;否則只有 `ts`。
 
-`ts` 永遠在選集裡,不管走哪一條——沒有「純 Python 專案」這種概念,六支 `.ts` 守門是核心。
+`ts` 永遠在選集裡,不管走哪一條——沒有「純 Python 專案」這種概念,`.ts` 守門(數量以本目錄
+目前的 check-*.ts 為準,不寫死)是核心。
 
 加 `--prune`:同步完成後掃安裝目錄(含 `py/`),把**有 SOURCE 標頭、但所屬語言不在本次
 選集內**的檔案列出來刪掉(該語言的目錄清空後也一併刪除);**沒有 SOURCE 標頭的檔案一律

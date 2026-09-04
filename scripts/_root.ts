@@ -1,5 +1,5 @@
 /**
- * 六支守門腳本共用的 repo 根解析。
+ * 所有守門腳本共用的 repo 根解析。
  *
  * 舊版用 `resolve(import.meta.dirname, '..')`,也就是「腳本自己所在目錄的上一層」——
  * 這要求腳本必須先被複製進目標 repo 的 scripts/ 才能用。改成用 git 找目前 cwd 所在

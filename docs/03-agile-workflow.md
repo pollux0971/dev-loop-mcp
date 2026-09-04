@@ -37,7 +37,7 @@
   git diff --name-only main...<branch> | grep -E '\.test\.ts$|^features/steps/'
   ```
   有輸出就退回(測試 agent 的 commit 除外)。理由:測試是規格的一部分,worker 改測試等於自己改考卷。
-- **審核清單的其餘四項**(來源專案 Wave 0 實際抓到問題的地方,每一項都對應一次漏網):
+- **審核清單的其餘項目**(以下清單為準,來源專案 Wave 0 實際抓到問題的地方,每一項都對應一次漏網):
   1. 審核者**自己重跑**變異測試,嚴格級模組看**檔案級**分數,不只看整體(整體達標可能藏著一個 52% 的檔案)
   2. 交叉比對被測函式有沒有被 app / CLI **真的呼叫**——測著死代碼的綠燈是假的
   3. 測試不准動 git 追蹤的檔案,要寫就複製到暫存目錄(曾有測試把基準檔刪掉)
@@ -115,9 +115,20 @@ NEXT.md 的 gate 全部滿足 ──► 狀態 ready
 - [ ] 沒有標 `blocked`
 - [ ] **Wave 0 額外**:確認這個 phase 不需要任何跨資料夾 import
 
+**NEXT.md 的 gate 行必須可解析**(來源 AI_KM,commit 28a0519,見 PITFALLS P-63):每一條 gate 宣告
+要引用 ADR 編號、commit sha、契約章節 `§N`、整合點 `I<N>`、或 phase 參照之一,而且引用要**真的解析得到**
+(那個 ADR 標題找得到、那個 commit 這個 repo 裡真的有、那個章節 `contracts/types.md` 裡真的存在)——
+不是隨便寫一句「等某個決定」就算數。機械驗證見 `scripts/check-next-gates.ts`,舊專案第一次補引用時先用
+`nextGates.mode: "report"` 過渡(印出所有失敗但不擋),補完再切 `"enforce"`。
+
 ## Definition of Done
 
-**核心(這四項沒過就不算完成)**
+**合併 ≠ done**(來源 nightmare-assault,D15,見 `.claude/skills/phase-acceptance/SKILL.md` 開頭):
+合併回 main 的門檻是 `npm run check:all` 綠,不是下面這份 DoD 清單;一個 phase 可以先合併、
+`FEATURE.md` 的狀態仍然維持 `in-progress`,直到下面的核心清單全過才改成 `done`。已知缺陷(暫時不修
+的紅場景)用 `@known-defect` tag + `known-defects.json` 登記鎖住,不要用 `test.fails` / `.skip` 藏。
+
+**核心(以下清單沒過就不算完成)**
 
 - [ ] 所有非 `@manual` 場景自動通過
 - [ ] 所有 `@manual` 場景由你親手確認
@@ -176,6 +187,8 @@ Trunk-based,直接在 main 上小 commit。建議訊息格式 `feat(<feature>): 
 不會拖累別人看到的 CI 狀態;**但紅的單元測試不能進 main**,那是 CI 真的會跑到、真的會紅的東西。
 合併點固定在「單元測試變綠之後」,不是「gherkin 寫完就合」。萬一還是誤合了,修法是 `revert` 那個
 commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會退化成 P-04 的假綠(見 PITFALLS P-46)。
+**這條分界被 AI_KM 獨立驗證過一次**(坑14,commit 9889f99):兩邊互不知情的情況下各自踩到同一個
+分界、寫下幾乎一致的措辭,不是本模板單一專案的巧合結論。
 
 ## 最小模式
 
@@ -185,12 +198,13 @@ commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會�
 |---|---|
 | `contracts/` | 沒有它就沒有平行,而且協作者會跨 session 漂移 |
 | 每個 phase 的 `.feature` | 規格即測試。這是防止「做完了但不知道做對沒」的唯一機制 |
-| `/phase-done` 的前四項 | 測試過、單獨跑得起來、嚴格級變異達標、人工場景確認過 |
+| `/phase-done` 的核心清單 | 測試過、單獨跑得起來、嚴格級變異達標、人工場景確認過(以 `/phase-done` skill 當下的核心清單為準) |
 | `@e2e` 場景 | 「系統可用」的唯一判準 |
 
 **可以先關掉的:**
 
-- sprint 檔與 `/sprint` — 自己知道下一個要做什麼就不用它
+- sprint 檔與 `/sprint` — 自己知道下一個要做什麼就不用它(nightmare-assault 從頭到尾沒用過 sprint 檔,
+  改用 autopilot 每輪回報當進度追蹤,見 `docs/07-practices.md`「三個專案都刻意不遵守的範式條文」)
 - `/integrate` 的完整清單 — 只跑 `@e2e` 與 `@regression` 也行
 - decision map 的 mermaid 圖 — ADR 本身要記,圖可以不畫
 - 標準級的變異測試 — 嚴格級一定要跑,其他看心情

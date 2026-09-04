@@ -11,6 +11,21 @@ description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完
 跑這支 skill 本身就夠;有工單機制在跑時,不要因為這支 skill「跑過」就覺得驗收已經到位
 (來源:專案 A 協調者的實戰記錄,見 `docs/07-practices.md`「來自專案 A 協調者的做法」)。
 
+## 合併 ≠ done(來源 nightmare-assault,D15)
+
+**合併門檻**與**done 門檻**是兩件不同的事,不要混用同一個判準:
+
+- **合併門檻 = gate 綠**:`npm run check:all` 過,分支可以合進 main。合併只代表「這份 diff 沒有破壞既有的守門」。
+- **done 門檻 = DoD**(見第八步「核心項全過」)。一個 phase **可以先合併、phase 表仍然維持 `in-progress`**——
+  合了不等於做完,不要因為合併動作本身就順手把狀態改成 `done`。
+- **已知缺陷**(測試現在就是紅的,而且是已知的、暫時不修)不能用 `test.fails` / `.skip` 藏起來(那是 P-46 的
+  假綠),而是掛 `@known-defect` tag,**同時**登記進 `known-defects.json`(欄位:`feature`、`scenario`、`reason`、
+  `fix_in`、`since`、`hard_rule`),兩邊要對得上——`check:known-defects` gate 機械驗證 tag 跟登記表的
+  multiset 相等,見 `scripts/check-known-defects.ts`。**`fix_in` 規則**:一般缺陷 `fix_in` 可以是佔位值
+  (`""` / `"未定"` / `"TBD"`);但如果這個缺陷鎖住的是**對某條無例外硬規則的違反**(`hard_rule: true`),
+  `fix_in` **不准**是佔位值——一個「之後再修」的標記不能拿來把硬規則的違規合法化,那跟「用 gate 代替修」是
+  同一族問題(見 `docs/07-practices.md` (y))。
+
 目標:`$ARGUMENTS`
 
 ## 第一步:定位
@@ -18,6 +33,10 @@ description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完
 解析為 `features/<NN-name>/phase-<N>.feature`。找不到就停,列出該資料夾有哪些 phase。
 
 讀取該 `.feature`、該資料夾的 `FEATURE.md` 與 `NEXT.md`、`docs/01-roadmap.md` 找出所屬階段。
+
+**派工前的對照(協調者派 dev 之前就該做,不是驗收時才做,來源 AI_KM #19)**:紅場景要先對照這個 phase 在
+`FEATURE.md` phase 表的「意圖」欄(這個 phase 要讓人做到什麼),確認場景描述的行為真的落在這個意圖裡,再派工——
+避免派錯方向,dev 照著一個跟意圖對不上的紅場景做出一個「測試綠了但不是這個 phase 該做的事」的結果。
 
 ## 第二步:前置檢查
 
@@ -52,6 +71,11 @@ P-42 記錄的三種變體——前兩種是「忘了填」,第三種是「填�
 對照表(突變 / 場景 / 反向驗證清單)存在時,額外加一步:**對照表每一列,拿掉它宣稱擋住的守門重跑一次,
 場景必須紅**——不是重跑整份測試看綠燈,是驗證「拿掉這個守門,現在應該紅」這件事本身成立
 (來源:B 兩天內抓到 4 次「綠但沒證明」,見 `docs/07-practices.md` (g))。
+
+**第四段(來源 nightmare-assault,見 `docs/07-practices.md` (u) 與 PITFALLS P-68)**:上面任何一段的答案是
+「0」「沒有」「找不到」時,先問一句再往下判:這個 0 是量出來的,還是探針找不到?同一支探針在已知非 0 的
+情境跑過一次沒有?沒有跑過就不能把這個 0 當「乾淨」的證據——先找一個已知會命中的情境驗證探針本身有作用,
+數不出來才代表探針本身壞了,不是被測物真的沒有問題。
 
 ## 第四步:單獨執行
 
@@ -90,10 +114,16 @@ decision-record 記一筆。
 | 標準 | 跑其中一種。未達**回報但不擋**,問使用者要不要處理 |
 | 寬鬆 | 跳過 |
 
-**變異分數路線**:
+**嚴格級的整支 `/phase-done` 由另一個 session 執行**(來源 AI_KM):不是只有變異測試那一步換人審,是這次
+驗收整體換一個沒有寫過這個 phase 實作的 session 來跑。而且**這個 session 的第一步就是本步驟(變異 / 定向
+反向驗證)**,不是照本 skill 從第一步「定位」依序做到第六步才做——先確認測試真的守得住宣稱要守的行為,
+不成立的話後面幾步(單獨執行、@manual 確認)都沒有意義。**證據是炸掉那條斷言的失敗訊息原文,逐字貼進驗收
+報告**,不是「幾條測試變紅了」這種摘要(`docs/07-practices.md` (h))。
+
+**變異分數路線**(`npm run mutate` 是唯一入口,裸的 `stryker run` 會繞過檔案鎖,見 mutation-testing skill):
 
 ```
-npx stryker run --mutate "<該 phase 的原始碼路徑>"
+npm run mutate -- --mutate "<該 phase 的原始碼路徑>"
 ```
 
 用 `mutation-testing` skill 的準則判讀存活的變異。
@@ -119,7 +149,7 @@ npx stryker run --mutate "<該 phase 的原始碼路徑>"
 
 ## 第八步:判定
 
-**核心四項全過** → done:
+**核心項全過**(以下清單為準,不要另外記數字)→ done:
 1. 非 `@manual` 場景全過
 2. 單獨執行通過(或是 interactive 且使用者確認)
 3. 嚴格級變異達門檻(非嚴格級不擋)

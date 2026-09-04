@@ -53,6 +53,15 @@
 
 `boundaries.allow.json`、`boundaries.owners.json` 這兩份是專案自己的設定(見 `scripts/README.md`),sync 只在目標不存在時建一次,之後永遠不覆蓋——升版不會把你填好的落點表洗掉。
 
+**單一入口:`npm run check:all`。** 合併前、CI 裡、`/phase-done` 收尾,都跑這一個指令,不要各自
+背一串 `&&` 串起來的 npm script 名字。它讀 `scripts/gates.config.json` 的 `chain` 陣列(依序執行的
+npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡真的存在,不存在就算失敗——
+新加一支守門,永遠是「先掛 npm script,再寫進 `chain`」,不是反過來。`gates.config.json` 認得的
+頂層鍵有哪些,以 `scripts/_root.ts` 匯出的 `KNOWN_GATES_CONFIG_KEYS` 為準(不在這裡重複列一份會
+漂移的清單);新增一支守門用到新的頂層鍵,同時要把鍵名加進那份清單,否則 `gates.config.json` 一填
+那個鍵就會被判定成「不認識的鍵」而整個設定檔失敗(S9,見 `docs/07-practices.md`「gates.config.json
+壞掉被靜默忽略」相關 PITFALLS 條目)。
+
 **出版規則:沒有對至少一個 consumer 跑過 `scripts/verify-against.sh <consumer repo 根>` 不打 tag。**
 這支腳本把模板版每支 `check-*.ts` 跟那個 consumer repo 已裝的同名檔各跑一次,比退出碼、
 輸出、旗標清單三件事,列出差異——這是出版前的機械檢查,不是取代人的判斷。差異逐項標

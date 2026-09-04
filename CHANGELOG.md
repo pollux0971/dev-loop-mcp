@@ -4,6 +4,139 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.4.0 — 2026-09-05
+
+**Minor**:新增四支守門腳本、`sync-gates.sh` 的接線檢查、`gates.config.json` 的設定壞掉大聲失敗
+(S9)與共用略過清單(S10),外加大量文件與 skill 更新。來源:nightmare-assault(第二、三、四批
+回報)、AI_KM(commit 7468eab、d3e0b80,以及坑14/15/16、#18/#19/#20、28a0519、9889f99、1e4d6a5、
+c20766e 等具名 commit)、專案 A(協調者、覆核 agent、驗證 agent)。腳本本體已在 02a3b8e、cc1f8ce
+兩個 commit 落地並跑過反向驗證;這個版本補齊對應的文件、PITFALLS、skill 更新,並修正掃描時發現的
+既有文件量詞漂移。
+
+### 新守門腳本
+
+1. **`scripts/check-all.ts`**(單一入口):讀 `gates.config.json` 的 `chain` 陣列依序跑
+   `package.json` scripts,`chain` 缺欄位或空陣列 → exit 1;鏈上任一名字不是真的 npm script →
+   印「不是 npm script(P-55)」並算失敗,不嘗試執行。`--fail-fast` 遇第一個失敗就停;`--markdown`
+   印一段可以直接貼進合併訊息的 fenced code block。
+2. **`scripts/check-doc-rot.ts`**(S7,來源 nightmare-assault):`doc-rot.blacklist.json` 的黑名單
+   regex 掃描,命中即紅;ADR 檔與黑名單設定檔自己排除。初始條目:寫死的顧問 session 名
+   regex(`llm-learning-cards-\d+`)、繞過鎖的裸 `npx stryker run` 指令、寫死進固定量詞的
+   「核心四項」——每一條都對應本版實際修過的坑。
+3. **`scripts/check-known-defects.ts`**(S8,來源 nightmare-assault):比對 `@known-defect` tag
+   場景與 `known-defects.json` 登記表的 multiset,兩邊要完全相等;子行程 `--dry-run --tags
+   @known-defect --format json` 取得場景清單後**自己再驗證每個場景真的帶那個 tag**,不信任外層
+   `--tags` 篩選器;`hard_rule: true` 的登記,`fix_in` 不准是佔位值。
+4. **`scripts/check-next-gates.ts`**(來源 AI_KM):`NEXT.md` 的每條 gate 宣告必須引用 ADR / commit
+   sha / 契約章節 `§N` / 整合點 `I<N>` / phase 參照之一,而且引用要能解析(標題找得到、commit 存在、
+   章節存在、phase 表列存在)。`nextGates.mode` 支援 `"report"`(印失敗但 exit 0,給舊專案過渡)與
+   `"enforce"`(預設)。
+
+### 既有守門的擴充
+
+- **`sync-gates.sh` 接線檢查**:同步進去、`package.json` 沒有任何 script 呼叫的守門 → `--check` 紅,
+  印「同步進來但沒接線」。三種豁免(helper/測試檔、`check-all.ts` 已設定非空 `chain`、
+  `gates.config.json` 的 `unwired` 允許清單且 `reason` 非空)不算沒接線。`sync` 收尾印
+  `needs-config:` 清單(哪些設定檔是剛建立或原本就沒有)與接線建議清單。`CONFIG_FILES` 新增
+  `doc-rot.blacklist.json`、`known-defects.json`。
+- **`check-standalone.ts`**:manifest 支援底線開頭的 `_doc` metadata 鍵(不當條目處理,修正舊版
+  把 `_doc` 的字串值當條目物件、`entry.cmd` 是 `undefined` 導致 `spawnSync` crash 的問題——來源
+  AI_KM commit d3e0b80);新增 `pending` 語意(來源 nightmare-assault):條目可選填
+  `"pending": "<NN-folder>/phase-N"`,該 phase 狀態未達 `done` 時預期失敗但仍執行、不擋 merge
+  (印 `○ ... pending`);狀態已經 `done` → pending 過期,必須通過,沒通過印「pending 已過期」。
+- **`check-boundaries.ts`**:`owners.json` 找不到、或 `owners` 是空陣列 → 都當「尚未設定」,exit 1
+  並印範例;`glue` 陣列新增物件形式 `{ owner, role: "glue" }`(這個擁有者的檔案不准被 import,原本的
+  純字串形式維持「可以 import 任何東西」的舊行為不變)。
+- **`_root.ts`**:`loadGatesConfig` + `requireKnownTopLevelKeys`(S9)——設定檔解析錯誤或有不認識的
+  頂層鍵一律印錯誤訊息、印 gate 標記、exit 1,不悄悄套用預設值;`KNOWN_GATES_CONFIG_KEYS` 是所有
+  gate 認得的頂層鍵聯集,新增一個頂層鍵要同時加進這裡。`DEFAULT_SKIP_DIRS` + `resolveSkipDirs` +
+  `splitSkipDirs`(S10,來源 AI_KM):所有走目錄樹的掃描器共用同一份略過清單(補上 `.next` 等框架
+  建置產物目錄,修正 AI_KM 消費者吃到 511 筆 `.next` 雜訊的問題),`gates.config.json` 的
+  `skipDirs` 追加在預設清單之後。
+- **`check-doc-links.ts`**:新增反引號路徑參照規則(S7)——`` `path/to/file.ts:123` `` 這種
+  inline code 形式的路徑參照,要求那個檔案真的存在(不要求那一行真的存在,只驗路徑)。
+- **`scripts/py/mutate.py`**:新增 `--cmd` 旗標(來源 AI_KM 的請求),跟 `--expect-fail` 互斥——
+  被突變的目標不是用 pytest 驗收時(例如本模板自己的 `check-*.ts`,或任意語言的指令),直接指定
+  一段 shell 指令當驗證目標,固定四步(突變前綠 → 突變後非 0 → 精確還原 → 還原後再綠),退出碼 6
+  代表這個模式的成功路徑。細節見 `.claude/skills/mutation-testing/SKILL.md`。
+
+### 文件與 skill(這個版本的主要內容)
+
+- **`PITFALLS.md`**:新增 P-60..P-69(數量詞腐爛、規則反覆違反先查守門有沒有跑、cucumber `/`
+  alternation、NEXT.md gate 行過期、同步進來沒接線、空保證、守門沒在真專案跑過、
+  `gates.config.json` 壞掉被靜默忽略、陽性對照只蓋住被測物、rtk 輸出混訊);修訂 P-46(補 AI_KM
+  獨立驗證同一分界)、P-59(補 nightmare 的編號碰撞變體)。
+- **`DECISIONS_NEEDED.md`**:編號規則(永不重用、下一個 = 整份檔案最大值 +1)、條目可以是多行區塊、
+  「不給不擋」慣例、命名別名說明(nightmare 叫 `PENDING.md`)。
+- **`.claude/skills/autopilot/SKILL.md`**:§2.1 合併檢查改成單一入口 `npm run check:all`;
+  `{{PARALLEL_CAP}}` 占位符取代寫死的審核輪上限;§2 加派工/改檔前的分支衝突 grep;§3 維護清單插入
+  技術顧問側「有沒有工作」六判準(整合點紅清單 → 已批未做 → 接線孤兒/到期 → 見證器未標記 → 下一
+  整合點 phase → 維護);§4 加「規則反覆違反先查守門有沒有跑」;§4c 加 rtk 輸出混訊的處理規則。
+- **`.claude/skills/phase-acceptance/SKILL.md`**:「合併 ≠ done」小節(gate 綠是合併門檻、DoD 是
+  done 門檻、`@known-defect` + `known-defects.json` + `fix_in` 規則);派工前意圖對照;守衛問句
+  第四段(這個 0 是量出來的還是探針找不到);嚴格級由另一個 session 跑整支 `/phase-done`、第一步
+  就是變異/反向驗證;修正「核心四項」量詞為「核心項(以當下清單為準)」。
+- **`.claude/skills/sprint-planning/SKILL.md`**:派工前衝突檢查(grep 撞名、AC 跟 Non-goals 對照、
+  場景 `Given` 只准依賴能力範圍內的東西)。
+- **`.claude/skills/feature-triage/SKILL.md`**:確認層級(A 且符合准入三條 → 技術顧問確認;B/新功能
+  → 使用者確認;技術顧問 30 分鐘沒回應 → 不寫檔,先做其他工作)。
+- **`.claude/skills/mutation-testing/SKILL.md`**:改斷言(含加嚴)必須重跑該模組變異測試;
+  `scripts/py/mutate.py --cmd` 的 cucumber 層定向反向驗證流程與退出碼 6。
+- **`CLAUDE.md`(模板)**:決策表補「規則層變更由使用者決定、技術顧問直接執行不經協調者」。
+- **`docs/03-agile-workflow.md`**:合併 ≠ done;NEXT.md gate 行必須可解析(`check:next-gates`);
+  紅 `.feature`/紅單元測試分界補 AI_KM 獨立驗證的引用;最小模式補 nightmare 從未用過 sprint 檔的
+  引用;修正兩處量詞漂移(「四項」「前四項」)。
+- **`docs/06-brownfield.md`**:步驟 9(切換包附刪除清單);「不要把舊 story 一對一映成 phase」。
+- **`docs/02-decision-map.md`**:移除依賴圖 mermaid 區塊(三個專案都沒用過),保留待決事項表,依賴
+  關係改讀各 ADR 的 Related 欄。
+- **`features/_template/FEATURE.md`**:phase 表新增「意圖」欄。**`features/_template/NEXT.md`**:
+  整合 gate 補「I1 前留空 = 無 gate」與引用可解析規則。
+- **`docs/07-practices.md`**:新增 (r) 退化路徑見證器報告格式(三個只降不升的桶)、(s) 棘輪基準的
+  三道鎖、(t) 派工前衝突 grep、(u) 掃描器不自我豁免、(v) 合併例外五條件(刻意不採)、(w) 嚴格級
+  另一 session + 第一步固定突變、(x) 守門要對著會變的量、(y) known-defect 逐份按證據等級裁;修訂
+  (q)(基準釘 base commit hash、檔名帶 hash 不帶數字)與 (a)(陽性對照要驗探針有作用,不只驗被測物
+  存在)。
+- **`CHECKLIST.md`**:新增 `{{PARALLEL_CAP}}` 占位符;收工前檢查補「改斷言重跑變異」「main 工作樹
+  同時一人動(`readlink /proc/<pid>/cwd` + `grep -vx $$`)」「改 main 前查 in-progress 分支衝突」;
+  兩處技術顧問 session 範例值改成不會撞黑名單的通用格式。
+- **`README.md`**:新增 `npm run check:all` 單一入口說明,`gates.config.json` 已知鍵改指向
+  `scripts/_root.ts` 的 `KNOWN_GATES_CONFIG_KEYS`(不重複維護一份清單)。
+
+### 修正舊文件裡的量詞漂移(本版掃描時發現,不是新坑,是既有文件已經腐爛的例子)
+
+- `docs/03-agile-workflow.md`「審核清單的其餘四項」實際列了 7 項——量詞早就跟內容脫節,改成
+  「其餘項目(以下清單為準)」。
+- `.claude/skills/mutation-testing/SKILL.md`、`.claude/skills/phase-acceptance/SKILL.md` 的
+  `npx stryker run` 範例指令繞過 `npm run mutate` 的檔案鎖(跟 autopilot 自己的規則矛盾),改成
+  `npm run mutate -- --mutate "..."`。
+- `scripts/sync-gates.sh`、`scripts/README.md`、`scripts/check-next-gates.ts`、`scripts/_root.ts`、
+  `scripts/check-all.ts` 裡好幾處「六支守門」「五支守門」「三支掃描器」「第七支」的計數,在本版
+  新增四支守門之後全部過期,改成不寫死數字的措辭。
+
+### 升版指南 1.3.x → 1.4.0
+
+1. **`gates.config.json` 加 `chain`**,把每支想在合併前跑的守門(含 consumer 自己的
+   `test`/`typecheck`/`accept`)列成 npm script 名字的陣列;沒列進 `chain` 又沒有理由的守門要嘛
+   接線、要嘛在 `unwired` 裡帶 `reason`——**`sync-gates.sh --check` 現在會因為「同步進來但沒接線」
+   而失敗**,升版後第一次 `--check` 大概率會紅,這是預期的,照訊息接線或加 `unwired` 條目。
+2. **`gates.config.json` 不認識的頂層鍵現在會讓整個設定檔失敗**(S9)——升版後對照
+   `scripts/_root.ts` 的 `KNOWN_GATES_CONFIG_KEYS`,檢查自己的設定檔有沒有打錯字的鍵或舊版遺留
+   的欄位。
+3. **`check:doc-links` 新增反引號 `` `file:line` ``參照規則**——升版後預期會抓到新的違規(專案 A
+   實測 18 處),這些通常是文件裡寫了「見 `foo.ts:42`」但 `foo.ts` 早就不存在或搬走了,逐一修正
+   連結,不要整條規則關掉。
+4. **`check:doc-rot` 出貨帶三條黑名單規則**——升版後預期會有命中(專案 A 實測 3 處),照訊息修正
+   命中的文字,或者如果命中的是你自己專案的合理例外,把 `doc-rot.blacklist.json` 的初始三條
+   改成對照你們自己的事故編輯,不要照抄本模板的三條原封不動。
+5. **`check:known-defects` 在你還沒用 `@known-defect` tag 之前是 0 目標**——先不要把它加進
+   `chain`,放進 `gates.config.json` 的 `unwired` 並帶理由,或者乾脆先不列進 `chain`;真的開始用
+   `@known-defect` 之後再接上。
+6. **`standalone.json` 可以用 `_doc`(metadata,不當條目)與 `pending`(預期紅但不擋,過期後轉
+   必須綠)** 這兩個新欄位,舊版沒有這些欄位一樣能跑,是新加的可選能力,不用立刻改。
+7. **`{{PARALLEL_CAP}}` 占位符要填**:`autopilot/SKILL.md` 與 `CHECKLIST.md` 裡原本寫死的審核輪
+   上限「3」換成了這個占位符,升版後 `grep -rn '{{PARALLEL_CAP}}'` 要記得填一個你自己機器規格
+   允許的數字,不要留著占位符進生產。
+
 ## 1.3.5 — 2026-09-05
 
 七個坑,來源 nightmare-assault 與專案 A(協調者、技術顧問、覆核 agent),全部修在文件與 skill 端

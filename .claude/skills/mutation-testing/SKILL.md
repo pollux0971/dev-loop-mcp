@@ -30,11 +30,14 @@ description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的
 
 ## 怎麼跑
 
+**`npm run mutate` 是唯一入口**——它包了跨 worktree 的檔案鎖(P-34),裸的 `stryker run` 會繞過鎖,
+不管是不是加了 `--mutate` 縮小範圍都一樣要走這個入口,用 `npm run` 的 `--` 傳額外旗標:
+
 ```bash
-npm run mutate                                          # 全部,慢
-npx stryker run --mutate "<某個模組的路徑>/**/*.ts"      # 單一模組
-npx stryker run --mutate "<某個檔案的路徑>.ts"           # 單一檔案
-npx stryker run --incremental                           # 只跑變動過的,日常用這個
+npm run mutate                                                    # 全部,慢
+npm run mutate -- --mutate "<某個模組的路徑>/**/*.ts"             # 單一模組
+npm run mutate -- --mutate "<某個檔案的路徑>.ts"                  # 單一檔案
+npm run mutate -- --incremental                                   # 只跑變動過的,日常用這個
 ```
 
 報告在 `reports/mutation/index.html`。
@@ -43,6 +46,38 @@ npx stryker run --incremental                           # 只跑變動過的,日
 例如一份多開了 TS 型別檢查,把原本會被殺死的變異直接標成 `error`,分數就會憑空多出好幾分。**兩個沒有附設定檔
 的分數不能比較**,不是「有人跑錯了」。工單、REVIEW.md、ADR 引用變異分數時一律附上**完整指令**(範圍、旗標、
 設定檔路徑),不准只寫裸的 `--mutate` 或一個數字(P-58)。
+
+## 改斷言(含補強)後一定要重跑該模組的變異測試(來源 nightmare-assault,commit 89317a9f)
+
+**任何**改動一條既有斷言的 commit——包括**加嚴**(把一個寬鬆的斷言收緊,例如從「不等於某個舊值」
+改成「等於某個新期望值」)——都要重跑那個模組的變異測試,不是只有「改弱了」才要重跑。理由:
+加嚴斷言看起來只會讓測試更嚴格,但常見的錯法是加嚴的方向本身就錯了(例如收緊到一個剛好也能被
+壞掉的實作滿足的值),原本殺得死的變異可能因此存活;唯一能確認的方法是重新跑一次,不是憑直覺
+判斷「加嚴應該只會更好」。
+
+## cucumber 層的定向反向驗證(`scripts/py/mutate.py --cmd`)
+
+`docs/07-practices.md` (e) 的定向反向驗證規格不限於 pytest / vitest 這種單元測試層——`--cmd`
+模式(`scripts/py/mutate.py`)可以把「一定要讓某個 cucumber 場景變紅」直接當成驗證目標,指令是
+帶 `--tags` 的 cucumber 呼叫本身:
+
+```bash
+python3 scripts/py/mutate.py --file <要突變的原始碼> --replace '<舊字串>' --with '<新字串>' \
+  --cmd "npm run accept -- --tags '@<name> and @phase-<N> and not @manual'"
+```
+
+`--cmd` 跟 `--expect-fail` 互斥,只能給一個;`--cmd` 沒有 `--expect-fail` 模式的「inconclusive」
+(exit 4)這個中間態,是任意 shell 指令,只看退出碼。固定四步:
+
+1. **突變前**先跑一次 `--cmd`,要求 exit 0——不是就代表這個指令本身在突變之前就不是綠的,gate 中止。
+2. **套用突變**,再跑一次 `--cmd`,要求**非 0**——是 0 的話代表這個突變沒被偵測到(存活),這個突變
+   目標需要重新設計,或是 `--cmd` 指到的場景需要補強。
+3. **精確還原**檔案(`git show HEAD:<path>` 讀回原內容,`sha256sum` 比對確認真的回到原狀)。
+4. **還原之後再跑一次** `--cmd`,要求 exit 0——確認還原本身沒有留下副作用,這是 `--expect-fail`
+   模式沒有的額外一步。
+
+**退出碼 6** = `--cmd` 模式的成功路徑:突變被正確偵測到(第 2 步非 0)、檔案已還原、sha256 比對通過。
+呼叫端(CI、審核腳本)照這個退出碼判斷這次驗證有沒有真的做完整個流程,不只看有沒有變紅。
 
 ## 分級門檻
 

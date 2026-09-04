@@ -11,7 +11,7 @@
  *
  *   { "chain": ["typecheck", "test", "boundaries", "standalone"] }
  *
- * 這份鍵不存在(或存在但是空陣列)→ exit 1 並印出範例——跟其餘五支守門一樣,
+ * 這份鍵不存在(或存在但是空陣列)→ exit 1 並印出範例——跟其餘守門一樣,
  * 「讀到 0 個目標」不是「沒事可做」,是設定沒填。
  *
  * 執行方式:對 `chain` 裡每個名字,先確認它真的是 package.json `scripts` 底下的一個鍵
@@ -36,7 +36,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { ROOT as GIT_ROOT, loadGatesConfig, readConfigJson, requireConfigType } from './_root.js';
 
-/** 三支掃描器共用的那句話(這支是第七支,一樣共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
+/** 所有掃描器共用的那句話。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
 /** 這支腳本在 gate 機器可讀標記裡的名字。 */

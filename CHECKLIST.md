@@ -185,9 +185,10 @@
 
 | placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
-| `{{ADVISOR_SESSION}}` | 技術顧問 session 的名字(`ListAgents` 看得到) | `llm-learning-cards-57` |
+| `{{ADVISOR_SESSION}}` | 技術顧問 session 的名字(`ListAgents` 看得到);這個名字會隨 session 重開而變,不要抄一次就當永遠不變(見 `PITFALLS.md` P-59) | `<你的專案>-advisor`(格式範例,不要照抄字面值) |
 | `{{LINT_COMMAND}}` | 對產出資料做健檢的指令 | `npm run lint:wiki` |
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
+| `{{PARALLEL_CAP}}` | 同時處於審核輪(跑變異測試)的 worktree 上限,由使用者依機器規格與帳號額度填,協調者不猜 | `3`(單機 Stryker 平行的 OOM 臨界值) |
 | `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
 §4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
 
@@ -205,7 +206,7 @@
 | placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
 | `{{TEMPLATE_VERSION}}` | `CLAUDE.md` 記的採用模板版本 | `1.0.0` |
-| `{{ADVISOR_SESSION}}` | 決策權表裡技術顧問的 session 名 | `llm-learning-cards-57` |
+| `{{ADVISOR_SESSION}}` | 決策權表裡技術顧問的 session 名(同上,會過期,不要照抄字面值) | `<你的專案>-advisor` |
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
 | `{{BASELINE_TAG}}` | 切換前打的舊制基準 tag 名(步驟 2) | AI_KM:`baseline-bmad`;nightmare:`safety/main-before-paradigm` |
 | `{{ARCHIVE_DIR}}` | 舊 story / 規格 / evidence 封存目錄(步驟 3) | AI_KM:`archive/`;nightmare:`dev/archive/stories/` |
@@ -215,10 +216,19 @@
 
 ## 收工前 / push 前檢查(不是 placeholder,是流程提醒)
 
-落地完成、進入日常運作之後,下面三條每輪或每次收工前都要過一遍(來源見 `PITFALLS.md` P-55 / P-56):
+落地完成、進入日常運作之後,下面幾條每輪或每次收工前都要過一遍(來源見 `PITFALLS.md` P-55 / P-56,
+以及 nightmare-assault 1.4.0 回報):
 
 - **收工前每個 worktree 已 commit**——未 commit 的工作在 session 結束時最脆弱,平台或機器一重開就不見了。
 - **push 前 `git log --oneline origin/main..HEAD` 逐條驗過**——不要只看 `git status` 就 push;`git push`
   推的是 HEAD 以下全部,不是「剛做的那個 commit」,合併與 push 之間插進來的任何 commit 都要先驗過。
 - **必跑清單裡的每一條都要是一個 npm script**(或等價的單一入口)——手打指令放進清單等於沒人會跑;
   新加守門一律先掛一個 `npm run` script 再寫進清單,並用「刻意弄壞、預期 ✗;修回來、預期 ✓」反向驗證過一次。
+- **改一條斷言(含只是加嚴)之後,重跑那個模組的變異測試**——不要假設「加嚴應該只會更嚴格」,
+  加嚴的方向本身可能就錯了(nightmare-assault commit 89317a9f,見 mutation-testing skill)。
+- **main 這棵工作樹同一時刻只准一個 agent 在動**:判斷誰在用,用 `readlink /proc/<pid>/cwd` 看 pid
+  的實際工作目錄是不是 main 的路徑,`grep -vx $$` 排除自己這個 shell 的 pid——nightmare-assault 曾經
+  因為沒排除自己而誤判成「main 被佔用」(假 BUSY)。
+- **在 main 上改任何檔案之前**,對每一個目前 in-progress 的分支跑一次
+  `git diff --name-only main...<branch> | grep <要改的檔案>`,全部為空才動手——這條跟上一條是同一個
+  「main 是共用資源」的問題在不同層面的檢查(pid 層 vs 分支內容層),兩個都要做(來源 nightmare-assault D14)。

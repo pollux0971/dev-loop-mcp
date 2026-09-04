@@ -35,18 +35,28 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 
 ## 2. 每輪流程
 
-1. **收割**:哪些 worktree 的審核回來了 → PASS 的合併(一次一個,`git checkout main && git merge --no-ff <branch>`,**不 rebase**,每個 phase 三輪 commit 的軌跡是刻意留的),合併後跑完整檢查:
+**在 main 上改任何檔案之前**,先對每個目前 in-progress 的分支確認它沒有同時在動同一個檔:
+```bash
+git diff --name-only main...<branch> | grep <要改的檔案>
+```
+每個 in-progress branch 都要為空才動手——這條在合併(步驟 1)、先修 main(§4)、技術顧問直接改規則層
+(§1 權責表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
+
+1. **收割**:哪些 worktree 的審核回來了 → PASS 的合併(一次一個,`git checkout main && git merge --no-ff <branch>`,**不 rebase**,每個 phase 三輪 commit 的軌跡是刻意留的),合併後跑完整檢查,**單一入口**:
    ```bash
-   npm run boundaries && npm run typecheck && npm test && npm run accept:standalone && npm run standalone
-   npm run accept:dry        # 必看「0 ambiguous」:步驟定義撞名不會讓任何測試變紅,只有這步抓得到
-   npm run accept:coverage   # 每個 phase feature 用自己的 tag 至少跑到 1 個場景(P-32);0 個資料夾也紅
-   npm run check:steps && npm run lint:docs
-   npm run check:gates       # 守門漂移偵測:模板路徑吃 {{TEMPLATE_DIR}},比對安裝目錄的守門腳本與同步當時的
-                             # sha256 是否一致,不一致就是真的漂移。**清單裡的每一條都必須是 npm script**,
-                             # 手打指令放進清單等於沒人會跑(P-55)——新加守門一律先在 package.json 掛一個
-                             # script 再寫進這份清單,並反向驗證一次(刻意弄壞,預期 ✗ exit 1;修回來,預期 ✓ exit 0)。
+   npm run check:all
    ```
-   **跑的是 main 現在的完整檢查清單,不是分支開工時的**:分支 base 比 main 舊時,main 新加的守門在分支上不存在,合併後必須補跑。
+   這支腳本讀 `scripts/gates.config.json` 的 `chain`(陣列,元素是 `package.json` `scripts` 底下的名字,依序執行,
+   例如 `["typecheck", "test", "boundaries", "standalone", "accept:standalone", "accept:dry", "accept:coverage",
+   "check:steps", "lint:docs"]`),不再是這份 SKILL 手寫一串 `&&` 串起來的指令——**必跑清單裡的每一項都必須是
+   `chain` 裡的一個名字,而每個名字都必須是 `package.json` `scripts` 裡真的存在的 npm script**,不存在會被
+   `check:all` 自己判定失敗並印「不是 npm script(P-55)」,不會被誤判成「沒事」。`chain` 是空陣列或缺欄位一樣
+   算失敗——「清單沒填」跟其餘掃描器的「0 目標」同一個道理,不是「沒事可做」。**清單裡的每一條都必須是 npm
+   script**,手打指令放進清單等於沒人會跑(P-55)——新加守門一律先在 `package.json` 掛一個 script、加進
+   `gates.config.json` 的 `chain`,並反向驗證一次(刻意弄壞,預期 ✗ exit 1;修回來,預期 ✓ exit 0)。
+   同步進來但還沒被任何 script 呼叫的守門(P-64)不會被 `check:all` 跑到——用 `sync-gates.sh --check` 的接線
+   檢查另外抓,不是這一步的責任。
+   **跑的是 main 現在的完整檢查清單(即 `gates.config.json` 目前的 `chain`),不是分支開工時的**:分支 base 比 main 舊時,main 新加的守門在分支上不存在,合併後必須補跑。
    **合併後留一份 junit 基準**(`reports/junit/<sha>.xml`,加進 `.gitignore`,不進版控):
    ```bash
    npx vitest run --reporter=junit --outputFile="reports/junit/$(git rev-parse --short HEAD).xml"
@@ -64,7 +74,10 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
    不是靠「少開」:**一次合一條**(合併回 main 一次只處理一個 phase 的分支,不批次合併)、**rebase 由協調者吸收**
    (worker 的分支落後 main 時,rebase 這件事由協調者做,不要求每個 worker 自己處理)。滿載(所有 ready 都已派出)
    時不重複派工,回到 1 收割;收割不到東西就做維護清單(§3)等下一輪。~~同時處於審核輪(跑變異測試)的 worktree ≤ 1~~
-   **已放寬回 3,檔案鎖排隊**(P-34):跨 worktree 的檔案鎖合併之後,變異測試會自己排隊,不再需要靠派工節流。
+   **已放寬回 `{{PARALLEL_CAP}}`,檔案鎖排隊**(P-34):跨 worktree 的檔案鎖合併之後,變異測試會自己排隊,不再需要靠派工節流。
+   `{{PARALLEL_CAP}}` 是使用者自己填的數字,**協調者不猜**——同時跑幾份變異測試不會撞到彼此的 OOM 上限,
+   取決於使用者的機器與帳號額度,沒有一個機器可讀的數字能推出這個上限;專案 A 填 `3`,理由是單機跑
+   Stryker 時 3 份平行大約是 OOM 的臨界值,換了機器規格這個數字要重新填,不是照抄。
    **`npm run mutate` 是唯一入口**,審核與開發都只准用它——直接叫 Stryker CLI 會繞過鎖(有測試守著)。
    **分數要附完整指令與設定檔**(範圍、旗標、`stryker.config.json` 的路徑):同一份程式碼、不同設定檔跑出來的分數
    不能比較(TS 型別檢查開關就能造成 3 分以上的差距),不附指令與設定檔的分數不算數(P-58)。每張照角色規則:
@@ -80,13 +93,24 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 3. `{{LINT_COMMAND}}` 的健檢結果,能自動修的修
 4. 文件漂移:roadmap 現況表、features/README.md 索引、各 FEATURE.md phase 表三者對不上的地方
 5. `npm audit` 的高風險項
-6. **掃最近的問題紀錄有沒有同型第三次出現**(PITFALLS 條目、REVIEW.md 的退回理由):同一種型態
+6. **技術顧問側「有沒有工作」六判準**(來源 nightmare-assault,commit 9745bd87):協調者的維護清單(本節
+   第 1–5、7、8 項)是**先跑**的一層,技術顧問是**最後一道**檢查——協調者清單全空之後,才輪到技術顧問
+   依序自己跑一遍下面六項,不是取代協調者的清單,是接在它後面:
+   1. 整合點紅清單(`docs/integration/*-REVIEW.md` 裡標紅、還沒排進工單的項目)
+   2. `docs/02-decision-map.md` / `DECISIONS_NEEDED.md` 裡**已批示但還沒落地**的項目
+   3. 接線孤兒(P-64:同步進來但沒接線的守門)或過期的 gate 引用(P-63)
+   4. 退化見證器報告裡**未標記為允許退化**的訊號(見 `docs/07-practices.md` (r))
+   5. 下一個整合點需要、但還沒開工單的 phase
+   6. 其餘維護類工作(標準級變異分數低、文件漂移、`npm audit` 之類,跟協調者清單重疊時共用同一份)
+   **六項全部檢查過、全部是空,而且把「怎麼數出空的」那條指令記進回報**,才算「技術顧問這邊也沒有工作」——
+   只憑印象說「應該沒事了」不算數,那正是這個清單本身要防的觀測塌縮(P-68)。
+7. **掃最近的問題紀錄有沒有同型第三次出現**(PITFALLS 條目、REVIEW.md 的退回理由):同一種型態
    第三次出現,不當個案處理——開一張處理這個型態本身的類項目工單(加一條 gate、改一條規則、
    或做一個小工具),已發生的個案列成這張工單底下的驗收清單(`docs/07-practices.md` (k))
-7. 本清單第 1–6 項裡,**同一項連續 3 輪都在清單上但沒被實際碰過** → 該項自動升級成一張正式工單
+8. 本清單第 1–7 項裡,**同一項連續 3 輪都在清單上但沒被實際碰過** → 該項自動升級成一張正式工單
    派出去,不要繼續留在「沒事可做時再看看」的狀態——「有空再做」等於不會做,這是協調者自己
    踩過的坑(`docs/07-practices.md` 「來自專案 A 協調者的做法」)
-8. 以上都空 → **停止迴圈**(`ScheduleWakeup stop`)前先做兩件事:
+9. 以上都空(含第 6 項技術顧問的六判準)→ **停止迴圈**(`ScheduleWakeup stop`)前先做兩件事:
    - **確認每個 worktree 都 commit 過**——未 commit 的工作在 session 結束時最脆弱,一旦平台或機器重開就不見了;
      跑不完就先 commit 到分支上,不要留在工作區裡等下一輪。
    - **技術顧問那邊的對應動作**(協調者提醒即可,實際驗證由顧問做):push 前 `git log --oneline origin/main..HEAD`
@@ -101,10 +125,13 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 - 完整檢查在 main 上紅 → **先修 main**,不派新工;修的時候若動到測試檔,**同一輪開一張 review 工單事後覆核**,每處寫「為什麼是測試錯不是實作錯」(P-49)
 - 根目錄有**已追蹤檔案**的未 commit 變更,或不在 main → 停,查是誰(P-12 / P-19);未追蹤目錄(例如產出資料)不觸發,但要確認它在 .gitignore 裡
 - 技術顧問 session 不在(`ListAgents` 找不到)→ 技術決策改成「**保守選項**(一次 `git revert` 就能整個還原的那個,P-57) + ADR 待覆核」,不問使用者
-- 同時進行的 worktree 已達 3 → 不派新工,先收割
+- 同時進行的 worktree 已達 `{{PARALLEL_CAP}}` → 不派新工,先收割
 - 已有一個審核輪在跑變異測試 → 其他審核輪先做不含變異的部分,或等待;agent 看到 stryker 退出碼 137 / 144 一律重跑,絕不把當次結果當分數(P-34)
 - **同一種 PITFALLS 類型第三次出現**(不論是條目本身或 REVIEW.md 的退回理由)→ 不逐案修,停下來開一張**範式級工單**
   (改 template 本體 + 加一條守門或規則),已發生的個案列成該工單的驗收清單,不繼續一個一個修(來源 nightmare-assault,`docs/07-practices.md` (k))
+- **同一條規則反覆被違反** → 不要先討論「規則是不是太嚴、要不要放寬」,**先查證守門有沒有真的跑過**
+  (查執行紀錄、查有沒有對應的 npm script 與接線,見 P-64);守門確實跑了、規則確實被正確執行還是反覆違反,
+  才輪到問「規則要不要改」。順序反了等於用放寬掩蓋一支從沒執行過的檢查(P-61,坑16)
 
 ## 4a. 停止條件 / 不是停止條件
 
@@ -151,6 +178,11 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 
 **協調者為了修 main 紅燈而動測試檔**:可以先修(§4「先修 main」優先),但**同一輪必須開一張 review 工單事後覆核**,
 工單裡逐處列出「為什麼是測試錯不是實作錯」。覆核者判定任一處其實是**放寬** → **退回**。
+
+**第四種情況不是合併造成的,是輸出層混訊**(P-69):如果紅燈的數字本身很怪(main 上不存在的失敗、跟上一輪
+明顯對不上),而終端輸出是經過 rtk 這類 token 節省代理層轉出來的,先懷疑輸出被另一個同機 worktree 的測試
+結果混進來,不要直接當成合併造成的迴歸去找原因——用 `rtk proxy <cmd>` 重跑一次未過濾的原始指令核對,
+數字對得上才繼續往「合併壞了什麼」的方向查。
 
 ## 4b. 平台操作備忘(Orca,實際踩過的)
 
