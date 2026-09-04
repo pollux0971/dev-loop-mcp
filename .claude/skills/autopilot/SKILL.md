@@ -42,6 +42,7 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
    npm run accept:coverage   # 每個 phase feature 用自己的 tag 至少跑到 1 個場景(P-32);0 個資料夾也紅
    npm run check:steps && npm run lint:docs
    ```
+   **跑的是 main 現在的完整檢查清單,不是分支開工時的**:分支 base 比 main 舊時,main 新加的守門在分支上不存在,合併後必須補跑。
    全綠 → tag、清 worktree、通知技術顧問「驗推」;FAIL 的照 test→dev→review 循環派 debug session。
 2. **算 ready**:照 sprint-planning 的規則讀所有 NEXT.md。三種 gate 全滿足 → ready。
 3. **派工**:**同開上限 = 目前 ready 集合的大小**——ready 多少個就可以開多少個,不再固定卡在某個數字
