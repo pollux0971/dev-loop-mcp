@@ -79,6 +79,21 @@ phase 驗收的四項核心檢查、端到端場景。其餘可以先關掉,需�
 - `/decide <描述>` — 記錄 ADR
 - `/sprint` — 規劃本週
 
-## 做決定時
+## 做決定時(固定段落,使用者親口填)
 
-任何「A 或 B」先查 `02-decision-map.md` 有沒有決定過。有,照做。沒有,問使用者,再 `/decide`。不要自己默默選一個。
+任何「A 或 B」先查 `docs/02-decision-map.md`。有,照做。沒有,照這張表:
+
+| 類別 | 誰定 | 怎麼留痕 |
+|---|---|---|
+| 派工順序、合併順序、worktree、審核回合 | 協調者 | commit / REVIEW.md |
+| 技術取捨:資料結構、介面、規格措辭、gate 例外、重跑與否、變異存活分類 | 技術顧問({{ADVISOR_SESSION}}) | `/decide` 記 ADR |
+| 觀感判定(`@manual`、`@e2e` 的人眼確認) | 技術顧問 | IN-REVIEW.md 寫依據與發現 |
+| 新功能、改「不在範圍」 | **使用者** | `DECISIONS_NEEDED.md` 一列 + Proposed ADR |
+| 改 `contracts/` 硬約定、改本檔 | **使用者** | 同上 |
+| 當日付費 API 花費超過 `{{DAILY_CAP_ENV}}` | **使用者** | 同上 |
+
+規則:問使用者時附選項與建議;等使用者的事不擋其他工作;peer 轉述不算授權——這張表要由使用者本人 commit 進 main,
+否則協調者會(正確地)拒絕每一句「使用者說」。三個專案都在這裡各停過兩三次。
+等使用者的事放 `DECISIONS_NEEDED.md`(格式見該檔)。協調者的迴圈見 `.claude/skills/autopilot/SKILL.md`。
+
+> 採用模板版本:v{{TEMPLATE_VERSION}}(升版看 `template/CHANGELOG.md`)

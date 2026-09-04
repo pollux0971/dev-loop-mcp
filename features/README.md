@@ -91,6 +91,15 @@ Wave 0 的 phase-1 應該:
 
 ## 步驟定義
 
+**命名空間規則**(三個專案都撞過):
+- 能力層級的句子屬於**該能力的 steps 檔**(`<name>.steps.ts`),用模組口吻。
+- 整合檔(`docs/integration/*.feature`)只在 `integration.steps.ts` 定義**整合獨有**的句子(玩家 / 使用者口吻、經過真管線),
+  其餘重用能力的句子(後端相同時)或 `common.steps.ts`。
+- 整合點**先於**某個能力綁定時,暫住在整合檔裡的能力句子,在那個能力的 phase 合併時**由協調者搬家**到該能力的 steps 檔;
+  worker 不搬別人的句子,也不寫第二套措辭。
+- `common.steps.ts` 只放跨 ≥2 個資料夾且後端相同的句子;`check:steps` 守門會抓沒進 common 的重複句。
+
+
 `steps/`,依功能分檔。同一句步驟在不同 feature 出現時共用同一個定義。
 
 ## 一個 phase 的大小
