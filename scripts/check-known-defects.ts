@@ -78,6 +78,7 @@ import {
   adrExists,
   featurePhaseRowExists,
   loadGatesConfig,
+  lookupConfig,
   readConfigJson,
   requireConfigType,
 } from './_root.js';
@@ -93,6 +94,7 @@ function argValue(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
 
 function configError(msg: string): never {
@@ -101,16 +103,12 @@ function configError(msg: string): never {
   process.exit(1);
 }
 
-function configSearchPathsList(name: string): string[] {
-  const paths: string[] = [];
-  const envDir = process.env.GATES_CONFIG_DIR;
-  if (envDir && existsSync(envDir)) paths.push(join(envDir, name));
-  paths.push(join(import.meta.dirname, name), join(ROOT, 'scripts', name));
-  return paths;
-}
-
-function findConfigFile(name: string): string | undefined {
-  return configSearchPathsList(name).find(existsSync);
+/** 委派給 `_root.ts` 的 `lookupConfig`(S14,來源 AI_KM 2026-09-06,PITFALLS P-73):
+ *  `--root` 明講時不退回這支腳本自己所在的目錄。每次呼叫印一行「<name>: 設定:...」。 */
+function findConfigFile(name: string): { path: string | undefined; hardErrorMessage: string | undefined; triedPaths: string[] } {
+  const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
+  console.log(`${name}: ${result.source}`);
+  return { path: result.path, hardErrorMessage: result.hardErrorMessage, triedPaths: result.triedPaths };
 }
 
 // ---------------------------------------------------------------------------
@@ -139,10 +137,12 @@ function nonEmptyString(v: unknown): v is string {
 /** 讀 `known-defects.json`,驗證每一筆的形狀,`fix_in` 的規則 (d)(e)。
  *  陣列裡帶 `_doc` 鍵的項目是 metadata,跳過(不算條目,不驗證形狀)。 */
 function loadRegistry(): { entries: DefectEntry[]; path: string } {
-  const p = findConfigFile(REGISTRY_FILENAME);
+  const found = findConfigFile(REGISTRY_FILENAME);
+  if (found.hardErrorMessage) configError(found.hardErrorMessage);
+  const p = found.path;
   if (!p) {
     configError(
-      `找不到 ${REGISTRY_FILENAME}(搜尋過:${configSearchPathsList(REGISTRY_FILENAME).join('、')})。` +
+      `找不到 ${REGISTRY_FILENAME}(搜尋過:${found.triedPaths.join('、')})。` +
         '範例見 template/scripts/known-defects.json。',
     );
   }
@@ -255,7 +255,8 @@ function resolveCucumberCwd(): string {
     if (!existsSync(resolved)) configError(`--cwd 指定的目錄不存在:${resolved}`);
     return resolved;
   }
-  const cfgPath = findConfigFile('gates.config.json');
+  // gates.config.json 對這支腳本是選填設定(cucumberCwd),不理會 hardErrorMessage。
+  const cfgPath = findConfigFile('gates.config.json').path;
   const cfg = loadGatesConfig(cfgPath, GATE_NAME);
   const cucumberCwd = cfg?.cucumberCwd;
   if (cucumberCwd !== undefined) {

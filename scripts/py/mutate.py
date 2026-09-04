@@ -75,6 +75,12 @@ Exit code：
       比對一致，但**還原後再跑一次指令仍然是紅的**——代表除了檔案內容之外還有
       殘留影響（建置快取、背景行程之類），需要人工檢查環境。--expect-fail 模式
       沒有這個 exit code。
+  7 = S12（模板 1.4.1）：`.mutate.lock` 存在,而且鎖記錄的 pid 還活著——另一個
+      mutate.py 正在跑,拒絕開始,不做任何檔案異動。
+  8 = S12：`.mutate.lock` 是殘留鎖(記錄的 pid 已死,通常是上一次執行被 SIGKILL
+      或崩潰、沒機會清掉鎖)且沒有帶 `--recover`,或鎖檔本身壞掉無法解析——前者
+      帶 `--recover` 重跑會先核對目標檔跟 git HEAD 是否一致、視需要還原、清鎖後
+      繼續;後者需要人工檢查鎖檔內容再手動刪除。
 
 被中斷時（STORY-70-18）：
   高負載機器上，本工具跑到一半可能被訊號殺掉（背景 pytest 過去兩天已
@@ -99,6 +105,7 @@ import os
 import signal
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -106,6 +113,143 @@ class MutateError(RuntimeError):
     def __init__(self, message: str, exit_code: int = 1):
         super().__init__(message)
         self.exit_code = exit_code
+
+
+# ---------------------------------------------------------------------------
+# S12（模板 1.4.1，來源 nightmare-assault）：進行中的突變測試拒絕別人 commit。
+#
+# 背景（P-34 的另一半）：P-34 已經在「同時跑幾個變異測試」這件事上加了一層跨
+# worktree 的檔案鎖（見上面 `_state_dir`／`_self_heal` 那組機制，那個鎖管的是
+# 「這個檔案的突變還原有沒有做完」，範圍是單一次突變、單一個檔案）。這裡要防的是
+# 另一種形狀：突變測試正在跑到一半（目標檔此刻是被突變過的、還沒還原的內容）時，
+# 有人（或某個自動化）在同一個 repo 對這個檔案（或別的檔案）下 `git commit`——
+# commit 進去的內容會是突變後的髒版本，而不是任何人真的想 commit 的東西。
+#
+# `.mutate.lock`（放在 repo root，不受 git 追蹤——跟 `.gitignore` 裡其餘暫存標記
+# 檔同一類）是「現在有一個 mutate.py 正在跑」的全域訊號，覆蓋整次執行（從跑基準
+# 到還原完成),不是只覆蓋「危險窗口」那幾行：
+#   - 啟動時寫入 `{"pid": ..., "file": ..., "started_at": "<ISO8601>", "cmd": "..."}`
+#   - **每一種**結束路徑都要刪掉它（正常結束、MutateError、SIGTERM/SIGINT——見下）
+#   - 鎖存在時再跑一次：
+#       * pid 還活著 → 拒絕，exit 7,「另一個 mutate 正在跑」
+#       * pid 已死（上一次執行被 SIGKILL 或崩潰,沒機會清掉鎖）→ 拒絕,
+#         exit 8,「殘留鎖(pid 已死):先 --recover」;帶 `--recover` 才繼續——
+#         先用 `git show HEAD:<file>` 核對鎖記錄的目標檔跟 git HEAD 是否一致,
+#         不一致就用 git blob 內容還原,再清掉鎖。
+#
+# `template/scripts/hooks/pre-commit`（S12 (b)）是這個鎖在 **commit 那一刻** 的
+# 防線:即使某個流程忘了先跑過 `check:*`,鎖存在就直接擋下 `git commit` 本身。
+# ---------------------------------------------------------------------------
+
+LOCK_FILENAME = ".mutate.lock"
+
+# SIGTERM/SIGINT 的訊號處理常式需要知道「現在有沒有已經取得的 `.mutate.lock`
+# 要清」——跟上面 `_ACTIVE`（危險窗口的還原資訊)是分開的兩件事:`.mutate.lock`
+# 覆蓋整次執行,`_ACTIVE` 只在套用突變之後、還原之前那段窗口存在。用一個獨立的
+# 全域變數記録目前持有鎖的 repo root,訊號 handler 才能在**任何時間點**被打斷都
+# 清得掉這個鎖,不只是危險窗口裡。
+_LOCK_ROOT: Path | None = None
+
+
+def _lock_path(root: Path) -> Path:
+    return root / LOCK_FILENAME
+
+
+def _pid_alive(pid: int) -> bool:
+    """`pid` 這個行程是否還活著。`kill(pid, 0)` 不送任何訊號,只做存在性檢查
+    （Unix 慣例)。權限不足(存在但不是同一個使用者)一律當作「還活著」——保守方向,
+    不要因為讀不到別人行程的狀態就誤判成死掉,錯的方向後果比較輕(頂多多等一次
+    `--recover`,不會誤刪還在跑的鎖)。"""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _write_lock(root: Path, file: str, cmd: str) -> None:
+    global _LOCK_ROOT
+    payload = {
+        "pid": os.getpid(),
+        "file": file,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "cmd": cmd,
+    }
+    _lock_path(root).write_text(json.dumps(payload), encoding="utf-8")
+    _LOCK_ROOT = root
+
+
+def _release_lock(root: Path) -> None:
+    global _LOCK_ROOT
+    try:
+        _lock_path(root).unlink(missing_ok=True)
+    except Exception as e:  # pragma: no cover - 清鎖本身壞掉時別再拋例外蓋掉原本的結果
+        print(f"[mutate.py] 警告:清除 {LOCK_FILENAME} 失敗({e}),請人工檢查。", file=sys.stderr)
+    _LOCK_ROOT = None
+
+
+def _recover_stale_lock(root: Path, data: dict) -> None:
+    """`--recover`:驗證殘留鎖記錄的目標檔案內容是否跟 git HEAD 一致(用
+    `git show HEAD:<file>` 讀 blob 內容比對,不用「兩個 dash 版的 checkout」——
+    跟本檔其餘還原邏輯同一套紀律,見檔頭說明),不一致就還原,一致就跳過還原;
+    不管有沒有真的還原,最後都把鎖刪掉。"""
+    rel_path = data.get("file")
+    if isinstance(rel_path, str) and rel_path:
+        abs_path = (root / rel_path).resolve()
+        if abs_path.is_file():
+            try:
+                head_sha = _run_git(root, ["rev-parse", f"HEAD:{rel_path}"])
+                if head_sha.returncode == 0:
+                    expected = _read_blob_bytes(root, head_sha.stdout.strip())
+                    actual = abs_path.read_bytes()
+                    if actual != expected:
+                        abs_path.write_bytes(expected)
+                        print(
+                            f"[mutate.py] --recover:{rel_path} 的內容跟 git HEAD 不一致(疑似殘留突變),"
+                            f"已用 git show HEAD:{rel_path} 還原。",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(f"[mutate.py] --recover:{rel_path} 的內容跟 git HEAD 一致,不需還原。", file=sys.stderr)
+                else:
+                    print(
+                        f"[mutate.py] --recover:{rel_path} 不在 git HEAD(可能是新檔案),略過還原,只清鎖。",
+                        file=sys.stderr,
+                    )
+            except Exception as e:  # pragma: no cover - 還原本身壞掉時仍要繼續清鎖,不要卡住
+                print(f"[mutate.py] --recover:核對/還原 {rel_path} 時發生錯誤({e}),略過還原,只清鎖。", file=sys.stderr)
+    _lock_path(root).unlink(missing_ok=True)
+    print(f"[mutate.py] --recover:殘留鎖 {LOCK_FILENAME} 已清除。", file=sys.stderr)
+
+
+def _acquire_lock(root: Path, file: str, cmd: str, recover: bool) -> None:
+    lock_path = _lock_path(root)
+    if lock_path.is_file():
+        try:
+            data = json.loads(lock_path.read_text(encoding="utf-8"))
+            pid = int(data["pid"])
+        except Exception as e:
+            raise MutateError(
+                f"殘留鎖 {lock_path} 內容無法解析({e})——需要人工檢查後手動刪除,"
+                "不會自動嘗試突變。",
+                exit_code=8,
+            )
+        if _pid_alive(pid):
+            raise MutateError(
+                f"另一個 mutate 正在跑(pid {pid},檔案 {data.get('file')})",
+                exit_code=7,
+            )
+        if not recover:
+            raise MutateError(
+                f"殘留鎖(pid {pid} 已死):先 --recover(檔案 {data.get('file')})",
+                exit_code=8,
+            )
+        _recover_stale_lock(root, data)
+    _write_lock(root, file, cmd)
 
 
 # STORY-70-18：目前進行中的突變（若有）的還原資訊。只有 SIGTERM/SIGINT
@@ -137,6 +281,16 @@ def _handle_kill_signal(signum: int, frame) -> None:  # noqa: ANN001 - signal ha
                 f"{state['rel_path']}）。",
                 file=sys.stderr,
             )
+    # S12：`os._exit()` 會跳過 Python 的 `finally` 區塊,`main()` 裡包住
+    # `.mutate.lock` 的 try/finally 因此攔不到訊號這條路——鎖要在這裡自己清,
+    # 不然這次執行被 SIGTERM/SIGINT 打斷之後,`.mutate.lock` 會永遠留在磁碟上,
+    # 變成下一次呼叫要用 `--recover` 才能清掉的殘留鎖(pid 已死那條路),
+    # 也會讓 pre-commit hook 一直誤判成「另一個 mutate 正在跑」直到有人手動處理。
+    if _LOCK_ROOT is not None:
+        try:
+            (_LOCK_ROOT / LOCK_FILENAME).unlink(missing_ok=True)
+        except Exception:  # pragma: no cover - 收尾清鎖失敗別再拋例外蓋掉訊號處理本身
+            pass
     os._exit(128 + signum)
 
 
@@ -702,10 +856,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--nth", type=int, default=None,
                         help="--replace 字串出現多次時，明示要突變第幾處（1-indexed）。"
                              "省略時要求 --replace 只能出現恰好一次，否則拒絕執行。")
+    parser.add_argument(
+        "--recover", action="store_true",
+        help="S12：`.mutate.lock` 是殘留鎖（pid 已死,上一次執行被 SIGKILL 或崩潰沒機會"
+             "清掉)時,才需要這個旗標——核對鎖記錄的目標檔跟 git HEAD 是否一致、不一致"
+             "就用 git show 還原,再清掉鎖,然後繼續往下跑這次的突變。鎖屬於還活著的"
+             "行程時,這個旗標不生效(exit 7,不是殘留鎖的情境)。",
+    )
     args = parser.parse_args(argv)
 
     try:
         root = find_repo_root()
+    except MutateError as e:
+        print(f"[mutate.py] 錯誤: {e}", file=sys.stderr)
+        return e.exit_code
+
+    # S12：`.mutate.lock` 覆蓋整次執行(不只是套用突變之後的危險窗口)——啟動時取得,
+    # 不管接下來走哪條路(正常結束、MutateError、或被 os._exit 直接結束的訊號路徑,
+    # 見 `_handle_kill_signal`)都要清掉,所以用 try/finally 包住整個突變流程。
+    cmd_desc = args.cmd if args.cmd is not None else f"--expect-fail {args.expect_fail}"
+    try:
+        _acquire_lock(root, args.file, cmd_desc, args.recover)
+    except MutateError as e:
+        print(f"[mutate.py] 錯誤: {e}", file=sys.stderr)
+        return e.exit_code
+
+    try:
         if args.cmd is not None:
             return run_mutation_cmd(
                 root=root, file=args.file, replace=args.replace, with_=args.with_,
@@ -718,6 +894,8 @@ def main(argv: list[str] | None = None) -> int:
     except MutateError as e:
         print(f"[mutate.py] 錯誤: {e}", file=sys.stderr)
         return e.exit_code
+    finally:
+        _release_lock(root)
 
 
 if __name__ == "__main__":

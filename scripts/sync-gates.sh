@@ -352,6 +352,19 @@ if [ "$MODE" = "--check" ]; then
   done
   for cfg in "${CONFIG_FILES[@]}"; do echo "○ $cfg(你的設定檔,不比對)"; done
 
+  # pre-commit hook 有沒有裝(S12,模板 1.4.1)——只是資訊性的一行,不算失敗:
+  # git hooks 天生不受版本控制,裝不裝是每個開發者自己的選擇,`--check` 只負責提醒,
+  # 不能因為沒裝就讓整個 --check 變紅。用「檔案第一行含 mutate.lock 這個字串」判斷
+  # 是不是這支模板的 hook(跟其餘檔案用 SOURCE 標頭判斷「是不是模板裝的」同一個道理,
+  # 只是 pre-commit 這個檔案本身**不能**有 SOURCE 標頭——那會把 shebang 往下推一行,
+  # git 執行 hook 時會找不到直譯器,見 scripts/hooks/pre-commit 檔頭說明)。
+  installed_hook="$TARGET/.git/hooks/pre-commit"
+  if [ -f "$installed_hook" ] && grep -q "mutate.lock" "$installed_hook" 2>/dev/null; then
+    echo "✓ pre-commit hook 已安裝"
+  else
+    echo "○ pre-commit hook 未安裝(選用;見 scripts/hooks/pre-commit,裝法:cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit)"
+  fi
+
   # 接線檢查(見上面「## 接線檢查」的說明)。只管 $DEST 底下的 .ts(py 工具不是靠
   # package.json 的 scripts 呼叫,不在這個檢查範圍內)。
   gates_cfg="$DEST/gates.config.json"
@@ -453,6 +466,18 @@ else
     prune_unselected
   fi
 
+  # pre-commit hook 本身(S12,模板 1.4.1)——同步進消費者的安裝目錄底下的 hooks/
+  # 子資料夾(每次同步都覆蓋,程式碼不是設定),但**不**自動裝進 `.git/hooks/`:
+  # git hooks 不受版本控制,自動覆寫別人手上已經裝好的 hook 比不裝更危險。這個檔案
+  # 刻意**不**插入 SOURCE 標頭(跟其餘 .ts/.py 不同)——它必須能被 git 直接執行,
+  # shebang 一定要留在第一行,插標頭會把 shebang 往下推一行讓 git 找不到直譯器。
+  if [ -f "$TEMPLATE_DIR/scripts/hooks/pre-commit" ]; then
+    mkdir -p "$DEST/hooks"
+    cp "$TEMPLATE_DIR/scripts/hooks/pre-commit" "$DEST/hooks/pre-commit"
+    chmod +x "$DEST/hooks/pre-commit"
+    echo "→ $DEST/hooks/pre-commit"
+  fi
+
   # needs-config 清單(CHANGELOG 1.4.0)要記「複製設定檔之前,consumer 原本就沒有這份
   # 設定」——複製動作本身會把 boundaries.owners.json / gates.config.json 從無變有
   # (放模板的佔位範例進去),如果在複製之後才判斷存在與否,永遠測不出「這是這次同步才
@@ -490,6 +515,16 @@ else
   if [ "${#needs_config[@]}" -gt 0 ]; then
     echo
     echo "needs-config: $(IFS=,; echo "${needs_config[*]}")(剛建立或原本就沒有,填好之前對應的 gate 會紅,不是壞了)"
+  fi
+
+  # S12(模板 1.4.1):提示怎麼裝 pre-commit hook——只印,不自動裝(理由見上面複製
+  # 那一段)。已經裝過(.git/hooks/pre-commit 含 mutate.lock 這個字串)就不用再提醒。
+  if [ -f "$TEMPLATE_DIR/scripts/hooks/pre-commit" ]; then
+    installed_hook="$TARGET/.git/hooks/pre-commit"
+    if ! { [ -f "$installed_hook" ] && grep -q "mutate.lock" "$installed_hook" 2>/dev/null; }; then
+      echo
+      echo "hook:cp $SUBDIR/hooks/pre-commit .git/hooks/pre-commit && chmod +x $SUBDIR/hooks/pre-commit .git/hooks/pre-commit(未安裝,hook 不進版控)"
+    fi
   fi
 fi
 

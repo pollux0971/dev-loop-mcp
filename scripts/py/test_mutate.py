@@ -102,6 +102,7 @@ def run_mutate_cli(
     expect_fail: str,
     mutate_py: Path = MUTATE_PY,
     nth: int | None = None,
+    recover: bool = False,
 ) -> subprocess.CompletedProcess:
     argv = [
         sys.executable, str(mutate_py),
@@ -112,6 +113,8 @@ def run_mutate_cli(
     ]
     if nth is not None:
         argv += ["--nth", str(nth)]
+    if recover:
+        argv += ["--recover"]
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
 
 
@@ -668,9 +671,15 @@ def test_ac_sigkill_leaves_dirty_tip_until_self_heal_on_next_run(tmp_path):
     print("[驗收證據] SIGKILL 剛結束時 git status（預期非空，證明 tip 是髒的）:",
           repr(status_after_kill.stdout))
 
+    # S12（模板 1.4.1）:SIGKILL 攔不到 handler,`.mutate.lock` 一樣會被留下(跟舊版
+    # 的 sentinel 狀態檔同一種殘留);裡面記的 pid 已經死了,下一次呼叫要先
+    # `--recover` 才能過鎖檢查——過了鎖檢查之後才會走到 `run_mutation()` 內部的
+    # `_self_heal()`,兩層自癒(鎖層要人明講 --recover、sentinel 層仍然全自動)
+    # 疊在一起,不是互相取代。
+    assert (repo / ".mutate.lock").exists(), "SIGKILL 之後 .mutate.lock 應該還留著(pid 已死)"
     heal_result = run_mutate_cli(
         repo, file="target.py", replace="return a + b", with_="return a * 100",
-        expect_fail="test_target.py::test_add",
+        expect_fail="test_target.py::test_add", recover=True,
     )
 
     combined = heal_result.stdout + heal_result.stderr
@@ -866,3 +875,227 @@ def test_ac_cmd_mode_mutually_exclusive_with_expect_fail(tmp_path):
 
     assert result.returncode == 2, result.stdout + result.stderr
     assert "not allowed with argument" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# S12（模板 1.4.1，來源 nightmare-assault）：`.mutate.lock` 拒絕別人在突變測試
+# 進行中 commit。守衛條件一律用測試自己獨立建構的狀態(P-74 的教訓:不可用被測
+# 對象算出的值當斷言是否成立的條件——例如不會呼叫 mutate 模組自己的 _pid_alive()
+# 來決定要不要斷言,而是用「真的 spawn 一個行程、真的等它結束」建構一個保證死掉
+# 的 pid,用「這個 subprocess 就是我自己的 pid,一定活著」建構一個保證活著的 pid)。
+# ---------------------------------------------------------------------------
+
+def _dead_pid() -> int:
+    """spawn 一個立刻結束的行程、等它結束——結束之後這個 pid 保證已經死了
+    (在測試的短時間窗口內,作業系統重用同一個 pid 的機率可忽略)。不用任何
+    「猜一個看起來很大的數字」這種取巧法,也不呼叫被測物件自己的存活判斷函式
+    來反推——這個 pid 死透是測試自己造出來的事實,不是問被測物件得到的答案。"""
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    pid = p.pid
+    rc = p.wait()
+    assert rc == 0
+    return pid
+
+
+def _write_raw_lock(repo: Path, *, pid: int, file: str = "target.py", cmd: str = "--expect-fail x") -> Path:
+    import json as _json
+
+    lock_path = repo / ".mutate.lock"
+    lock_path.write_text(
+        _json.dumps({"pid": pid, "file": file, "started_at": "2026-09-06T00:00:00+00:00", "cmd": cmd}),
+        encoding="utf-8",
+    )
+    return lock_path
+
+
+def test_lock_exit7_when_another_mutate_is_running(tmp_path):
+    """鎖記錄的 pid 是這個測試行程自己(os.getpid(),保證活著,不必問任何模組)
+    → exit 7,訊息含「另一個 mutate 正在跑」與 pid,而且完全沒有動到目標檔或
+    測試檔(拒絕發生在套用突變之前)。"""
+    import os as _os
+
+    repo = make_scratch_repo(tmp_path, name="lock_live")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+    _write_raw_lock(repo, pid=_os.getpid())
+
+    result = run_mutate_cli(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        expect_fail="test_target.py::test_add",
+    )
+
+    assert result.returncode == 7, result.stdout + result.stderr
+    assert "另一個 mutate 正在跑" in result.stdout + result.stderr
+    assert str(_os.getpid()) in result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+    # 鎖不是這次執行寫的,拒絕路徑不該去動別人的鎖。
+    assert (repo / ".mutate.lock").exists()
+
+
+def test_lock_exit8_stale_lock_without_recover(tmp_path):
+    """鎖記錄的 pid 已經真的死了、沒帶 --recover → exit 8,訊息講清楚要先
+    --recover,而且一樣完全沒有動到目標檔。"""
+    repo = make_scratch_repo(tmp_path, name="lock_stale_no_recover")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+    dead = _dead_pid()
+    _write_raw_lock(repo, pid=dead)
+
+    result = run_mutate_cli(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        expect_fail="test_target.py::test_add",
+    )
+
+    assert result.returncode == 8, result.stdout + result.stderr
+    assert "殘留鎖" in result.stdout + result.stderr
+    assert "--recover" in result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+
+
+def test_lock_recover_restores_mismatched_file_and_clears_lock_then_proceeds(tmp_path):
+    """殘留鎖(pid 已死)記錄的目標檔跟 git HEAD 不一致(模擬「上一次執行被
+    SIGKILL,檔案卡在突變後的髒內容」)、帶 --recover → 先還原成 git HEAD 版本、
+    清鎖,然後這次呼叫的突變**繼續往下跑**(不是清完鎖就結束),最後拿到正常的
+    exit 0(乾淨的突變測試通過),而且突變完成後檔案照樣還原回 TARGET_SRC。"""
+    repo = make_scratch_repo(tmp_path, name="lock_stale_recover")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+    dead = _dead_pid()
+    _write_raw_lock(repo, pid=dead, file="target.py")
+    # 模擬殘留的髒內容:跟 git HEAD(TARGET_SRC)不一致。
+    (repo / "target.py").write_text("def add(a, b):\n    return a - b  # 髒掉的殘留內容\n", encoding="utf-8")
+
+    result = run_mutate_cli(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        expect_fail="test_target.py::test_add",
+        # --recover 不是 run_mutate_cli 現有旗標,直接組 argv 呼叫。
+    )
+    # 上面那次呼叫沒帶 --recover,應該還是 exit 8(先確認「不帶 --recover 就是不行」
+    # 這個前提,不是憑空假設)。
+    assert result.returncode == 8, result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") != TARGET_SRC  # 還沒被動,仍然是髒的
+
+    argv = [
+        sys.executable, str(MUTATE_PY),
+        "--file", "target.py", "--replace", "return a + b", "--with", "return a - b",
+        "--expect-fail", "test_target.py::test_add", "--recover",
+    ]
+    recovered = subprocess.run(argv, cwd=repo, capture_output=True, text=True)
+
+    assert recovered.returncode == 0, recovered.stdout + recovered.stderr
+    assert "--recover" in recovered.stdout + recovered.stderr
+    assert "已用 git show" in recovered.stdout + recovered.stderr or "已還原" in recovered.stdout + recovered.stderr
+    # 突變測試本身跑完會把檔案還原回 git HEAD 版本(TARGET_SRC)。
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+    assert not (repo / ".mutate.lock").exists()
+
+
+def test_lock_recover_with_content_already_matching_head_still_clears_lock(tmp_path):
+    """殘留鎖記錄的目標檔其實跟 git HEAD 一致(沒有真的留下髒內容,例如訊號剛好
+    卡在寫鎖之後、套用突變之前)、帶 --recover → 不需要真的還原,一樣把鎖清掉、
+    繼續往下跑,拿到正常結果。"""
+    repo = make_scratch_repo(tmp_path, name="lock_stale_recover_clean")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+    dead = _dead_pid()
+    _write_raw_lock(repo, pid=dead, file="target.py")
+    # 目標檔沒有被動過,跟 git HEAD 一致。
+
+    argv = [
+        sys.executable, str(MUTATE_PY),
+        "--file", "target.py", "--replace", "return a + b", "--with", "return a - b",
+        "--expect-fail", "test_target.py::test_add", "--recover",
+    ]
+    result = subprocess.run(argv, cwd=repo, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "不需還原" in result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+    assert not (repo / ".mutate.lock").exists()
+
+
+def test_lock_removed_after_successful_run(tmp_path):
+    """正常的一次成功突變測試(exit 0)結束之後,`.mutate.lock` 不該留在磁碟上
+    ——回歸鎖:鎖只在「這次呼叫還在跑」的期間存在。"""
+    repo = make_scratch_repo(tmp_path, name="lock_cleanup_success")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+
+    result = run_mutate_cli(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        expect_fail="test_target.py::test_add",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (repo / ".mutate.lock").exists()
+
+
+def test_lock_removed_after_error_exit(tmp_path):
+    """啟動階段就出錯(檔案不存在,exit 1)一樣要清鎖——鎖是在錯誤發生前先取得的,
+    main() 的 try/finally 要包住整條路徑,不能只在「順利跑完」那條路才清。"""
+    repo = make_scratch_repo(tmp_path, name="lock_cleanup_error")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+
+    result = run_mutate_cli(
+        repo, file="does_not_exist.py", replace="x", with_="y",
+        expect_fail="test_target.py::test_add",
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert not (repo / ".mutate.lock").exists()
+
+
+def test_lock_written_with_expected_shape(tmp_path):
+    """單元層級直接呼叫 `_write_lock()`(不透過完整流程,避免鎖在檢查前就被自己的
+    finally 清掉),驗證寫進去的 JSON 有 pid / file / started_at(ISO8601)/ cmd
+    四個欄位,且 pid 是呼叫端自己這個行程(os.getpid(),不是猜的)。"""
+    import json as _json
+    import os as _os
+
+    repo = make_scratch_repo(tmp_path, name="lock_shape")
+    write_and_commit(repo, {"target.py": TARGET_SRC}, "init")
+    mutate_mod = _load_mutate_module("mutate_under_test_lock_shape")
+
+    mutate_mod._write_lock(repo, "target.py", "--expect-fail test_target.py::test_add")
+    try:
+        data = _json.loads((repo / ".mutate.lock").read_text(encoding="utf-8"))
+        assert data["pid"] == _os.getpid()
+        assert data["file"] == "target.py"
+        assert data["cmd"] == "--expect-fail test_target.py::test_add"
+        # ISO8601 帶時區,fromisoformat 解得回來就算合格(不細究時區偏移量本身)。
+        from datetime import datetime as _dt
+
+        _dt.fromisoformat(data["started_at"])
+    finally:
+        mutate_mod._release_lock(repo)
+    assert not (repo / ".mutate.lock").exists()
+
+
+def test_lock_corrupted_lock_file_exits_8_and_says_manual_check(tmp_path):
+    """`.mutate.lock` 本身不是合法 JSON(不是「pid 已死」那種可辨識的殘留狀態,
+    是鎖檔案自己壞了)→ exit 8,訊息要求人工檢查,不嘗試自動修復或猜測。"""
+    repo = make_scratch_repo(tmp_path, name="lock_corrupted")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "test_target.py": TEST_SRC}, "init")
+    (repo / ".mutate.lock").write_text("{ not valid json", encoding="utf-8")
+
+    result = run_mutate_cli(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        expect_fail="test_target.py::test_add",
+    )
+
+    assert result.returncode == 8, result.stdout + result.stderr
+    assert "無法解析" in result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+
+
+def test_lock_cmd_mode_also_respects_lock(tmp_path):
+    """`--cmd` 模式(不是只有 --expect-fail)一樣要走同一套鎖檢查——鎖是在
+    main() 分派到 run_mutation / run_mutation_cmd **之前**取得的,兩條路共用。"""
+    import os as _os
+
+    repo = make_scratch_repo(tmp_path, name="lock_cmd_mode")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "check.py": CMD_CHECK_SRC}, "init")
+    _write_raw_lock(repo, pid=_os.getpid())
+
+    result = run_mutate_cli_cmd(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        cmd=f"{sys.executable} check.py",
+    )
+
+    assert result.returncode == 7, result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC

@@ -67,18 +67,22 @@ const BASE_OWNERS = {
 };
 
 describe('check-boundaries:空/缺 owners 表一律 FAIL(消費者回報)', () => {
-  it('boundaries.owners.json 完全不存在 → exit 1,訊息是可執行的「尚未設定」', () => {
+  it('boundaries.owners.json 完全不存在,不帶 --root(一般已裝好之後正常執行的情境)→ exit 1,訊息是可執行的「尚未設定」', () => {
     const dir = makeFixture();
     // 「完全不存在」要真的模擬 sync 之後的安裝目錄(script 自己所在的目錄 = fixture 的
     // scripts/,裡面沒有 owners.json),不能只靠 --root 指開一個空目錄——那樣「腳本自己
     // 所在的目錄」(找設定檔的順位 1)仍然是模板真正的 scripts/,那裡永遠有一份真的
     // owners.json,會蓋掉這個測試想模擬的情境。所以這裡把 check-boundaries.ts 跟它依賴
-    // 的 _root.ts 複製進 fixture 的 scripts/,對這份複製本身執行——不設 GATES_CONFIG_DIR
-    // (順位 0),順位 1、2 都指到同一個沒有 owners.json 的目錄。
+    // 的 _root.ts 複製進 fixture 的 scripts/,對這份複製本身執行——不設 GATES_CONFIG_DIR、
+    // 也不帶 --root(S14 之後,--root 明講時這個情境會改印新的硬錯誤訊息,見下面
+    // 「S14」那個 describe 區塊;這裡要驗的是最常見的「consumer 裝好之後直接
+    // `npx tsx scripts/check-boundaries.ts` 正常執行,還沒填落點表」)。cwd 設在 fixture
+    // 目錄底下、fixture 不是 git repo,_root.ts 的 `resolveRoot()` 會退回 `process.cwd()`
+    // 本身,ROOT 因此就是 fixture 目錄,順位 1、2 都指到同一個沒有 owners.json 的目錄。
     copyFileSync(CHECK_BOUNDARIES_TS, join(dir, 'scripts', 'check-boundaries.ts'));
     copyFileSync(ROOT_TS, join(dir, 'scripts', '_root.ts'));
 
-    const r = spawnSync('npx', ['tsx', join(dir, 'scripts', 'check-boundaries.ts'), '--root', dir], {
+    const r = spawnSync('npx', ['tsx', join(dir, 'scripts', 'check-boundaries.ts')], {
       cwd: dir,
       encoding: 'utf8',
       timeout: SPAWN_TIMEOUT_MS,
@@ -376,4 +380,182 @@ describe('check-boundaries:S10 共用清單的 grep 迴歸測試', () => {
       expect(importsShared, `${f} 應該 import _root.ts 的共用略過清單`).toBe(true);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// S14(模板 1.4.1,來源 AI_KM 2026-09-05,PITFALLS P-73):--root 明講時的設定檔搜尋順序,
+// 不准退回腳本自身所在目錄(那通常是模板自己的佔位設定)。
+// ---------------------------------------------------------------------------
+
+describe('check-boundaries:S14 --root 明講時的設定檔解析(P-73)', () => {
+  it('--root 明講、沒設 GATES_CONFIG_DIR、<root>/scripts 沒有 owners.json → 印新的硬錯誤訊息,不退回腳本自身目錄,不是「尚未設定」', () => {
+    const dir = makeFixture();
+    copyFileSync(CHECK_BOUNDARIES_TS, join(dir, 'scripts', 'check-boundaries.ts'));
+    copyFileSync(ROOT_TS, join(dir, 'scripts', '_root.ts'));
+
+    const r = spawnSync('npx', ['tsx', join(dir, 'scripts', 'check-boundaries.ts'), '--root', dir], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
+    });
+    const code = r.status ?? -1;
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+
+    expect(code).toBe(1);
+    expect(output).toContain(
+      `✗ 設定檔未找到於 ${join(dir, 'scripts', 'boundaries.owners.json')}(--root 明講時不退回腳本自身目錄;要指定別處請設 GATES_CONFIG_DIR)`,
+    );
+    expect(output).not.toContain('✗ 尚未設定:找不到');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('模板路徑跟 consumer 路徑不同時,--root 明講會用 consumer 自己的 owners.json,不是腳本自身(模板)目錄那份', () => {
+    // 模擬事故的形狀:「模板路徑」下有一份佔位 owners.json;「consumer 路徑」是另一個
+    // 完全不同的 repo,有自己填好的 owners.json。從模板路徑直接執行、對 consumer 路徑
+    // 明講 --root、不設 GATES_CONFIG_DIR——應該用 consumer 的那份,不是模板腳本自己
+    // 所在目錄的那份。
+    const templateDir = makeFixture();
+    copyFileSync(CHECK_BOUNDARIES_TS, join(templateDir, 'scripts', 'check-boundaries.ts'));
+    copyFileSync(ROOT_TS, join(templateDir, 'scripts', '_root.ts'));
+    // 模板自己的佔位落點表:只認得一個 consumer 完全用不到的落點,如果不小心用了這份,
+    // consumer 的原始碼會變成全部 unmapped。
+    writeOwners(templateDir, {
+      owners: [['only-in-template/', 'template-owner'], ['contracts/', 'contracts']],
+      glue: [],
+      aliases: [],
+      scanDirs: ['packages'],
+      contractsOwner: 'contracts',
+    });
+
+    const consumerDir = makeFixture();
+    writeOwners(consumerDir, BASE_OWNERS);
+    writeAllow(consumerDir, []);
+    writeSrc(consumerDir, 'packages/a/index.ts', 'export const x = 1;\n');
+    writeSrc(consumerDir, 'packages/b/index.ts', 'export const y = 1;\n');
+
+    const r = spawnSync(
+      'npx',
+      ['tsx', join(templateDir, 'scripts', 'check-boundaries.ts'), '--root', consumerDir],
+      { cwd: templateDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS },
+    );
+    const code = r.status ?? -1;
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+
+    // 用的是 consumer 的落點表(packages/a、packages/b 都對得到落點)→ 無違規、無 unmapped。
+    expect(code).toBe(0);
+    expect(output).toContain(`設定:${join(consumerDir, 'scripts', 'boundaries.owners.json')}`);
+    expect(output).not.toContain(join(templateDir, 'scripts', 'boundaries.owners.json'));
+    expect(output).not.toContain('不在任何功能的落點內');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('GATES_CONFIG_DIR 仍然贏過 --root 與腳本自身目錄兩者(明講的覆蓋管道不受這次修改影響)', () => {
+    const dir = makeFixture();
+    const overrideDir = mkdtempSync(join(tmpdir(), 'lc-boundaries-override-'));
+    tmpDirs.push(overrideDir);
+    writeFileSync(
+      join(overrideDir, 'boundaries.owners.json'),
+      JSON.stringify({ ...BASE_OWNERS }),
+      'utf8',
+    );
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const r = spawnSync('npx', ['tsx', CHECK_BOUNDARIES_TS, '--root', dir], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
+      env: { ...process.env, GATES_CONFIG_DIR: overrideDir },
+    });
+    const code = r.status ?? -1;
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+
+    expect(code).toBe(0);
+    expect(output).toContain(`設定:${join(overrideDir, 'boundaries.owners.json')}(GATES_CONFIG_DIR)`);
+  }, SPAWN_TIMEOUT_MS);
+});
+
+// ---------------------------------------------------------------------------
+// S11(模板 1.4.1,來源 nightmare-assault):涵蓋率永遠印 + 棘輪基準(只准升不准降)。
+// ---------------------------------------------------------------------------
+
+describe('check-boundaries:S11 涵蓋率永遠印 + 棘輪', () => {
+  it('0 個違規時也印涵蓋率那一行(舊版只在 checked==0 才提涵蓋,其餘情況完全不提——回歸鎖)', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeAllow(dir, []);
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(0);
+    expect(output).toMatch(/涵蓋:納管 1 \/ 掃描 1 檔\(100\.0%\)/);
+    expect(output).toContain('(無)');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('有 unmapped 檔案時,涵蓋率行列出未納管的第一層子目錄與檔案數', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeAllow(dir, []);
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+    // packages/newthing/ 沒有在 owners 表裡,兩個檔案都會落到同一個「未納管目錄」。
+    writeSrc(dir, 'packages/newthing/one.ts', 'export const a = 1;\n');
+    writeSrc(dir, 'packages/newthing/two.ts', 'export const b = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toMatch(/涵蓋:納管 1 \/ 掃描 3 檔\(33\.3%\)/);
+    expect(output).toContain('packages/newthing(2 個檔案未納管)');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('coverageBaseline 存在、這次涵蓋率比基準低 → 棘輪判失敗,印「涵蓋率下降」,不准降', () => {
+    const dir = makeFixture();
+    writeOwners(dir, { ...BASE_OWNERS, coverageBaseline: { managed: 2, scanned: 2 } });
+    writeAllow(dir, []);
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+    writeSrc(dir, 'packages/newthing/one.ts', 'export const a = 1;\n'); // 這次只有 1/2 納管,基準是 2/2
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 涵蓋率下降:1/2(50.0%) < 基準 2/2(100.0%)(只准升)');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('coverageBaseline 存在、這次涵蓋率比基準高 → 通過,並提示可以把基準改高', () => {
+    const dir = makeFixture();
+    writeOwners(dir, { ...BASE_OWNERS, coverageBaseline: { managed: 1, scanned: 2 } });
+    writeAllow(dir, []);
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+    writeSrc(dir, 'packages/b/index.ts', 'export const y = 1;\n'); // 這次 2/2 納管,基準只要求 1/2
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(0);
+    expect(output).toContain('○ 涵蓋率上升,可把基準改成 2/2');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('coverageBaseline 型別錯(managed 不是數字)→ 設定壞掉大聲失敗(S9 同一套)', () => {
+    const dir = makeFixture();
+    writeOwners(dir, { ...BASE_OWNERS, coverageBaseline: { managed: 'two', scanned: 2 } });
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('設定檔鍵型別錯:coverageBaseline.managed 應為 number');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('既有行為不受影響(回歸):一般跨擁有者違規仍然照舊判失敗、訊息不變', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeAllow(dir, []);
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+    writeSrc(dir, 'packages/b/index.ts', "import { x } from '../a/index';\nexport const y = x;\n");
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('owner-b → owner-a');
+    expect(output).toMatch(/涵蓋:納管 2 \/ 掃描 2 檔\(100\.0%\)/);
+  }, SPAWN_TIMEOUT_MS);
 });

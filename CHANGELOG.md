@@ -4,6 +4,120 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.4.1 — 2026-09-05
+
+**Patch**:1.4.0 三支新守門的修補版——`check-doc-rot.ts` 加 report 模式、`--self-test`、
+事故日誌預設排除;`check-boundaries.ts` 永遠印涵蓋率並加只升不降的棘輪;
+`scripts/py/mutate.py` 加檔案鎖擋住突變測試進行中的 commit,配一支 `pre-commit` hook;
+`_root.ts` 修正「從模板路徑對別的 repo 跑守門會靜默用到模板自己設定」的搜尋順序漏洞;
+外加五條坑(NA-2 空集合恆真、新守門叫狼、涵蓋率盲區、模板路徑設定漏洞、守衛條件套套邏輯)。
+來源:nightmare-assault(第五批回報)、AI_KM(commit 讀寫 read-only 驗證,2026-09-05)、
+專案 A(協調者 + 覆核 agent,commit a93e59b 覆核)。
+
+### `check-doc-rot.ts`(S13)
+
+- **`docRot.mode`**(`gates.config.json`,`"report"` | `"enforce"`,**全新安裝預設 `"report"`**):
+  命中一樣全部印出來、`gate=doc-rot result=FAIL` 標記一樣印,但 `"report"` 模式 exit 0,不擋
+  其他工作;`"enforce"` 才 exit 1。動機見 PITFALLS P-71:nightmare-assault 自己的第一版
+  doc-rot 掃出 310 筆命中,逐項排查收斂到 34 筆,**全部**是假警報——新守門第一版幾乎必然
+  抓到規則設計沒想到的合理例外,default enforce 只會逼團隊在還沒摸清規則之前就被擋。
+- **預設排除清單擴充**(`DEFAULT_EXCLUDE_GLOBS`):`docs/02-decision-map.md`、`docs/adr/**`
+  (沿用 1.4.0)之外,新增 `**/PITFALLS.md`、`**/CHANGELOG.md`——這兩份是事故日誌,合理地會
+  逐字引用「曾經出過的問題長什麼樣子」。`gates.config.json` 的 `docRot.exclude`(glob 陣列)
+  追加在預設清單之後,不取代。
+- **`--self-test`**:對現在讀到的黑名單,替每一條規則合成一個會命中它自己的探針字串
+  (處理常見的 `\d` `\w` `\s` 量詞與逃脫字元),寫進臨時目錄跑一次掃描,要求命中數 = 規則數;
+  任何一條規則的探針合成不出來(對自己沒命中)→ 誠實回報「哪一條沒命中」並 exit 1,不假裝
+  每條規則都測得出來(PITFALLS P-68/P-71 的具體實作:「0」要能分辨是乾淨還是探針壞了)。
+- **`note` 選填欄位** + 陣列 `_doc` metadata 項目:黑名單每一筆可以帶 `note` 記錄「這條規則
+  收斂時的判斷依據」;陣列裡帶 `_doc` 鍵的項目是說明,不算條目(跟 `known-defects.json` 同一個
+  慣例)。一筆出現不認識的欄位(打錯字)一律大聲失敗,跟 S9 同一套紀律。
+- `doc-rot.blacklist.json` 補上 `_doc` 說明項目,講清楚 report 模式的預設與升級到 enforce 前的
+  觸發時機。
+
+### `check-boundaries.ts`(S11)
+
+- **涵蓋率永遠印**,不再只在有 unmapped 檔案時才提:`涵蓋:納管 N / 掃描 M 檔(x%),未納管目錄:`,
+  0 個違規時也印(舊版完全不提)。列出每一個含未納管檔案的第一層子目錄(相對掃描根目錄)與
+  各自的未納管檔案數,不是只列扁平的檔案清單。動機見 PITFALLS P-72:舊版只在「掃到 0 個檔案」
+  時宣稱「掃描器壞了」,一個**故意**只填一半的落點表(整個資料夾從沒被納管過)在舊版看起來
+  跟填滿的落點表一樣是綠燈。
+- **`boundaries.owners.json` 新增選填 `coverageBaseline: { managed, scanned }`**:存在時,這次
+  跑出來的納管比例必須 ≥ 基準(交叉相乘比較,不用浮點除法),否則 `✗ 涵蓋率下降:<now> < 基準
+  <baseline>(只准升)` 並判失敗;比例上升時印 `○ 涵蓋率上升,可把基準改成 N/M` 提示手動更新
+  基準。棘輪本身壞掉(型別錯、`managed > scanned`)大聲失敗,跟其餘設定同一套 S9 紀律。
+
+### `scripts/py/mutate.py` + `scripts/hooks/pre-commit`(S12)
+
+- **`.mutate.lock`**(repo root,JSON:`pid`、`file`、`started_at`、`cmd`):`mutate.py` 啟動時
+  寫入,**所有**結束路徑(正常結束、`MutateError`、SIGTERM/SIGINT)都清掉。鎖存在時:pid 還活著
+  → 拒絕,exit 7,「另一個 mutate 正在跑」;pid 已死(上一次執行被 SIGKILL 或崩潰)→ 拒絕,
+  exit 8,「殘留鎖:先 `--recover`」;帶 `--recover` 才繼續——先用 `git show HEAD:<file>` 核對
+  鎖記錄的目標檔跟 git HEAD 是否一致,不一致就用 git blob 內容還原,一致就跳過還原,兩種情況
+  都清鎖後繼續往下跑這次的突變。鎖檔本身解析不出來(壞掉的 JSON)一樣 exit 8,要求人工檢查。
+- **`scripts/hooks/pre-commit`**(bash,可執行,新檔):認得 `.mutate.lock`(本模板寫的)與
+  `.stryker.lock`(消費者專案常見的 TS 版變異測試鎖檔名,模板本身不寫這個檔,純粹一併檢查)
+  兩種鎖檔——pid 還活著就拒絕 commit、pid 已死就提示怎麼復原、鎖檔解析不出 pid 就要求人工
+  檢查。**不會被 `sync-gates.sh` 自動裝進 `.git/hooks/`**(git hooks 不受版本控制,自動覆寫
+  別人手上已經裝好的 hook 比不裝更危險)——`sync` 只把這個檔案本身同步進 `<安裝目錄>/hooks/
+  pre-commit`(**不插入 SOURCE 標頭**,理由是這個檔案必須能被 git 直接執行,shebang 一定要
+  留在第一行),並印出手動安裝指令:`hook:cp <安裝目錄>/hooks/pre-commit .git/hooks/pre-commit
+  && chmod +x ...(未安裝,hook 不進版控)`。`--check` 新增一行資訊性提示(不算失敗):
+  `.git/hooks/pre-commit` 沒有 `mutate.lock` 這個字串 → `○ pre-commit hook 未安裝`。
+
+### `_root.ts` 的設定檔搜尋順序(S14,來源 AI_KM,PITFALLS P-73)
+
+- 新增 `lookupConfig(scriptDir, name, { root, rootExplicit })`:`rootExplicit`(呼叫端這次有沒有
+  明講 `--root`)為 `true` 時,「腳本自己所在的目錄」這個候選**整個拿掉**,只剩
+  `GATES_CONFIG_DIR` → `<root>/scripts/` 兩層,找不到就回傳 `hardErrorMessage`(呼叫端印出來、
+  印 gate 標記、`exit 1`,不悄悄退回模板自己的範例設定);`rootExplicit` 為 `false`(consumer
+  正常執行,沒帶 `--root`)時搜尋順序不變。同時回傳 `source`,供每支 gate 印
+  `<name>: 設定:<resolved path>`(或 `設定:無,使用預設`)那一行透明度訊息。
+- `check-boundaries.ts`、`check-doc-rot.ts`、`check-next-gates.ts`、`check-known-defects.ts`、
+  `check-all.ts` 五支原本各自維護一份本地 `configSearchPathsList`/`findConfigFile` 的腳本,
+  全部改呼叫 `lookupConfig`——`boundaries.owners.json`、`doc-rot.blacklist.json`、
+  `known-defects.json`、`check-all.ts` 的 `gates.config.json`(必要設定)在 `hardErrorMessage`
+  出現時直接大聲失敗;其餘選填設定(`boundaries.allow.json`、其餘的 `gates.config.json` 讀取)
+  不理會 `hardErrorMessage`,找不到就照舊當「沒有這份選填設定」處理。
+- 事故重現(read-only 驗證):`check-boundaries.ts --root /data/python/AI_KM` 在沒設
+  `GATES_CONFIG_DIR` 時,從模板路徑跑會靜默套用模板自己的佔位 `owners.json`(FAIL scanned=0 /
+  248 unmapped);設 `GATES_CONFIG_DIR=<root>/scripts` 之後正確(PASS scanned=358,跟 consumer
+  已裝版一致)。修完之後,不設 `GATES_CONFIG_DIR` 直接對 `--root` 指到的 consumer 跑,`<root>/
+  scripts/` 已經是新的搜尋目標,不再需要繞道 `GATES_CONFIG_DIR` 才能對到——`GATES_CONFIG_DIR`
+  仍然保留、仍然優先,只是不再是唯一的解法。
+
+### 文件
+
+- **`PITFALLS.md`**:新增 P-70(NA-2,全稱量詞在空集合上恆真,跟 P-68 並列互相加註)、
+  P-71(新守門第一版必然叫狼)、P-72(涵蓋率盲區:gate 綠但沒在看那一塊)、P-73(從模板路徑
+  對別的 repo 跑守門靜默用了模板自己的設定)、P-74(守衛條件不可用被測對象算出的值當條件)。
+- **`.claude/skills/phase-acceptance/SKILL.md`**:第三步半守衛問句補第五段——「全部 X 都…:
+  X 可以是空的嗎?非空守衛在哪?」。
+- **`docs/07-practices.md`**:新增 (z) 守衛(`if` 才斷言、skip 條件、提早 return)不可用被測
+  對象算出的值當條件,證據來自覆核 `mutate.test.ts` 自己改壞的一條斷言。
+- **`README.md`**:新增 doc-rot 出貨即 report 模式(先看觸發清單,清乾淨才切 enforce)與
+  pre-commit hook 手動安裝的說明。
+
+### 升版指南 1.4.0 → 1.4.1
+
+1. **`check:doc-rot` 的行為預設變寬鬆**:原本命中就 exit 1,現在預設 `docRot.mode = "report"`
+   ——命中還是會印出來、`gate=doc-rot result=FAIL` 標記還是會印,但不再擋 `chain`/CI。**這是
+   刻意的降級,不是 bug**:第一次觸發清單先當成 triage list 看,逐項確認完(哪些是真的問題、
+   哪些是合理例外要收進 `docRot.exclude`)之後,再把 `gates.config.json` 加上
+   `"docRot": { "mode": "enforce" }` 切回原本的擋行為。
+2. **升版後第一次跑 `check:doc-rot`,`PITFALLS.md`/`CHANGELOG.md` 裡原本會命中的字串現在預設
+   不報**(新加的排除清單)——如果你的黑名單規則刻意要抓這兩個檔案裡的內容,改用
+   `docRot.exclude` 排除清單以外的機制(這種情境理論上很少見)。
+3. **`boundaries.owners.json` 可以加 `coverageBaseline`**:先跑一次 `npm run boundaries` 看目前
+   的「涵蓋:納管 N / 掃描 M 檔」那一行,把 N/M 填進去當起始基準,之後涵蓋率只能升不能降。
+   不填也完全沒事——`coverageBaseline` 是選填的,沒有就沒有棘輪這一層檢查。
+4. **裝 pre-commit hook(選用但建議)**:`sync-gates.sh` 同步之後照它印出的
+   `hook:cp <安裝目錄>/hooks/pre-commit .git/hooks/pre-commit && chmod +x ...` 那行指令手動安裝
+   ——不會自動裝,git hooks 本來就不受版本控制。
+5. **`scripts/py/mutate.py` 現在會在 repo root 留下 `.mutate.lock`**(執行期間存在,結束後清掉)
+   ——正常情況下不需要改任何東西;如果曾經手動殺掉一個卡住的 `mutate.py` 行程(`kill -9`),
+   下次執行同一個檔案的突變測試會遇到 exit 8「殘留鎖」,照訊息帶 `--recover` 重跑一次即可。
+
 ## 1.4.0 — 2026-09-05
 
 **Minor**:新增四支守門腳本、`sync-gates.sh` 的接線檢查、`gates.config.json` 的設定壞掉大聲失敗

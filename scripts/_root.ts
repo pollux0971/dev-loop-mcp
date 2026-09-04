@@ -71,6 +71,83 @@ export function configSearchPaths(scriptDir: string, name: string): string[] {
 }
 
 /**
+ * S14(來源 AI_KM,2026-09-05;PITFALLS P-73)——`--root` 明講對別的 repo 跑守門時的設定檔
+ * 解析,跟上面 `resolveConfig`/`configSearchPaths` 是同一個問題的另一半:那兩個函式綁死
+ * 模組層級的 `ROOT`(現場 cwd 所在的 git repo),完全不知道呼叫端可能用 `--root <dir>`
+ * 明講了一個**不同**的目標 repo(`check-boundaries.ts`、`check-doc-rot.ts` 這幾支支援
+ * `--root` 的腳本各自另外維護一份 `configSearchPathsList`,原因正是這裡)。
+ *
+ * 事故(P-73):consumer 在**模板路徑**下對別的 repo 跑
+ * `check-boundaries.ts --root /data/python/AI_KM`,沒有設 `GATES_CONFIG_DIR`——搜尋順序
+ * 舊版是「腳本自己所在目錄 → `<root>/scripts/`」,不管 `--root` 有沒有明講都一樣,順位 1
+ * 永遠先中——於是靜默套用了**模板自己的**佔位 `boundaries.owners.json`(FAIL
+ * scanned=0 / 248 unmapped),不是 consumer 裝好的那份;加上 `GATES_CONFIG_DIR` 才對。
+ * 跟 P-43 同型:模板端「看起來綠」蓋住了真正該讀的設定沒被讀到。
+ *
+ * 修法(這裡是規則,呼叫端把 `rootExplicit` 設成「這次呼叫有沒有給 `--root`」):
+ *   - `--root` **沒有**明講(consumer 裝好之後在自己 repo 裡正常執行)→ 順序不變:
+ *     `GATES_CONFIG_DIR` → 腳本自己所在目錄(sync 後是 consumer 的安裝目錄)→
+ *     `<root>/scripts/`。
+ *   - `--root` **明講**了 → 「腳本自己所在目錄」這個候選整個拿掉,只剩
+ *     `GATES_CONFIG_DIR` → `<root>/scripts/`——找不到就是**缺席要抱怨,不要降級**:
+ *     回傳的 `hardErrorMessage` 讓呼叫端印出來、印 gate 標記、`exit 1`,不准安靜地退回
+ *     模板自己目錄下的範例設定當作「找到了」繼續跑(那正是這次事故的成因)。
+ *   `GATES_CONFIG_DIR` 兩種情況下都優先,不受 `rootExplicit` 影響——它就是「這次跑模板版
+ *   時,設定要去哪裡找」的明講管道(`verify-against.sh` 用的就是它)。
+ *
+ * 同時回傳 `source`(供每支 gate 印「設定:<resolved path>」透明度那一行——找不到就是
+ * 「設定:無,使用預設」,讓讀 log 的人第一行就看得出這次到底讀了哪份設定,不用等到掃描
+ * 結果對不上才回頭懷疑設定檔)。
+ */
+export interface ConfigLookup {
+  /** 解析出來的路徑;找不到是 `undefined`。 */
+  path: string | undefined;
+  /** 給「設定:...」那一行印的說明文字。 */
+  source: string;
+  /** 只有「`--root` 明講、且 `GATES_CONFIG_DIR` 沒有覆蓋、且 `<root>/scripts/<name>`
+   *  也沒有」這個組合才會填——呼叫端看到有值就代表要大聲失敗,不是靜默略過。 */
+  hardErrorMessage?: string;
+  /** 依序嘗試過的路徑,供呼叫端自己組「找不到」訊息時引用(跟舊版 `configSearchPaths`
+   *  的用途一樣,這裡是 `rootExplicit` 版本)。 */
+  triedPaths: string[];
+}
+
+export function lookupConfig(
+  scriptDir: string,
+  name: string,
+  opts?: { root?: string; rootExplicit?: boolean },
+): ConfigLookup {
+  const root = opts?.root ?? ROOT;
+  const rootExplicit = opts?.rootExplicit ?? false;
+  const envDir = process.env.GATES_CONFIG_DIR;
+  const triedPaths: string[] = [];
+  if (envDir && existsSync(envDir)) {
+    const p = join(envDir, name);
+    triedPaths.push(p);
+    if (existsSync(p)) return { path: p, source: `設定:${p}(GATES_CONFIG_DIR)`, triedPaths };
+  }
+  if (rootExplicit) {
+    const p = join(root, 'scripts', name);
+    triedPaths.push(p);
+    if (existsSync(p)) return { path: p, source: `設定:${p}`, triedPaths };
+    return {
+      path: undefined,
+      source: '設定:無,使用預設',
+      hardErrorMessage:
+        `設定檔未找到於 ${p}(--root 明講時不退回腳本自身目錄;要指定別處請設 GATES_CONFIG_DIR)`,
+      triedPaths,
+    };
+  }
+  const scriptDirPath = join(scriptDir, name);
+  triedPaths.push(scriptDirPath);
+  if (existsSync(scriptDirPath)) return { path: scriptDirPath, source: `設定:${scriptDirPath}`, triedPaths };
+  const rootScriptsPath = join(root, 'scripts', name);
+  triedPaths.push(rootScriptsPath);
+  if (existsSync(rootScriptsPath)) return { path: rootScriptsPath, source: `設定:${rootScriptsPath}`, triedPaths };
+  return { path: undefined, source: '設定:無,使用預設', triedPaths };
+}
+
+/**
  * 設定檔壞掉要大聲失敗(S9,來源:專案 A 協調者)。
  *
  * 動機:一個消費者實測到,`gates.config.json` 打壞(手改壞掉的 JSON、鍵打錯字、

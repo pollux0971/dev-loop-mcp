@@ -45,13 +45,14 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { ROOT as GIT_ROOT, loadGatesConfig, readConfigJson, resolveSkipDirs } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig, readConfigJson, requireConfigType, resolveSkipDirs } from './_root.js';
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
 const VERBOSE = process.argv.includes('--verbose');
 
@@ -62,37 +63,17 @@ const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 const GATE_NAME = 'boundaries';
 
 /**
- * 找一份設定檔(`boundaries.owners.json` / `boundaries.allow.json`)的順序(env 優先權
- * 見 CHANGELOG 1.3.4 (3)):
- *   0. 環境變數 `GATES_CONFIG_DIR`(若設且該目錄存在)——`verify-against.sh` 跑模板版
- *      `check-boundaries.ts` 時會設這個,不然「這支腳本自己所在的目錄」(順位 1)在那個
- *      情境下是模板自己的 `scripts/`(佔位 owners.json),永遠比不出跟 consumer 一致。
- *   1. 這支腳本自己所在的目錄(sync 後就是 consumer 的安裝目錄,例如 `features/scripts/`)
- *   2. `<ROOT>/scripts/`(ROOT 是上面算出來的那個,`--root` 覆蓋時用覆蓋值,不是全域 git root——
- *      這支腳本本來就支援對別的 repo 跑,設定檔搜尋要跟著同一個 ROOT 走;這也是這支腳本沒有
- *      直接用 `_root.ts` 的 `resolveConfig` 的原因——那支用的是模組層級固定的 git ROOT,
- *      不會跟著 `--root` 走)
- * 三處都沒有 → 回傳 undefined,呼叫端決定必要設定要不要印「設定檔未找到於 <搜尋過的路徑>」並 exit 1。
+ * 找一份設定檔(`boundaries.owners.json` / `boundaries.allow.json`)——委派給 `_root.ts`
+ * 的 `lookupConfig`(S14,來源 AI_KM 2026-09-05,PITFALLS P-73):`--root` 有沒有明講
+ * 決定要不要允許退回這支腳本自己所在的目錄(那通常是模板自己的佔位設定,`--root` 明講時
+ * 退回去就是 P-73 那次事故本身)。每次呼叫印一行「<name>: 設定:...」(找不到印
+ * 「設定:無,使用預設」),讀 log 的人第一行就看得出這次讀了哪份設定,不用等掃描結果
+ * 對不上才回頭懷疑設定檔。
  */
-function configSearchPathsList(name: string): string[] {
-  const paths: string[] = [];
-  const envDir = process.env.GATES_CONFIG_DIR;
-  if (envDir && existsSync(envDir)) {
-    paths.push(join(envDir, name));
-  }
-  paths.push(join(import.meta.dirname, name), join(ROOT, 'scripts', name));
-  return paths;
-}
-
-function findConfigFile(name: string): string | undefined {
-  for (const c of configSearchPathsList(name)) {
-    if (existsSync(c)) return c;
-  }
-  return undefined;
-}
-
-function configSearchPathsDisplay(name: string): string {
-  return configSearchPathsList(name).join('、');
+function findConfigFile(name: string): { path: string | undefined; hardErrorMessage: string | undefined; triedPaths: string[] } {
+  const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
+  console.log(`${name}: ${result.source}`);
+  return { path: result.path, hardErrorMessage: result.hardErrorMessage, triedPaths: result.triedPaths };
 }
 
 /**
@@ -123,6 +104,9 @@ interface OwnersConfig {
   scanDirs: string[];
   /** 對到這個擁有者的 import 一律放行(不算跨界),通常是 contracts。 */
   contractsOwner: string;
+  /** S11(來源 nightmare-assault):涵蓋率棘輪的基準——選填。存在時,這次跑出來的
+   *  「納管/掃描」比例必須 ≥ 這裡記的比例,否則判失敗(只准升,不准降)。 */
+  coverageBaseline?: { managed: number; scanned: number };
 }
 
 const OWNERS_JSON_PATH = 'scripts/boundaries.owners.json';
@@ -164,8 +148,10 @@ function ownersNotConfigured(pathDisplay: string): never {
 }
 
 function loadOwnersConfig(): OwnersConfig {
-  const p = findConfigFile('boundaries.owners.json');
-  if (!p) ownersNotConfigured(configSearchPathsDisplay('boundaries.owners.json'));
+  const found = findConfigFile('boundaries.owners.json');
+  if (found.hardErrorMessage) configError(found.hardErrorMessage);
+  const p = found.path;
+  if (!p) ownersNotConfigured(found.triedPaths.join('、'));
   // 解析錯誤(壞掉的 JSON)在這裡大聲失敗(S9),不會是未捕捉的堆疊。
   const raw = readConfigJson(p, GATE_NAME) as Partial<OwnersConfig>;
   if (!Array.isArray(raw.owners) || raw.owners.length === 0) ownersNotConfigured(p);
@@ -189,6 +175,28 @@ function loadOwnersConfig(): OwnersConfig {
   if (!raw.contractsOwner || typeof raw.contractsOwner !== 'string') {
     configError(`${OWNERS_JSON_PATH} 缺 "contractsOwner"(字串)`);
   }
+  // S11:coverageBaseline 選填,存在就要驗證形狀——壞掉的基準比沒有基準更危險(棘輪
+  // 比對會拿一個不合理的數字去比,S9 同一套「設定壞掉大聲失敗」原則)。
+  if (raw.coverageBaseline !== undefined) {
+    const cb = raw.coverageBaseline as unknown;
+    if (cb === null || typeof cb !== 'object' || Array.isArray(cb)) {
+      configError(`${OWNERS_JSON_PATH} 的 "coverageBaseline" 必須是物件 { "managed": N, "scanned": M }`);
+    }
+    const obj = cb as Record<string, unknown>;
+    requireConfigType(obj.managed, 'coverageBaseline.managed', 'number', GATE_NAME);
+    requireConfigType(obj.scanned, 'coverageBaseline.scanned', 'number', GATE_NAME);
+    const managed = obj.managed as number;
+    const scannedBaseline = obj.scanned as number;
+    if (!Number.isInteger(managed) || managed < 0) {
+      configError(`${OWNERS_JSON_PATH} 的 "coverageBaseline.managed" 必須是非負整數(實際:${JSON.stringify(managed)})`);
+    }
+    if (!Number.isInteger(scannedBaseline) || scannedBaseline <= 0) {
+      configError(`${OWNERS_JSON_PATH} 的 "coverageBaseline.scanned" 必須是正整數(實際:${JSON.stringify(scannedBaseline)})`);
+    }
+    if (managed > scannedBaseline) {
+      configError(`${OWNERS_JSON_PATH} 的 "coverageBaseline" 不合理:managed(${managed}) > scanned(${scannedBaseline})`);
+    }
+  }
   return raw as OwnersConfig;
 }
 
@@ -205,7 +213,10 @@ const EXTS = ['.ts', '.mts', '.js', '.mjs', '.svelte'];
  * 只用內建預設,不印訊息(跟其餘選填設定同規則)。
  */
 function resolveSkipDirsForBoundaries(): Set<string> {
-  const cfgPath = findConfigFile('gates.config.json');
+  // gates.config.json 是選填設定(見下方 loadAllow 同一句話):--root 明講時找不到只是
+  // 「沒有這份選填設定」,不升級成 hardErrorMessage 那種大聲失敗——那個訊息是留給
+  // owners.json 這種必要設定的。
+  const cfgPath = findConfigFile('gates.config.json').path;
   const cfg = loadGatesConfig(cfgPath, GATE_NAME);
   const skip = resolveSkipDirs(cfg, GATE_NAME);
   skip.add('src-tauri');
@@ -216,8 +227,8 @@ interface AllowEdge { from: string; to: string; reason: string }
 interface Violation { file: string; line: number; spec: string; from: string; to: string; kind: 'cross' | 'absolute' | 'unmapped-target' | 'glue-target' }
 
 function loadAllow(): AllowEdge[] {
-  const p = findConfigFile('boundaries.allow.json');
-  if (!p) return []; // 選填設定,兩處都沒有就當沒有例外邊,不印訊息
+  const p = findConfigFile('boundaries.allow.json').path;
+  if (!p) return []; // 選填設定,兩處都沒有就當沒有例外邊,不印訊息(hardErrorMessage 不理會)
   // 解析錯誤在這裡大聲失敗(S9),不會是未捕捉的堆疊。
   const raw = readConfigJson(p, GATE_NAME) as unknown;
   if (!Array.isArray(raw)) configError('boundaries.allow.json 必須是陣列');
@@ -299,6 +310,73 @@ function resolveSpec(
   return { external: true };
 }
 
+/**
+ * S11(來源 nightmare-assault):把某個 unmapped 檔案歸到「相對掃描根目錄的第一層子目錄」
+ * ——例如 `scanDirs` 裡有 `"packages"`,檔案是 `packages/newthing/x.ts`,歸到
+ * `packages/newthing`(不是整個 `packages`,那樣看不出是哪個子資料夾漏填;也不是完整
+ * 檔案路徑,那樣看不出「這是一整個目錄沒納管」還是「只有一個檔案漏了」)。理論上不會
+ * 落到 fallback(unmapped 一定是從某個 scanDir 底下走出來的),防禦性寫法。
+ */
+function topLevelUnmanagedDir(relPath: string, scanDirs: string[]): string {
+  const posix = toPosix(relPath);
+  for (const dir of scanDirs) {
+    const prefix = dir.endsWith('/') ? dir : `${dir}/`;
+    if (posix === dir || posix.startsWith(prefix)) {
+      const rest = posix.slice(prefix.length);
+      const firstSeg = rest.split('/')[0];
+      return firstSeg ? `${dir}/${firstSeg}` : dir;
+    }
+  }
+  return posix.split('/')[0] ?? posix;
+}
+
+function formatRatio(managed: number, total: number): string {
+  const pct = total > 0 ? ((managed / total) * 100).toFixed(1) : '0.0';
+  return `${managed}/${total}(${pct}%)`;
+}
+
+/** S11:涵蓋率永遠印,不只在有 unmapped 檔案時才提(PITFALLS P-72——「看起來綠但沒在看
+ *  那塊」:落點表只填一半、另一半資料夾從沒被納管過,舊版完全不會提到這件事)。 */
+function printCoverage(managed: number, total: number, unmapped: string[], scanDirs: string[]): void {
+  const pct = total > 0 ? ((managed / total) * 100).toFixed(1) : '0.0';
+  console.log(`涵蓋:納管 ${managed} / 掃描 ${total} 檔(${pct}%),未納管目錄:`);
+  if (unmapped.length === 0) {
+    console.log('  (無)');
+    return;
+  }
+  const byDir = new Map<string, number>();
+  for (const u of unmapped) {
+    const key = topLevelUnmanagedDir(u, scanDirs);
+    byDir.set(key, (byDir.get(key) ?? 0) + 1);
+  }
+  for (const [dir, count] of [...byDir.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    console.log(`  ${dir}(${count} 個檔案未納管)`);
+  }
+}
+
+/** S11:涵蓋率棘輪——`owners.json` 有 `coverageBaseline` 時,這次的納管比例必須 ≥ 基準,
+ *  只准升不准降。回傳 `true` 代表棘輪本身判失敗(呼叫端要把這個併進整體 exit code)。 */
+function checkCoverageRatchet(
+  managed: number,
+  total: number,
+  baseline: OwnersConfig['coverageBaseline'],
+): boolean {
+  if (!baseline) return false;
+  // 交叉相乘比較,不用浮點除法——避免棘輪卡在浮點誤差的邊界(例如 1/3 vs 33/99)。
+  const nowCross = managed * baseline.scanned;
+  const baseCross = baseline.managed * total;
+  if (nowCross < baseCross) {
+    console.log(
+      `✗ 涵蓋率下降:${formatRatio(managed, total)} < 基準 ${formatRatio(baseline.managed, baseline.scanned)}(只准升)`,
+    );
+    return true;
+  }
+  if (nowCross > baseCross) {
+    console.log(`○ 涵蓋率上升,可把基準改成 ${managed}/${total}`);
+  }
+  return false;
+}
+
 function main(): void {
   const config = loadOwnersConfig();
   const allow = loadAllow();
@@ -342,6 +420,14 @@ function main(): void {
 
   console.log(`boundaries: 掃描 ${scanned} 個檔案,允許例外 ${allow.length} 條`);
 
+  // S11(來源 nightmare-assault):涵蓋率永遠印,不只在有 unmapped 時才提——舊版「只在
+  // checked==0 時宣稱不乾淨,其餘情況完全不提涵蓋了多少」,一個落點表**故意**只填一半
+  // (例如只填了 packages/,apps/ 整個資料夾從沒被納管過)在舊版看起來跟「落點表填好了」
+  // 一模一樣是綠燈,PITFALLS P-72。
+  const coverageManaged = found - unmapped.length;
+  printCoverage(coverageManaged, found, unmapped, config.scanDirs);
+  const ratchetFailed = checkCoverageRatchet(coverageManaged, found, config.coverageBaseline);
+
   if (unmapped.length) {
     console.log(`\n✗ ${unmapped.length} 個檔案不在任何功能的落點內(見 ${OWNERS_JSON_PATH} 的 owners 表):`);
     for (const u of unmapped) console.log(`  ${u}`);
@@ -365,9 +451,10 @@ function main(): void {
     process.exit(1);
   }
 
-  if (!unmapped.length && !violations.length) console.log('✓ 無違規');
-  console.log(`gate=${GATE_NAME} result=${unmapped.length || violations.length ? 'FAIL' : 'PASS'} scanned=${scanned}`);
-  process.exit(unmapped.length || violations.length ? 1 : 0);
+  if (!unmapped.length && !violations.length && !ratchetFailed) console.log('✓ 無違規');
+  const fail = unmapped.length > 0 || violations.length > 0 || ratchetFailed;
+  console.log(`gate=${GATE_NAME} result=${fail ? 'FAIL' : 'PASS'} scanned=${scanned}`);
+  process.exit(fail ? 1 : 0);
 }
 
 main();

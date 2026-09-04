@@ -52,7 +52,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ROOT as GIT_ROOT, loadGatesConfig } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig } from './_root.js';
 
 /** 三支掃描器共用的那句話(這支也共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -65,26 +65,20 @@ function argValue(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
 
 // ---------------------------------------------------------------------------
-// gates.config.json:nextGates.mode(同一套搜尋順序,跟 check-boundaries.ts /
-// check-all.ts 一樣要支援 --root,不能直接借 _root.ts 綁死模組層級 git ROOT 的版本。
+// gates.config.json:nextGates.mode——委派給 `_root.ts` 的 `lookupConfig`(S14,
+// 來源 AI_KM 2026-09-05,PITFALLS P-73):`--root` 明講時不退回這支腳本自己所在的目錄
+// (那通常是模板自己的佔位設定)。這份設定對這支腳本是選填的(找不到就用預設
+// `nextGates.mode = "enforce"`),所以這裡不需要理會 `hardErrorMessage`。
 // ---------------------------------------------------------------------------
 
-function configSearchPathsList(name: string): string[] {
-  const paths: string[] = [];
-  const envDir = process.env.GATES_CONFIG_DIR;
-  if (envDir && existsSync(envDir)) paths.push(join(envDir, name));
-  paths.push(join(import.meta.dirname, name), join(ROOT, 'scripts', name));
-  return paths;
-}
-
 function findConfigFile(name: string): string | undefined {
-  for (const c of configSearchPathsList(name)) {
-    if (existsSync(c)) return c;
-  }
-  return undefined;
+  const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
+  console.log(`${name}: ${result.source}`);
+  return result.path;
 }
 
 type NextGatesMode = 'report' | 'enforce';

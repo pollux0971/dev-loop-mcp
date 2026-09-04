@@ -34,7 +34,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT as GIT_ROOT, loadGatesConfig, readConfigJson, requireConfigType } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig, readConfigJson, requireConfigType } from './_root.js';
 
 /** 所有掃描器共用的那句話。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -42,36 +42,33 @@ const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 /** 這支腳本在 gate 機器可讀標記裡的名字。 */
 const GATE_NAME = 'all';
 
+/** 印一則設定錯誤、印 gate 標記(0 目標)、exit 1(S14 的 hardErrorMessage 用)。 */
+function configErrorAll(msg: string): never {
+  console.error(`✗ ${msg}`);
+  console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+  process.exit(1);
+}
+
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
 const MARKDOWN = process.argv.includes('--markdown');
 const FAIL_FAST = process.argv.includes('--fail-fast');
 
 /**
- * `gates.config.json` 的搜尋順序,跟 check-boundaries.ts 同一套(這支腳本也支援
- * `--root` 對別的 repo 跑,不能直接用 `_root.ts` 那份綁死在模組層級 git ROOT 的
- * `resolveConfig`):
- *   0. 環境變數 `GATES_CONFIG_DIR`(若設且該目錄存在)
- *   1. 這支腳本自己所在的目錄(sync 後就是 consumer 的安裝目錄)
- *   2. `<ROOT>/scripts/`
+ * `gates.config.json` 的搜尋——委派給 `_root.ts` 的 `lookupConfig`(S14,來源 AI_KM
+ * 2026-09-05,PITFALLS P-73):`--root` 明講時不退回這支腳本自己所在的目錄(那通常是
+ * 模板自己的佔位設定)。這份設定對 check-all.ts 是必要的(沒有 `chain` 就不知道要跑
+ * 什麼),找不到時把 `hardErrorMessage`(如果有)當成找不到的訊息本身用。
  */
-function configSearchPathsList(name: string): string[] {
-  const paths: string[] = [];
-  const envDir = process.env.GATES_CONFIG_DIR;
-  if (envDir && existsSync(envDir)) paths.push(join(envDir, name));
-  paths.push(join(import.meta.dirname, name), join(ROOT, 'scripts', name));
-  return paths;
-}
-
-function findConfigFile(name: string): string | undefined {
-  for (const c of configSearchPathsList(name)) {
-    if (existsSync(c)) return c;
-  }
-  return undefined;
+function findConfigFile(name: string): { path: string | undefined; hardErrorMessage: string | undefined; triedPaths: string[] } {
+  const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
+  console.log(`${name}: ${result.source}`);
+  return { path: result.path, hardErrorMessage: result.hardErrorMessage, triedPaths: result.triedPaths };
 }
 
 interface PackageJson {
@@ -83,9 +80,11 @@ const CHAIN_EXAMPLE = `{
 }`;
 
 function loadChain(): string[] {
-  const p = findConfigFile('gates.config.json');
+  const found = findConfigFile('gates.config.json');
+  if (found.hardErrorMessage) configErrorAll(found.hardErrorMessage);
+  const p = found.path;
   if (!p) {
-    console.error(`✗ 設定檔未找到於 ${configSearchPathsList('gates.config.json').join('、')}`);
+    console.error(`✗ 設定檔未找到於 ${found.triedPaths.join('、')}`);
     console.error('check-all 需要 gates.config.json 的 "chain"(要依序跑哪幾個 npm script)才知道跑什麼。範例:\n');
     console.error(CHAIN_EXAMPLE);
     console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);

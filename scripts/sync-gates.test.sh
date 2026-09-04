@@ -155,6 +155,44 @@ echo "== 步驟 6:--check 本身仍然是自包含的(不需要模板路徑),用
 assert_not_contains "--check 輸出不洩漏模板路徑" "$check_out_4" "$TEMPLATE_DIR"
 
 echo
+echo "== 步驟 7:S12 pre-commit hook 同步進 hooks/ 子目錄,但不自動裝進 .git/hooks/ =="
+HOOK_SYNCED="$CONSUMER/scripts/hooks/pre-commit"
+if [ -f "$HOOK_SYNCED" ]; then
+  pass "同步後 scripts/hooks/pre-commit 存在"
+else
+  fail "同步後 scripts/hooks/pre-commit 不存在"
+fi
+if [ -x "$HOOK_SYNCED" ]; then
+  pass "同步後 scripts/hooks/pre-commit 可執行"
+else
+  fail "同步後 scripts/hooks/pre-commit 不可執行"
+fi
+if [ -f "$CONSUMER/.git/hooks/pre-commit" ]; then
+  fail "sync 不該自動把 hook 裝進 .git/hooks/(那是使用者自己的選擇)"
+else
+  pass "sync 沒有自動把 hook 裝進 .git/hooks/"
+fi
+assert_contains "plain sync 印出手動安裝 hook 的指令" "$sync_out" "hook:cp"
+assert_contains "--check 印出 pre-commit hook 未安裝(資訊性,不算失敗)" "$check_out_4" "○ pre-commit hook 未安裝"
+
+echo
+echo "== 步驟 8:pre-commit hook 本身的行為(檔案鎖,live pid 擋、無鎖放行) =="
+# hook 內部用 `git rev-parse --show-toplevel` 找 repo 根,cwd 一定要在 $CONSUMER 底下
+# 才會找到 $CONSUMER(不是 sync-gates.test.sh 自己執行時的 cwd)。
+if (cd "$CONSUMER" && bash "$HOOK_SYNCED" >/dev/null 2>&1); then
+  pass "沒有任何鎖檔時 hook 允許 commit(exit 0)"
+else
+  fail "沒有任何鎖檔時 hook 應該允許 commit(exit 0)"
+fi
+
+printf '{"pid": %s, "file": "x.ts", "started_at": "2026-01-01T00:00:00Z", "cmd": "test"}' "$$" > "$CONSUMER/.mutate.lock"
+hook_out="$(cd "$CONSUMER" && bash "$HOOK_SYNCED" 2>&1)"
+hook_code=$?
+rm -f "$CONSUMER/.mutate.lock"
+assert_exit_code "own pid(保證活著)的 .mutate.lock 存在時 hook 拒絕 commit" "$hook_code" "1"
+assert_contains "hook 訊息講清楚是哪個鎖檔跟 pid" "$hook_out" ".mutate.lock"
+
+echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "sync-gates.test.sh: 全部通過"
   exit 0

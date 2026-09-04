@@ -62,6 +62,18 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 那個鍵就會被判定成「不認識的鍵」而整個設定檔失敗(S9,見 `docs/07-practices.md`「gates.config.json
 壞掉被靜默忽略」相關 PITFALLS 條目)。
 
+`check:doc-rot` 出貨時預設是 **report 模式**(`gates.config.json` 沒填 `docRot.mode` 就是
+`"report"`):命中黑名單會全部印出來、`gate=doc-rot result=FAIL` 標記照印,但不擋 exit code。
+第一次同步進來,先把觸發清單當 triage list 看,逐項確認完(哪些是真的問題、哪些是合理例外要收進
+`docRot.exclude`)之後,再加 `"docRot": { "mode": "enforce" }` 切回會擋的行為——新守門第一版
+幾乎必然抓到規則沒想到的合理例外,見 `PITFALLS.md` P-71。
+
+`scripts/hooks/pre-commit`(S12)擋住「突變測試進行中被 commit」這件事,`sync-gates.sh` 只把它
+同步進 `<安裝目錄>/hooks/pre-commit`,**不會自動裝進 `.git/hooks/`**(git hooks 不受版本控制)。
+同步完印出的 `hook:cp <安裝目錄>/hooks/pre-commit .git/hooks/pre-commit && chmod +x ...` 那行照做
+即可裝上;不裝也不影響其餘守門,只是少了「commit 那一刻」這道防線(`scripts/py/mutate.py` 自己的
+`.mutate.lock` 仍然在**啟動**那一刻擋住同時跑第二個 mutate.py)。
+
 **出版規則:沒有對至少一個 consumer 跑過 `scripts/verify-against.sh <consumer repo 根>` 不打 tag。**
 這支腳本把模板版每支 `check-*.ts` 跟那個 consumer repo 已裝的同名檔各跑一次,比退出碼、
 輸出、旗標清單三件事,列出差異——這是出版前的機械檢查,不是取代人的判斷。差異逐項標
