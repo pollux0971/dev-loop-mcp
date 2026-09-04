@@ -98,6 +98,14 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 - 契約收緊(硬約定要走 ADR,軟約定改了跑測試)——那是一次性的工作量,做完就繼續,不是理由停下整個迴圈
 - 發現缺陷——開工單修,不是停下來等人拍板要不要修(除非缺陷本身牽涉硬約定或範圍,那走 §1 的權責表)
 - 模板升版——`git diff template/v<採用版>..v<新版> -- template/` 看完決定要不要跟,跟不跟都不是停止理由
+- 平台 runtime 掛掉——先用 `git` 與 `pgrep -af claude` 確認 agent 是不是其實還活著;活著就不重派(重派會撞成同一份工作跑兩份),改做不需要這個平台的其他工作;平台恢復後,重建剛才被吃掉的 task(不是假設它還在排程裡)
+- worker 開 escalation——那是 worker 在正常求助,不是迴圈壞掉;照 §1 權責表把問題分給該回答的人,問完之前先去做別的 ready 工作
+- worker 說「我不照工單做」並附實測——先看那個實測,實測站得住腳就是工單本身有錯,修工單或走 ADR,不是逼 worker 硬做或把這當成迴圈要停下來的訊號
+- 工單被 superseded——舊工單作廢是進度的一部分(規格或優先序變了),照新工單繼續派工
+- 變異第一次量到 40–60%——低於門檻但不是 0,是「需要補測試」的正常訊號,開工單補,不當成迴圈卡死
+- `accept:dry` 的 undefined 很多——那是段一(dry-run)在做它該做的事(抓接線問題),照 P-32 的清單修 tag / 定義,不是系統性壞掉的徵兆
+
+**把這些誤判成停止,比漏掉一個真煞車更常發生。**
 
 判斷準則:**能想到下一步該做什麼,就不是停止條件**;真正的停止是「想不出任何一件現在能做的事」。
 
@@ -108,6 +116,7 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
   `terminal create` → `terminal send 'claude --dangerously-skip-permissions' --enter` → `terminal wait --for tui-idle` → `dispatch --inject`。
   少中間兩步會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 worktree 裡的 REVIEW.md(P-17)
 - `check --wait` 可能回**已處理過的舊訊息**(`"replayed": true`),要 `--ack <deliveryId>` 再等下一則,不然空轉
+- `check` 回來的訊息 `type` 是 `question`(帶 thread/msg id)時,對方在等 `reply`,不是等一則新訊息——**先 `reply --id <該訊息 id>` 再 `ack`**,順序不能顛倒(`ack` 之後那個 id 就抓不到了);`send` 送得到終端機但不會解除對方的阻塞,沒有任何錯誤訊息(P-45)
 - **找 worker 一律用 worktree 路徑尾段比對,永遠不用 title**(title 是 agent 自己會改的顯示文字;找不到會被誤判成死掉而重派,P-39);每個 worktree 兩個 terminal,挑 title 不是 `user@…` 開頭的
 - `orca terminal send` 的旗標是 `--terminal <handle>`(不是 `--handle`),要加 `--enter` agent 才真的收到
 - 工單寫進 `<worktree>/.orca-brief/TASK.md`(未追蹤,不混進 diff);批次改工單文字後 grep 舊字串應為 0 命中(P-40)

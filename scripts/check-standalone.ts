@@ -29,6 +29,9 @@ import { ROOT as GIT_ROOT } from './_root.js';
 /** 三支掃描器共用的那句話。0 個東西的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
+/** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
+const GATE_NAME = 'standalone';
+
 interface ManifestEntry {
   cmd: string;
   interactive: boolean;
@@ -61,12 +64,14 @@ console.log(`standalone: 從 ${manifestPath} 讀到 ${all.length} 個條目`);
 if (all.length === 0) {
   console.error(`\n✗ 讀到 0 個條目`);
   console.error(`${SCANNER_BROKEN}。manifest 路徑指錯、檔案被清空、或格式改掉時就長這樣。`);
+  console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
   process.exit(1);
 }
 
 const entries = all.filter(([name]) => !only || name === only);
 if (!entries.length) {
   console.error(`${manifestPath} 裡沒有 ${only}`);
+  console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
   process.exit(1);
 }
 
@@ -117,4 +122,5 @@ for (const [name, entry] of entries) {
 }
 
 if (!listOnly) console.log(failed ? `\n${failed} 個失敗` : '\n全部通過');
+console.log(`gate=${GATE_NAME} result=${failed ? 'FAIL' : 'PASS'} scanned=${entries.length}`);
 process.exit(failed ? 1 : 0);

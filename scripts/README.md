@@ -2,9 +2,43 @@
 
 `check-boundaries.ts`、`check-standalone.ts`、`check-doc-links.ts`、`check-phase-coverage.ts`、
 `check-step-dup.ts`、`check-gherkin-dup.ts` 是掃描器,`_root.ts` 是它們共用的 repo 根解析,
-`sync-gates.sh` 把這些程式複製進目標 repo。`verify-against.sh <consumer repo 根>` 是出版前的
-機械檢查:把模板版每支 `check-*.ts` 跟那個 consumer 已裝的同名檔各跑一次,比退出碼、輸出、
-旗標清單三件事——出版規則見 `template/README.md`「版本」段。
+`sync-gates.sh` 把這些程式複製進目標 repo。`verify-against.sh <consumer repo 根>
+[--consumer-dir <子目錄>]` 是出版前的機械檢查:把模板版每支 `check-*.ts` 跟那個 consumer
+已裝的同名檔各跑一次,比退出碼、輸出、旗標清單三件事——出版規則見 `template/README.md`
+「版本」段。consumer 的守門安裝目錄怎麼找(CHANGELOG 1.3.2 (B)):`--consumer-dir` 明講,
+否則依序找 `<consumer>/scripts/`、`<consumer>/features/scripts/`、再不然掃
+`find <consumer> -name _root.ts -maxdepth 4` 找到的第一個目錄;四層都沒有才算「consumer
+未裝守門」,不是只認 `scripts/`。
+
+`sync-gates.sh` 寫進每個檔案的 SOURCE 標頭現在帶著 `sha256=<檔身雜湊>`(CHANGELOG 1.3.2
+(D)),`--check` 靠重算這個雜湊做自我一致性檢查(有沒有在同步之後被手改過),**不需要讀
+`$TEMPLATE_DIR`**——sync(寫入新內容)才需要模板路徑,`--check` 只需要問已安裝的檔案
+自己「有沒有被動過」,答案就寫在檔案自己身上,所以能在沒有模板 checkout 的 CI 環境單獨跑。
+
+每支掃描器結尾都會印一行機器可讀標記 `gate=<name> result=PASS|FAIL scanned=<N>`(CHANGELOG
+1.3.2 (C)),`<name>` 是 `boundaries` / `doc-links` / `gherkin-dup` / `phase-coverage` /
+`standalone` / `step-dup` 之一,`<N>` 是這次掃到的目標數。`verify-against.sh` 靠這行標記
+(加上退出碼必須是 0 或 1)判斷一次執行「算不算數」——見該腳本檔頭「執行有效性」段,這是
+CHANGELOG 1.3.2 (C) 修的迴歸:退出碼 127(command not found)以前會被誤判成「✓ 通過」。
+
+## 型別驗證
+
+模板的型別驗證用**採用專案最嚴的 tsconfig**(`strict`、`exactOptionalPropertyTypes`、
+`noUncheckedIndexedAccess`),不是模板自己一份寬鬆的 tsconfig——寬鬆版會放過採用專案編譯
+不過的程式碼,等 consumer 真的 `sync-gates.sh` 進去才炸(專案實測:`check-phase-coverage.ts`
+的 `loadGatesConfig` 在 `exactOptionalPropertyTypes: true` 下 TS2375,可選欄位被顯式指派
+`undefined`)。跑法:
+
+```bash
+NODE_PATH=<採用專案根>/node_modules npx tsc --noEmit \
+  --module esnext --moduleResolution bundler --target es2022 \
+  --strict --exactOptionalPropertyTypes --noUncheckedIndexedAccess \
+  --types node --skipLibCheck template/scripts/*.ts
+```
+
+`NODE_PATH` 指到一個裝了 `@types/node`(與其他型別套件)的 `node_modules`——模板自己沒有
+`package.json` / `node_modules`,借用已採用這套範式的專案的即可,那份 tsconfig 本來就是
+「最嚴」的參考基準。全部 `template/scripts/*.ts` 都要在這組旗標下無錯誤。
 
 `py/mutate.py` + `py/test_mutate.py` 是定向反向驗證工具的 **Python 版**(來源專案 C,模板
 1.3.1 收入,用法與規格對應見 `py/README.md` 與 `docs/07-practices.md` (e))。`sync-gates.sh`
@@ -16,6 +50,15 @@
 三支掃描器的**程式**(`.ts` / `.sh`)跟着模板走版本、被 `sync-gates.sh` 覆蓋更新;
 它們讀的**設定**是專案自己的東西,`sync-gates.sh` 只在目標不存在時建一次,之後
 永遠不覆蓋:
+
+**找設定檔的順序**(CHANGELOG 1.3.2 (A)):每支需要設定檔的掃描器,一律先找**自己所在
+的目錄**(`import.meta.dirname`——`sync-gates.sh` 把腳本裝到哪裡,設定檔通常也跟著裝在
+哪裡,例如 cucumber 設定不在根目錄的專案常把整套裝進 `features/scripts/`),再找
+`<ROOT>/scripts/`。舊版只認 `ROOT/scripts/`,腳本裝在別處時設定檔就永遠讀不到——不會報錯,
+只會安靜套用內建預設或觸發自動偵測,像是設定死掉了一樣(採用專案實測的迴歸)。必要設定
+(`boundaries.owners.json`)兩處都找不到會印「設定檔未找到於 <兩個路徑>」並 exit 1;
+選填設定(`boundaries.allow.json`、`gates.config.json`)兩處都找不到就靜默套用預設,
+不印訊息。
 
 - `boundaries.allow.json` — 允許的跨界例外邊(`{from, to, reason}` 陣列)。
 - `boundaries.owners.json` — `check-boundaries.ts` 的落點表跟掃描範圍,格式:
@@ -36,11 +79,12 @@
   - `scanDirs`:要掃描的根目錄。
   - `contractsOwner`:對到這個擁有者的 import 一律放行(不算跨界)。
 
-  這份檔不存在,`check-boundaries.ts` 會 exit 1 並印出上面這份範例——這是硬性要求
-  的設定,不是「留空也能跑」。落點表如果你也在別處維護一份人類可讀的版本(例如
-  `packages/core/README.md`),那份表要跟這裡同步。
+  這份檔在上面兩個搜尋路徑都不存在,`check-boundaries.ts` 會印「設定檔未找到於 <兩個路徑>」
+  並 exit 1、印出上面這份範例——這是硬性要求的設定,不是「留空也能跑」。落點表如果你也在
+  別處維護一份人類可讀的版本(例如 `packages/core/README.md`),那份表要跟這裡同步。
 
-- `gates.config.json` — `check-phase-coverage.ts` 與 `check-doc-links.ts` 讀的設定:
+- `gates.config.json` — `check-phase-coverage.ts`、`check-doc-links.ts`、`check-gherkin-dup.ts`
+  讀的設定:
 
   ```json
   {
@@ -51,6 +95,15 @@
     "docLinks": {
       "skipSegments": [],
       "skipPrefixes": []
+    },
+    "gherkinDup": {
+      "allow": [
+        {
+          "scenario": "Every standalone entry point still runs",
+          "onlyUnder": "docs/integration/",
+          "reason": "每個整合點各自重跑一次 standalone 回歸(ADR-024)"
+        }
+      ]
     }
   }
   ```
@@ -58,13 +111,25 @@
   - `cucumberCwd`:cucumber 的執行目錄,相對 ROOT。這份檔**不存在也能跑**——
     `check-phase-coverage.ts` 會退回自動偵測(ROOT 有 `cucumber.js` 等設定檔就用
     ROOT;否則掃 ROOT 的直接子目錄找第一個含 cucumber 設定的目錄),都偵測不到
-    才 exit 1。多數專案(cucumber 設定在 repo 根)不需要這份檔。
+    才 exit 1。多數專案(cucumber 設定在 repo 根)不需要這份檔。**這個欄位一旦填了、
+    卻指向不存在的目錄,是 exit 1,不會退回自動偵測**——設定了但指錯路徑,跟根本沒
+    設定是兩回事,前者不能被自動偵測靜默救回(那會讓設定看起來有效但其實從沒被套用過)。
   - `phaseCoverage.runTimeoutMs`:`--run`(段二,真跑)對**每個** phase 檔各自套用的
     逾時毫秒數,預設 `600000`(10 分鐘)。這份檔不存在,或存在但沒填這個欄位,就用
     預設值。逾時時 exit 1,訊息說「逾時」,不是「找不到 N scenarios」——逾時代表這個
     phase 真跑起來卡住了,不代表 tag 掛錯或場景數是 0,這是兩種不同的病,訊息要分得
     出來。什麼時候需要調高:某個 phase 的場景本身就跑得慢(例如打真實外部服務、跑
     大量資料),預設 10 分鐘不夠。段一(dry-run)不受這個欄位影響,固定 60 秒逾時。
+    `--run` 預設只真跑 `features/<folder>/FEATURE.md` 狀態是 `done` / `in-progress` 的
+    phase,其餘只 dry-run(CHANGELOG 1.3.2 (E));`--run-phases <folder>/phase-N,...`
+    旗標手動蓋過這個規則,指定確切要真跑哪幾個 phase。
+  - `gherkinDup.allow`:`check-gherkin-dup.ts` 允許的刻意重複場景組(CHANGELOG
+    1.3.2 (2)),陣列,每個條目 `{ scenario, onlyUnder?, reason }`。一個重複組要套用
+    某條 allow,三個條件都要成立:組裡**每個**場景名稱都等於 `scenario`;有給
+    `onlyUnder` 時,組裡每個場景所在檔案路徑都要以它開頭(相對 ROOT);`reason` 是
+    非空字串。三個都成立才印「允許」不算紅;`reason` 空或缺,這條 allow 無效,命中時
+    印警告、該組照常判紅。範例已經寫在上面 JSON 裡(對應每個整合點各自重跑一次
+    standalone 回歸的合法重複,ADR-024)。這份檔不存在就沒有任何 allow 條目。
   - `docLinks.skipSegments` / `docLinks.skipPrefixes`:`check-doc-links.ts` 的排除清單,
     **追加**到內建預設,不是取代。內建預設是
     `skipSegments = [node_modules, .stryker-tmp, dist, .git, target, .svelte-kit, archive]`、

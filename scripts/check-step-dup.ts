@@ -53,6 +53,9 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { ROOT } from './_root.js';
 
+/** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
+const GATE_NAME = 'step-dup';
+
 const LIST_ONLY = process.argv.includes('--list');
 const STEPS_DIR = join(ROOT, 'features/steps');
 
@@ -230,6 +233,7 @@ function main(): void {
   const files = collectFeatureFiles();
   if (files.length === 0) {
     console.log('✗ 掃到 0 個 .feature 檔(features/**/*.feature 或 docs/integration/**/*.feature)。這不是很乾淨,是掃描器壞了。');
+    console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
     process.exit(1);
   }
 
@@ -252,6 +256,7 @@ function main(): void {
   for (const g of groups.values()) totalSteps += g.occurrences.length;
   if (totalSteps === 0) {
     console.log('✗ 掃到 0 個步驟句。這不是很乾淨,是掃描器壞了。');
+    console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
     process.exit(1);
   }
 
@@ -273,6 +278,7 @@ function main(): void {
       console.log(`  [${g.folders.size} 資料夾]  ${label}`);
       console.log(`      定義於:${defFiles.length ? defFiles.join(', ') : '(undefined)'}`);
     }
+    console.log(`gate=${GATE_NAME} result=PASS scanned=${totalSteps}`);
     process.exit(0);
   }
 
@@ -287,10 +293,12 @@ function main(): void {
       console.log(`      定義於:${defFiles.join(', ')}`);
       console.log(`      用於:${[...g.folders].sort().join(', ')}`);
     }
+    console.log(`gate=${GATE_NAME} result=FAIL scanned=${totalSteps}`);
     process.exit(1);
   }
 
   console.log(`✓ 無重複定義(跨資料夾形狀 ${crossFolder.length} 種,每種都恰好 0 或 1 個定義)`);
+  console.log(`gate=${GATE_NAME} result=PASS scanned=${totalSteps}`);
   process.exit(0);
 }
 

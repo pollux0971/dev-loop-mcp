@@ -171,6 +171,12 @@ Trunk-based,直接在 main 上小 commit。建議訊息格式 `feat(<feature>): 
 讓 git log 能對回 phase。phase 完成時 tag:`git tag <feature>/phase-2`。
 整合完成時 tag:`git tag I2`。
 
+「測試先紅」階段(測試 agent 先寫紅 commit,開發 agent 才做綠)有一條容易被忽略的分界:
+`.feature` 可以在紅的階段就進 main——tag 讓刻意寫下的紅場景對一般的 `npm run accept` 隱形,
+不會拖累別人看到的 CI 狀態;**但紅的單元測試不能進 main**,那是 CI 真的會跑到、真的會紅的東西。
+合併點固定在「單元測試變綠之後」,不是「gherkin 寫完就合」。萬一還是誤合了,修法是 `revert` 那個
+commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會退化成 P-04 的假綠(見 PITFALLS P-46)。
+
 ## 最小模式
 
 完整的流程對一個人或小團隊來說偏重。**如果開工後覺得儀式比程式多,就縮到這個子集:**

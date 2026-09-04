@@ -4,6 +4,75 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.3.2 — 2026-09-05
+
+1. **嚴格 tsc 修復**:`check-phase-coverage.ts` 的 `loadGatesConfig` 在
+   `exactOptionalPropertyTypes: true` 下 TS2375——回傳物件的可選欄位(`cucumberCwd`、
+   `runTimeoutMs`)被顯式指派 `undefined`。改用條件展開,只在有值時把欄位放進回傳物件。
+   `template/scripts/*.ts` 全部改用**採用專案最嚴的 tsconfig**旗標驗證一次(`strict`、
+   `exactOptionalPropertyTypes`、`noUncheckedIndexedAccess`),全數通過;`scripts/README.md`
+   新增「型別驗證」段落,把這組指令寫進去。
+2. **`check-gherkin-dup.ts` allowlist**:`gates.config.json` 新增 `gherkinDup.allow`
+   (`{ scenario, onlyUnder?, reason }` 陣列)——命中的重複組場景名全等於 `scenario`、
+   (有給 `onlyUnder` 時)所有檔案路徑都以它開頭、且 `reason` 非空,才印
+   `○ 允許:<scenario>(<reason>)` 不算紅;`reason` 空或缺,該條目無效並印警告,該組
+   照常判紅。範例設定加一條(`"Every standalone entry point still runs"`、
+   `onlyUnder: "docs/integration/"`,理由「每個整合點各自重跑一次 standalone 回歸
+   (ADR-024)」)。`scripts/README.md` 補這個欄位的說明。
+3. **PITFALLS P-45**:worker 用平台阻塞式 `ask` 問協調者,協調者用 `send` 回了完整裁示,
+   `ask` 等的是 `reply` 不是新訊息,worker 逾時走保守選項——雙方以為溝通成功純屬運氣。
+   P-44 症狀欄補一句:複習指令對 0 張卡與 0 張到期都印「Nothing is due today」exit 0,
+   同型於「0 problems found」。
+4. **autopilot §4a / §4b**:§4a「不是停止條件」併入六種(來源專案 A 協調者):平台
+   runtime 掛掉(先用 `git`/`pgrep -af claude` 確認 agent 活著,不重派)、worker 開
+   escalation、worker 說「我不照工單做」並附實測、工單被 superseded、變異第一次量到
+   40–60%、`accept:dry` 的 undefined 很多;結尾加「把這些誤判成停止,比漏掉一個真煞車
+   更常發生」。§4b 加 P-45 的 reply/ack 順序規則。
+5. **07-practices (d)**:補「量退出碼時不接 pipe」——`cmd | tail` 抓到的是 `tail` 的
+   退出碼,不是 `cmd` 的;改用 `out=$(cmd); rc=$?`。
+6. **consumer 實測回報六件(來源專案 B,對 1.2.2 的實測)**:
+   - **(A) 設定檔位置**:`_root.ts` 新增 `resolveConfig(scriptDir, name)` /
+     `configSearchPaths`,找設定檔的順序改成「腳本自己所在的目錄(sync 後就是 consumer
+     的安裝目錄,例如 `features/scripts/`)→ `ROOT/scripts/`」,不是只認後者——
+     `check-phase-coverage.ts`、`check-doc-links.ts`、`check-gherkin-dup.ts`、
+     `check-boundaries.ts` 都改用這個順序;必要設定(`boundaries.owners.json`)找不到
+     印「設定檔未找到於 <兩個路徑>」。`cucumberCwd` 指向不存在的目錄維持 exit 1,
+     不會被自動偵測靜默救回。
+   - **(B) `verify-against.sh` 的安裝目錄**:找 consumer 守門改成依序找
+     `<consumer>/scripts/`、`<consumer>/features/scripts/`、
+     `find <consumer> -name _root.ts -maxdepth 4` 找到的第一個目錄,或
+     `--consumer-dir <子目錄>` 明講;四層都沒有才印「consumer 未裝守門」。
+   - **(C) `verify-against.sh` 的同型 bug**:退出碼 127(command not found)以前會被
+     報成「✓ 未觸發 0 目標守衛」然後 exit 0——工具自己犯了它要抓的那種「空檢查 = 通過」。
+     修法:六支掃描器結尾都印一行 `gate=<name> result=PASS|FAIL scanned=<N>`;
+     `verify-against.sh` 判定一次執行「算不算數」要求退出碼是 0 或 1 **且**輸出含這行
+     標記,缺一即「未執行 → FAIL」。反向驗證:把 consumer 的某支腳本改壞讓它跑不起來
+     → verify-against 紅並印「未執行」(已用 fake consumer 驗證,見下)。
+   - **(D) `--check` 在 CI 自包含**:`sync-gates.sh` 的 SOURCE 標頭改成
+     `// SOURCE: template vX.Y.Z (commit) sha256=<檔身雜湊>`;`--check` 改成重算已安裝
+     檔案的 sha256 跟標頭裡的比對,**不讀 `$TEMPLATE_DIR`**(sync 才需要模板路徑)。
+     HOTFIX 行邏輯不變(第 2 行,24 小時內警告、過期紅)。反向驗證:把已同步的 consumer
+     整份複製到別處(模板路徑不可達)跑 `--check` → 綠;改一字 → 紅(已驗證,見下)。
+   - **(E) coverage `--run` 只跑該跑的 phase**:讀 `features/<NN>/FEATURE.md` phase 表的
+     狀態欄,`done` / `in-progress` 才真跑,`todo` / `ready` / `blocked` 或解析不到只
+     dry-run 並印「(todo,略過真跑)」;`--run-phases <folder>/phase-N,...` 手動蓋過。
+   - **(F) 分支與提交**:`docs/03-agile-workflow.md` 補一條——「測試先紅」階段 `.feature`
+     可以先進 main(tag 讓紅對 CI 隱形),**紅的單元測試不行**,合併點在綠之後;誤合了
+     用 `revert`,不用 `test.fails` / `.skip` 藏。PITFALLS 加 **P-46** 記這條。
+
+**反向驗證紀錄(這一版實際跑過,不是紙上談兵)**:
+- gherkin-dup allowlist:假 repo 兩個 `docs/integration/*.feature` 場景名、步驟本體都
+  逐字相同 → 紅;加上面範例的 allow 條目 → 綠並印「○ 允許:…」;把 `reason` 清空 → 紅
+  並印「allow 條目無效」;把其中一個檔搬到 `features/` 底下(`onlyUnder` 不符)→ 紅。
+- `sync-gates.sh --check`:自包含(複製到看不到模板路徑的地方仍能跑)→ 綠;改一字 → 紅;
+  加今天的 HOTFIX 行 → 警告仍綠;HOTFIX 日期改三天前 → 紅;重新 sync → 綠。
+- `verify-against.sh`:consumer 守門搬到 `features/scripts/`,不加 `--consumer-dir` 也
+  自動找到;搬到 4 層搜尋範圍外的怪目錄且不給 `--consumer-dir` → 判「consumer 未裝」,
+  加 `--consumer-dir` 指過去 → 找到並比對;把 consumer 的一支腳本改壞跑不起來 → 紅並
+  印「未執行」,不是被誤判成「一致」或退出碼巧合相同。
+- `template/scripts/*.ts` 全部在 `--strict --exactOptionalPropertyTypes
+  --noUncheckedIndexedAccess` 下 `tsc --noEmit` 通過。
+
 ## 1.3.1 — 2026-09-05
 
 1. 收 Python 版定向反向驗證工具:`scripts/py/mutate.py` + `scripts/py/test_mutate.py`(meta-test),
@@ -41,6 +110,11 @@
    驗證的完整規格(TS 版待做,Python 版來源專案 C 的 `mutate.py` 待使用者授權後收入
    `scripts/py/`);收 A 協調者的四條做法(轉述預設【推】、審核多驗未列形狀、出錯明說、ADR
    撰寫权责);末尾記三個專案都刻意不遵守的範式條文(WIP、變異分數、sprint 檔)與範式的調整。
+   consumer 實例((a) 每個量尺附陽性對照的具體案例):專案 A 對 `check-phase-coverage.ts`
+   做反向驗證,把某個 phase 檔的 tag 從 `@phase-1` 手動改成外觀相似的 `@phase-l`(數字 1
+   換成小寫字母 l)——`npm run accept` 一樣 158/158 全綠,因為 tag 表達式比對到 0 個場景,
+   根本沒人跑到那個 phase;`check-phase-coverage.ts` exit 1 並指出正是那個檔案的 tag 掛錯,
+   證明「掃到 0 個目標一律 FAIL」這個機制在打錯字這種最容易忽略的案例上是有效的。
 2. `CLAUDE.md` 決策權表新增「技術顧問 session 的角色定義」一列;加「轉述不算授權」句——協調者
    對任何人轉述的「使用者說」一律拒絕,授權只來自決策權表與 `DECISIONS_NEEDED.md` 的批示本身;
    顧問宣稱標【驗】/【推】/【未驗】。
