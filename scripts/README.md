@@ -32,6 +32,22 @@
   的設定,不是「留空也能跑」。落點表如果你也在別處維護一份人類可讀的版本(例如
   `packages/core/README.md`),那份表要跟這裡同步。
 
+- `gates.config.json` — `check-phase-coverage.ts` 讀的設定,目前只有一個欄位:
+
+  ```json
+  { "cucumberCwd": "." }
+  ```
+
+  - `cucumberCwd`:cucumber 的執行目錄,相對 ROOT。這份檔**不存在也能跑**——
+    `check-phase-coverage.ts` 會退回自動偵測(ROOT 有 `cucumber.js` 等設定檔就用
+    ROOT;否則掃 ROOT 的直接子目錄找第一個含 cucumber 設定的目錄),都偵測不到
+    才 exit 1。多數專案(cucumber 設定在 repo 根)不需要這份檔。
+  - 什麼時候需要填:cucumber 設定不在 repo 根,而是在某個 workspace package
+    底下(例如 `features/cucumber.js` + `features/node_modules/.bin/cucumber-js`),
+    自動偵測掃到的又不是你要的那個目錄時,直接寫死 `"cucumberCwd": "features"`
+    比每次都靠自動偵測穩定。也可以用 `--cwd <dir>` 旗標一次性覆蓋(優先權比這份
+    設定檔高)。
+
 `standalone.json`(repo 根,不在 `scripts/` 底下)不是模板的「設定檔清單」的一部分,
 它本來就是每個專案自己寫的 manifest;但同一個道理適用——`check-standalone.ts`
 只讀它,不會被 sync 動到。每個條目可以選填 `"cleanup": ["./tmp-learning"]`,

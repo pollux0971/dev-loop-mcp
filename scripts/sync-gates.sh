@@ -6,7 +6,7 @@
 #   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --check   # 只比對,不寫:版本或內容不同 → exit 1
 #
 # 複製的檔:_root.ts、check-*.ts(程式,每次同步都覆蓋,靠版本標頭防漂移)。
-# 設定檔 CONFIG_FILES(boundaries.allow.json、boundaries.owners.json)**只在目標不存在時**複製一次,
+# 設定檔 CONFIG_FILES(boundaries.allow.json、boundaries.owners.json、gates.config.json)**只在目標不存在時**複製一次,
 # 之後永遠不覆蓋——那是每個專案自己填的落點表跟例外清單,不是模板的一部分。`--check` 對這些檔案
 # 一律跳過比對,印一行「(你的設定檔,不比對)」,不會因為專案改了自己的設定就報紅。
 # 每個 .ts 檔頭插入:// SOURCE: template vX.Y.Z (<commit>) — 勿手改;升版用 sync-gates.sh
@@ -22,7 +22,7 @@ COMMIT="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD 2>/dev/null || echo unkn
 HEADER="// SOURCE: template v${VERSION} (${COMMIT}) — 勿手改;升版用 sync-gates.sh"
 DEST="$TARGET/$SUBDIR"; mkdir -p "$DEST"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
-CONFIG_FILES=(boundaries.allow.json boundaries.owners.json)
+CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json)
 fail=0; n=0
 for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
   name="$(basename "$src")"; dst="$DEST/$name"; n=$((n+1))
