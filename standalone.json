@@ -2,6 +2,7 @@
   "{{FEATURE_01}}": {
     "cmd": "{{STANDALONE_CMD_1}}",
     "interactive": false,
-    "expect": "{{STANDALONE_EXPECT_1}}"
+    "expect": "{{STANDALONE_EXPECT_1}}",
+    "cleanup": ["./tmp-learning"]
   }
 }

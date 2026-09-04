@@ -45,6 +45,8 @@
 
 守門腳本用 `scripts/sync-gates.sh <你的 repo 根>` 複製進去(檔頭會寫來源版本),CI 才自包含;升版重跑一次,`--check` 可放進 CI 抓手改。不要直接呼叫模板路徑(CI 與別台機器沒有它)。
 
+`boundaries.allow.json`、`boundaries.owners.json` 這兩份是專案自己的設定(見 `scripts/README.md`),sync 只在目標不存在時建一次,之後永遠不覆蓋——升版不會把你填好的落點表洗掉。
+
 ## 5 步驟落地到新專案
 
 ### 步驟 0:複製

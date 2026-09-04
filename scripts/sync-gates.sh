@@ -5,10 +5,14 @@
 #   <template>/scripts/sync-gates.sh <目標 repo 根> [目標子目錄,預設 scripts]
 #   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --check   # 只比對,不寫:版本或內容不同 → exit 1
 #
-# 複製的檔:_root.ts、check-*.ts、boundaries.allow.json(只在目標不存在時)。
+# 複製的檔:_root.ts、check-*.ts(程式,每次同步都覆蓋,靠版本標頭防漂移)。
+# 設定檔 CONFIG_FILES(boundaries.allow.json、boundaries.owners.json)**只在目標不存在時**複製一次,
+# 之後永遠不覆蓋——那是每個專案自己填的落點表跟例外清單,不是模板的一部分。`--check` 對這些檔案
+# 一律跳過比對,印一行「(你的設定檔,不比對)」,不會因為專案改了自己的設定就報紅。
 # 每個 .ts 檔頭插入:// SOURCE: template vX.Y.Z (<commit>) — 勿手改;升版用 sync-gates.sh
 # 本地急修:在檔頭第 2 行加 `// HOTFIX: YYYY-MM-DD <理由>`,--check 只警告不紅;超過 24 小時未回流模板 → 紅。
 # 反向驗證:改目標 repo 裡任一守門檔一個字 → --check 紅;加今天的 HOTFIX 行 → 警告綠;把日期改成三天前 → 紅;重跑 sync → 綠。
+# 反向驗證(設定檔):改目標 repo 的 boundaries.owners.json 一個字 → --check 印「(你的設定檔,不比對)」且不紅。
 set -euo pipefail
 TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:?目標 repo 根目錄}"; SUBDIR="${2:-scripts}"; MODE="${3:-}"
@@ -17,6 +21,8 @@ VERSION="$(cat "$TEMPLATE_DIR/VERSION")"
 COMMIT="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 HEADER="// SOURCE: template v${VERSION} (${COMMIT}) — 勿手改;升版用 sync-gates.sh"
 DEST="$TARGET/$SUBDIR"; mkdir -p "$DEST"
+# 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
+CONFIG_FILES=(boundaries.allow.json boundaries.owners.json)
 fail=0; n=0
 for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
   name="$(basename "$src")"; dst="$DEST/$name"; n=$((n+1))
@@ -37,7 +43,15 @@ for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; 
   fi
   rm -f "$tmp" 2>/dev/null || true
 done
-if [ "$MODE" != "--check" ] && [ ! -f "$DEST/boundaries.allow.json" ]; then cp "$TEMPLATE_DIR/scripts/boundaries.allow.json" "$DEST/"; echo "→ $DEST/boundaries.allow.json(新建)"; fi
+if [ "$MODE" = "--check" ]; then
+  for cfg in "${CONFIG_FILES[@]}"; do echo "○ $cfg(你的設定檔,不比對)"; done
+else
+  for cfg in "${CONFIG_FILES[@]}"; do
+    if [ ! -f "$DEST/$cfg" ]; then
+      cp "$TEMPLATE_DIR/scripts/$cfg" "$DEST/"; echo "→ $DEST/$cfg(新建)"
+    fi
+  done
+fi
 [ "$n" -gt 0 ] || { echo "掃到 0 支守門,這不是很乾淨,是腳本壞了"; exit 1; }
 if [ "$MODE" = "--check" ]; then [ "$fail" = 0 ] && echo "✓ 守門與 template v${VERSION} 一致" || exit 1
 else echo "已同步 $n 支守門到 $DEST(template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"; fi
