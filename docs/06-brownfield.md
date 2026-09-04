@@ -30,6 +30,26 @@
 | 4 | **契約先讀程式碼既有的 enum / 格式**,沿用不發明第二套;會落到磁碟或線路的枚舉進硬約定 | C:verdict 與 ending 是兩個時間點,複審才發現,改了三輪;沿用程式碼既有四值後一輪定案 |
 | 5 | **scaffold commit**:runner 設定、共用 World、`common.steps`、落點表、standalone.json、`_template`;既有 CI 先拆成獨立 job 再加 accept job | A:分叉前沒定共用檔,合併時互踩(P-01)。B:單一 CI job 一顆紅燈蓋掉一切 |
 | 6 | **一個參考回填做完再分叉**:挑最小最純的能力,場景綁既有測試的同一入口,FEATURE.md 放回填對照表,反向驗證(突變生產碼 → 場景紅)且檢查點在 repo 裡 | B:參考回填 06-retrieval 給後面 11 個一個能抄的形狀,比任何文件有效。B:反向驗證的紅來自 scratchpad 腳本,審核接受了(P-28) |
+
+**回填對照表的格式**(FEATURE.md 裡放一份,`scenario → 既有測試檔:測試名` 一行一列):
+
+```
+## 回填對照表
+
+| Scenario | 綁到的既有測試 |
+|---|---|
+| Retrieval returns top-k documents by relevance | test/retrieval/ranking.test.ts:ranks by cosine similarity |
+| Empty query returns empty result set | test/retrieval/edge-cases.test.ts:handles empty query |
+```
+
+規則:**綁不到既有測試的行為,不准進 phase-1**。回填的目的是「把既有測試轉正成規格」,不是
+「先把場景寫好,測試以後再補」——寫不出對照表那一列的場景,代表這個行為在既有系統裡根本沒有
+測試在守,那不是回填的範圍,是一張新單(走一般的 `/feature`,當成新功能處理)。
+
+**證據**:B 用這個格式一天內處理 11 個資料夾、136 個場景;過程中靠對照表本身抓到 2 處
+overclaim(場景宣稱綁到某個測試,實際那個測試根本沒驗到對應行為);6 個 worker 各自回填時,
+綁法(挑哪個既有測試當「同一入口」)彼此一致,顯示這個格式本身就足夠讓不同人做出同樣的判斷,
+不需要額外的仲裁。
 | 7 | **守門進 repo 再分叉**:step 撞名、gherkin 逐字重複、每個 phase 至少跑到 1 個場景、doc 連結;掃到 0 也紅 | A:合併後 cucumber 報 duplicate step(P-02)。B:tag 打錯字整個資料夾沒跑而 CI 全綠(P-32) |
 | 8 | **分叉**:每個能力一個 worktree,一次全開沒問題;合併一次一個,合完跑完整檢查再合下一個;切換日起舊狀態來源唯讀、只讀 FEATURE.md,過渡期 ≤ 1 sprint | C:board 雙讀舊 frontmatter 與 FEATURE.md,兩個真相,顧問的 checklist 三處前提隔天就過期 |
 

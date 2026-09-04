@@ -191,6 +191,15 @@
 | `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
 §4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
 
+## `.orca-brief/TASK.md.template`(工單模板)
+
+| placeholder | 填什麼 | 本專案的例子 |
+|---|---|---|
+| `{{INSTALL_COMMAND}}` | worker 進 worktree 後第一步要跑的依賴安裝指令 | `npm ci` |
+| `{{RULES_FILE_SECTION}}` | 規則檔裡 worker 必須先讀的特定節,不要只寫「讀規則」 | `CLAUDE.md` 的「五條硬規則」與「做決定時」表 |
+| `{{FULL_CHECK_COMMANDS}}` | 完成前必跑的完整檢查指令(通常跟 autopilot §0 或 §2 的收割檢查一致) | `npm run boundaries && npm test && npm run accept:standalone && npm run accept:dry && npm run accept:coverage` |
+| `{{KNOWN_RED_NOTE}}` | 專案特有的「哪些紅是還沒做,不是弄壞了」說明 | 「`packages/core` 尚未實作 `weekly-goal`,相關場景紅屬預期,不要修」 |
+
 ## brownfield 分支(既有專案切換,對應 `docs/06-brownfield.md` 的 8 步)
 
 | placeholder | 填什麼 | 本專案的例子 |
