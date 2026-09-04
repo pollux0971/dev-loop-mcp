@@ -31,6 +31,12 @@ npm run accept -- --tags "@<name> and @phase-<N> and not @manual"   # 走 npm sc
 
 記錄:通過數、失敗數、失敗場景與錯誤摘要。
 
+## 第三步半:它現在守著什麼?
+
+問一句並把答案寫進驗收報告:**這個 phase 交付的東西,現在接上的真實對象是什麼?**(哪些 prompt 檔、哪些真資料、哪些真入口)
+列得出來且不是 demo / fixture → 往下;答案是「只有 demo / selftest / fixture」→ **不算 done**,退回 in-progress(P-42)。
+能列的東西就要求寫成守門(例:每個 prompt 檔都被某個 golden set 引用,否則紅)。
+
 ## 第四步:單獨執行
 
 從根目錄的 `standalone.json` 取出該功能的項目,**實際執行 `cmd`**。
