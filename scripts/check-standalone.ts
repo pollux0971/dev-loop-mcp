@@ -47,7 +47,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ROOT as GIT_ROOT } from './_root.js';
+import { ROOT as GIT_ROOT, readConfigJson } from './_root.js';
 
 /** 三支掃描器共用的那句話。0 個東西的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -79,7 +79,9 @@ const timeout = Number(arg('--timeout') ?? 120_000);
 const listOnly = process.argv.includes('--list');
 const manifestPath = resolve(ROOT, arg('--manifest') ?? join(ROOT, 'standalone.json'));
 
-const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
+// 讀不到檔案、或讀到了但不是合法 JSON,都在這裡大聲失敗(S9):印
+// `✗ 設定檔壞掉:<path>: <message>` + gate 標記 + exit 1,不是未捕捉的堆疊。
+const manifest = readConfigJson(manifestPath, GATE_NAME) as Manifest;
 const rawEntries = Object.entries(manifest);
 
 // _doc 慣例:底線開頭的鍵是 metadata,不當條目看,連驗證形狀都不做。

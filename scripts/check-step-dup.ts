@@ -51,7 +51,7 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { ROOT } from './_root.js';
+import { DEFAULT_SKIP_DIRS, ROOT, loadGatesConfig, requireConfigType, resolveConfig } from './_root.js';
 
 /** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
 const GATE_NAME = 'step-dup';
@@ -68,12 +68,22 @@ function toPosix(p: string): string {
   return p.split('\\').join('/');
 }
 
-function* walk(dir: string): Generator<string> {
+/** S10:跟其餘會走目錄樹的 gate 共用同一份略過清單。 */
+function resolveSkipDirsForStepDup(): Set<string> {
+  const p = resolveConfig(import.meta.dirname, 'gates.config.json');
+  const cfg = loadGatesConfig(p, GATE_NAME);
+  if (cfg?.skipDirs !== undefined) requireConfigType(cfg.skipDirs, 'skipDirs', 'array', GATE_NAME);
+  const extra = Array.isArray(cfg?.skipDirs) ? (cfg.skipDirs as unknown[]).filter((s): s is string => typeof s === 'string') : [];
+  return new Set([...DEFAULT_SKIP_DIRS, ...extra]);
+}
+
+function* walk(dir: string, skipDirs: Set<string>): Generator<string> {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
+    if (skipDirs.has(name)) continue;
     const full = join(dir, name);
     const st = statSync(full);
-    if (st.isDirectory()) yield* walk(full);
+    if (st.isDirectory()) yield* walk(full, skipDirs);
     else if (name.endsWith('.feature')) yield full;
   }
 }
@@ -88,7 +98,8 @@ function folderOf(relPath: string): string | undefined {
 }
 
 function collectFeatureFiles(): string[] {
-  const all = [...walk(join(ROOT, 'features')), ...walk(join(ROOT, 'docs/integration'))];
+  const skipDirs = resolveSkipDirsForStepDup();
+  const all = [...walk(join(ROOT, 'features'), skipDirs), ...walk(join(ROOT, 'docs/integration'), skipDirs)];
   return all.filter((f) => folderOf(toPosix(relative(ROOT, f))) !== undefined);
 }
 

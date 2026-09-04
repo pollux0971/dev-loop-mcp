@@ -202,3 +202,178 @@ describe('check-boundaries:既有規則不受影響(回歸)', () => {
     expect(output).toContain('✓ 無違規');
   }, SPAWN_TIMEOUT_MS);
 });
+
+// ---------------------------------------------------------------------------
+// S9:設定檔壞掉要大聲失敗(不是未捕捉的堆疊,也不是悄悄套用預設值)。
+// ---------------------------------------------------------------------------
+
+describe('check-boundaries:S9 設定檔壞掉', () => {
+  it('boundaries.owners.json 是壞掉的 JSON → 印「設定檔壞掉」,不是未捕捉的堆疊', () => {
+    const dir = makeFixture();
+    writeFileSync(join(dir, 'scripts', 'boundaries.owners.json'), '{ this is not json', 'utf8');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+    expect(output).not.toContain('at JSON.parse');
+    expect(output).not.toContain('SyntaxError');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('boundaries.allow.json 是壞掉的 JSON → 印「設定檔壞掉」,不是未捕捉的堆疊', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeFileSync(join(dir, 'scripts', 'boundaries.allow.json'), '[ not json either', 'utf8');
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+    expect(output).not.toContain('at JSON.parse');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('gates.config.json(skipDirs)是壞掉的 JSON → 一樣大聲失敗', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeFileSync(join(dir, 'scripts', 'gates.config.json'), '{ broken', 'utf8');
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('gates.config.json 有不認識的頂層鍵(打錯字)→ 印「設定檔有不認識的鍵」', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeFileSync(join(dir, 'scripts', 'gates.config.json'), JSON.stringify({ skipDirz: ['oops'] }), 'utf8');
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔有不認識的鍵:skipDirz');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('gates.config.json 的 "skipDirs" 型別錯(不是陣列)→ 印「設定檔鍵型別錯」', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeFileSync(join(dir, 'scripts', 'gates.config.json'), JSON.stringify({ skipDirs: 'nope' }), 'utf8');
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔鍵型別錯:skipDirs 應為 array');
+    expect(output).toContain('gate=boundaries result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('合法設定不受影響(照常判違規,不受這次改動影響)', () => {
+    const dir = makeFixture();
+    writeOwners(dir, BASE_OWNERS);
+    writeAllow(dir, []);
+    writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
+    writeSrc(dir, 'packages/b/index.ts', "import { x } from '../a/index';\nexport const y = x;\n");
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('owner-b → owner-a');
+  }, SPAWN_TIMEOUT_MS);
+});
+
+// ---------------------------------------------------------------------------
+// S10:所有走目錄樹的 gate 共用同一份略過清單(_root.ts 的 DEFAULT_SKIP_DIRS)。
+// ---------------------------------------------------------------------------
+
+describe('check-boundaries:S10 共用略過清單', () => {
+  it('.next 建置產物底下的檔案不被掃到(消費者實測:511 筆雜訊違規)', () => {
+    const dir = makeFixture();
+    writeOwners(dir, {
+      owners: [
+        ['apps/x/', 'app-x'],
+        ['contracts/', 'contracts'],
+      ],
+      glue: [],
+      aliases: [],
+      scanDirs: ['apps'],
+      contractsOwner: 'contracts',
+    });
+    writeAllow(dir, []);
+    // .next 底下放一個明顯會違規的 import(絕對路徑),如果沒被排除,掃描器一定會報。
+    writeSrc(dir, 'apps/x/.next/foo.ts', "import x from '/etc/passwd';\nexport default x;\n");
+    writeSrc(dir, 'apps/x/index.ts', 'export const ok = 1;\n');
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(0);
+    expect(output).not.toContain('.next/foo.ts');
+    expect(output).toContain('✓ 無違規');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('gates.config.json 的 "skipDirs" 追加(不取代)內建清單', () => {
+    const dir = makeFixture();
+    writeOwners(dir, {
+      owners: [
+        ['apps/x/', 'app-x'],
+        ['contracts/', 'contracts'],
+      ],
+      glue: [],
+      aliases: [],
+      scanDirs: ['apps'],
+      contractsOwner: 'contracts',
+    });
+    writeAllow(dir, []);
+    writeFileSync(join(dir, 'scripts', 'gates.config.json'), JSON.stringify({ skipDirs: ['vendor-custom'] }), 'utf8');
+    // 自訂略過目錄裡放一個違規 import → 應該被排除,不報。
+    writeSrc(dir, 'apps/x/vendor-custom/bad.ts', "import x from '/etc/passwd';\nexport default x;\n");
+    // 一般目錄裡放同樣的違規 import → 應該照樣被抓到(追加,不是取代內建清單也不是取代掃描本身)。
+    writeSrc(dir, 'apps/x/bad.ts', "import x from '/etc/passwd';\nexport default x;\n");
+
+    const { code, output } = run(dir);
+
+    expect(code).toBe(1);
+    expect(output).not.toContain('vendor-custom/bad.ts');
+    expect(output).toContain('apps/x/bad.ts');
+  }, SPAWN_TIMEOUT_MS);
+});
+
+// ---------------------------------------------------------------------------
+// S10:每一支會走目錄樹的 check-*.ts 都要用 _root.ts 的共用略過清單,不准自己另外
+// 宣告一份 SKIP_DIRS-like 的陣列(這樣才不會有下一支 gate 重蹈 .next 事故的覆轍)。
+// ---------------------------------------------------------------------------
+
+describe('check-boundaries:S10 共用清單的 grep 迴歸測試', () => {
+  it('沒有任何 check-*.ts(_root.ts 除外)自己寫死 "node_modules" 字面值', async () => {
+    const { readdirSync, readFileSync: readFile } = await import('node:fs');
+    const scriptsDir = import.meta.dirname;
+    const files = readdirSync(scriptsDir).filter(
+      (f) => f.startsWith('check-') && f.endsWith('.ts') && !f.endsWith('.test.ts'),
+    );
+    expect(files.length).toBeGreaterThan(0);
+    const offenders = files.filter((f) => readFile(join(scriptsDir, f), 'utf8').includes("'node_modules'"));
+    expect(offenders).toEqual([]);
+  });
+
+  it('每一支定義了遞迴 walk() 的 check-*.ts 都要 import _root.ts 的共用略過清單', async () => {
+    const { readdirSync, readFileSync: readFile } = await import('node:fs');
+    const scriptsDir = import.meta.dirname;
+    const files = readdirSync(scriptsDir).filter(
+      (f) => f.startsWith('check-') && f.endsWith('.ts') && !f.endsWith('.test.ts'),
+    );
+    const walkers = files.filter((f) => /function\*\s+walk\s*\(/.test(readFile(join(scriptsDir, f), 'utf8')));
+    expect(walkers.length).toBeGreaterThan(0);
+    for (const f of walkers) {
+      const src = readFile(join(scriptsDir, f), 'utf8');
+      const importsShared = /from ['"]\.\/_root\.js['"]/.test(src) &&
+        (src.includes('DEFAULT_SKIP_DIRS') || src.includes('resolveSkipDirs') || src.includes('splitSkipDirs'));
+      expect(importsShared, `${f} 應該 import _root.ts 的共用略過清單`).toBe(true);
+    }
+  });
+});

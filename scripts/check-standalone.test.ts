@@ -215,3 +215,46 @@ describe('check-standalone:pending 語意(來源 nightmare-assault)', () => {
     expect(output).toContain('gate=standalone result=PASS scanned=2');
   }, SPAWN_TIMEOUT_MS);
 });
+
+// ---------------------------------------------------------------------------
+// S9:設定檔(manifest)壞掉要大聲失敗,不是未捕捉的堆疊。
+// ---------------------------------------------------------------------------
+
+describe('check-standalone:S9 manifest 壞掉', () => {
+  it('standalone.json 是壞掉的 JSON → 印「設定檔壞掉」+ 標記,不是未捕捉的堆疊', () => {
+    const root = makeRoot();
+    const manifestPath = join(root, 'standalone.json');
+    writeFileSync(manifestPath, '{ not valid json', 'utf8');
+
+    const { code, output } = run(root, manifestPath);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=standalone result=FAIL scanned=0');
+    expect(output).not.toContain('at JSON.parse');
+    expect(output).not.toContain('SyntaxError');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('standalone.json 根本不存在 → 一樣大聲失敗(不是未捕捉的 ENOENT)', () => {
+    const root = makeRoot();
+    const manifestPath = join(root, 'standalone.json'); // 沒有 writeFileSync
+
+    const { code, output } = run(root, manifestPath);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=standalone result=FAIL scanned=0');
+    expect(output).not.toContain('node:internal');
+    expect(output).not.toContain('at Object.readFileSync');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('合法 manifest 不受影響(行為不變)', () => {
+    const root = makeRoot();
+    const manifest = writeManifest(root, { a: { cmd: PASS_CMD, interactive: false } });
+
+    const { code, output } = run(root, manifest);
+
+    expect(code).toBe(0);
+    expect(output).toContain('gate=standalone result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+});

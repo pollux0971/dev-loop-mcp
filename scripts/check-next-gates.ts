@@ -52,7 +52,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ROOT as GIT_ROOT } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig } from './_root.js';
 
 /** 三支掃描器共用的那句話(這支也共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -92,7 +92,8 @@ type NextGatesMode = 'report' | 'enforce';
 function loadMode(): NextGatesMode {
   const p = findConfigFile('gates.config.json');
   if (!p) return 'enforce'; // 選填設定,沒有就用預設,不印訊息(跟其餘 gates.config.json 欄位同規則)
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as { nextGates?: { mode?: unknown } };
+  // 解析錯誤、不認識的頂層鍵都在這裡大聲失敗(S9),不是未捕捉的堆疊。
+  const raw = (loadGatesConfig(p, GATE_NAME) ?? {}) as { nextGates?: { mode?: unknown } };
   return raw.nextGates?.mode === 'report' ? 'report' : 'enforce';
 }
 

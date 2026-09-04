@@ -45,7 +45,7 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { ROOT as GIT_ROOT } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig, readConfigJson, resolveSkipDirs } from './_root.js';
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -166,7 +166,8 @@ function ownersNotConfigured(pathDisplay: string): never {
 function loadOwnersConfig(): OwnersConfig {
   const p = findConfigFile('boundaries.owners.json');
   if (!p) ownersNotConfigured(configSearchPathsDisplay('boundaries.owners.json'));
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<OwnersConfig>;
+  // 解析錯誤(壞掉的 JSON)在這裡大聲失敗(S9),不會是未捕捉的堆疊。
+  const raw = readConfigJson(p, GATE_NAME) as Partial<OwnersConfig>;
   if (!Array.isArray(raw.owners) || raw.owners.length === 0) ownersNotConfigured(p);
   if (!Array.isArray(raw.glue)) configError(`${OWNERS_JSON_PATH} 缺 "glue"(陣列,可以是空的)`);
   for (const g of raw.glue) {
@@ -191,9 +192,25 @@ function loadOwnersConfig(): OwnersConfig {
   return raw as OwnersConfig;
 }
 
-/** 要掃描的副檔名與略過的目錄——這兩個不太需要因專案而異,留在程式裡。 */
+/** 要掃描的副檔名——這個不太需要因專案而異,留在程式裡。 */
 const EXTS = ['.ts', '.mts', '.js', '.mjs', '.svelte'];
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'target', '.svelte-kit', 'src-tauri']);
+
+/**
+ * 略過的目錄(S10,見 `_root.ts` 的 `DEFAULT_SKIP_DIRS`)——所有走目錄樹的 gate 共用同一份
+ * 清單 + `gates.config.json` 的 `skipDirs` 追加,不准各自宣告自己的 `SKIP_DIRS`
+ * (check-boundaries.test.ts 有一條 grep 測試強制這條:任何 `check-*.ts` 都不准再定義
+ * 一個長得像獨立略過清單的陣列/集合)。`src-tauri` 是這支腳本原本額外加的一項,不在
+ * `DEFAULT_SKIP_DIRS` 的通用清單裡(那是 Tauri 專屬的目錄名,不是每個專案都用得到)——
+ * 額外加進來,不影響共用清單本身。gates.config.json 讀不到就是「沒有這份選填設定」,
+ * 只用內建預設,不印訊息(跟其餘選填設定同規則)。
+ */
+function resolveSkipDirsForBoundaries(): Set<string> {
+  const cfgPath = findConfigFile('gates.config.json');
+  const cfg = loadGatesConfig(cfgPath, GATE_NAME);
+  const skip = resolveSkipDirs(cfg, GATE_NAME);
+  skip.add('src-tauri');
+  return skip;
+}
 
 interface AllowEdge { from: string; to: string; reason: string }
 interface Violation { file: string; line: number; spec: string; from: string; to: string; kind: 'cross' | 'absolute' | 'unmapped-target' | 'glue-target' }
@@ -201,7 +218,8 @@ interface Violation { file: string; line: number; spec: string; from: string; to
 function loadAllow(): AllowEdge[] {
   const p = findConfigFile('boundaries.allow.json');
   if (!p) return []; // 選填設定,兩處都沒有就當沒有例外邊,不印訊息
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as unknown;
+  // 解析錯誤在這裡大聲失敗(S9),不會是未捕捉的堆疊。
+  const raw = readConfigJson(p, GATE_NAME) as unknown;
   if (!Array.isArray(raw)) configError('boundaries.allow.json 必須是陣列');
   for (const e of raw as AllowEdge[]) {
     if (!e.from || !e.to || !e.reason) configError(`boundaries.allow.json 每一筆都要有 from / to / reason:${JSON.stringify(e)}`);
@@ -221,13 +239,13 @@ function ownerOf(owners: OwnersConfig['owners'], relPath: string): string | unde
   return undefined;
 }
 
-function* walk(dir: string): Generator<string> {
+function* walk(dir: string, skipDirs: Set<string>): Generator<string> {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
+    if (skipDirs.has(name)) continue;
     const full = join(dir, name);
     const st = statSync(full);
-    if (st.isDirectory()) yield* walk(full);
+    if (st.isDirectory()) yield* walk(full, skipDirs);
     else if (EXTS.some((e) => name.endsWith(e))) yield full;
   }
 }
@@ -284,6 +302,7 @@ function resolveSpec(
 function main(): void {
   const config = loadOwnersConfig();
   const allow = loadAllow();
+  const skipDirs = resolveSkipDirsForBoundaries();
   const glue = new Set(config.glue.map(glueOwnerName));
   const glueTargetForbidden = new Set(config.glue.filter(isGlueTargetForbidden).map(glueOwnerName));
   const violations: Violation[] = [];
@@ -294,7 +313,7 @@ function main(): void {
   let found = 0;
 
   for (const dir of config.scanDirs) {
-    for (const file of walk(join(ROOT, dir))) {
+    for (const file of walk(join(ROOT, dir), skipDirs)) {
       found++;
       const rel = toPosix(relative(ROOT, file));
       const from = ownerOf(config.owners, rel);

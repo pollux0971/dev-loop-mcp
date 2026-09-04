@@ -16,7 +16,8 @@
 # 不受語言選集影響),以及 scripts/py/*.py(定向反向驗證工具 mutate.py 與它的 meta-test
 # test_mutate.py,同樣每次同步都覆蓋、同樣靠版本標頭防漂移——只是標頭用 `#` 開頭的
 # Python 註解,不是 `//`;**只在語言選集含 py 時才同步**,見下「語言選集」)。
-# 設定檔 CONFIG_FILES(boundaries.allow.json、boundaries.owners.json、gates.config.json)**只在目標不存在時**複製一次,
+# 設定檔 CONFIG_FILES(boundaries.allow.json、boundaries.owners.json、gates.config.json、
+# doc-rot.blacklist.json、known-defects.json,模板 1.4.0 加了後兩個)**只在目標不存在時**複製一次,
 # 之後永遠不覆蓋——那是每個專案自己填的落點表跟例外清單,不是模板的一部分。`--check` 對這些檔案
 # 一律跳過比對,印一行「(你的設定檔,不比對)」,不會因為專案改了自己的設定就報紅。
 #
@@ -133,7 +134,7 @@ fi
 DEST="$TARGET/$SUBDIR"
 PY_DEST="$DEST/py"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
-CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json)
+CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json doc-rot.blacklist.json known-defects.json)
 fail=0; n=0
 
 sha256_file() {

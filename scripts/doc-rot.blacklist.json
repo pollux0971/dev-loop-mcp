@@ -1,0 +1,20 @@
+[
+  {
+    "pattern": "llm-learning-cards-\\d+",
+    "reason": "寫死的技術顧問 session 名字——換了顧問 session 或換了專案編號就是假的,文件不該硬編這個",
+    "since": "2026-09-05",
+    "incident": "P-59"
+  },
+  {
+    "pattern": "npx stryker run",
+    "reason": "裸的 npx stryker run 繞過檔案鎖直接跑變異測試——鎖存在是為了讓審核上限(cap)有意義,抄這個指令會讓鎖形同虛設",
+    "since": "2026-09-05",
+    "incident": "mutate-lock-bypass"
+  },
+  {
+    "pattern": "核心四項",
+    "reason": "量詞會漂移的措辭——「核心項目」的數量改了,寫死的「四項」沒跟著改,講的話就是錯的;要嘛不寫數字,要嘛每次核對",
+    "since": "2026-09-05",
+    "incident": "nightmare-assault"
+  }
+]

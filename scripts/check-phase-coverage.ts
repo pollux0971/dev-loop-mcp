@@ -88,7 +88,7 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve, relative } from 'node:path';
-import { ROOT, resolveConfig, configSearchPaths } from './_root.js';
+import { DEFAULT_SKIP_DIRS, ROOT, loadGatesConfig as loadSharedGatesConfig, requireConfigType, resolveConfig, configSearchPaths } from './_root.js';
 
 /** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
 const GATE_NAME = 'phase-coverage';
@@ -149,7 +149,10 @@ function hasTag(line: string, tag: string): boolean {
 // ---- cucumber 執行目錄(cwd)三層決定 ----
 
 const CUCUMBER_CONFIG_FILES = ['cucumber.js', 'cucumber.cjs', 'cucumber.mjs', 'cucumber.json', 'cucumber.yaml', 'cucumber.yml'];
-const CWD_SCAN_SKIP = new Set(['node_modules', '.git', 'dist', 'archive']);
+/** 掃 ROOT 直接子目錄找 cucumber 設定時要跳過的目錄(S10):共用清單 + `archive`
+ *  (模板慣例的封存目錄,不在通用清單裡)。不准在這裡另外寫死一份 `node_modules` 之類的
+ *  字面陣列——見 check-boundaries.test.ts 那條「every check-*.ts 都要用共用清單」的 grep 測試。 */
+const CWD_SCAN_SKIP = new Set([...DEFAULT_SKIP_DIRS, 'archive']);
 
 interface GatesConfig { cucumberCwd?: string; runTimeoutMs?: number }
 
@@ -162,11 +165,18 @@ function loadGatesConfig(): GatesConfig {
   // 例如 features/scripts/)、(2) ROOT/scripts/——見 _root.ts 的 resolveConfig。
   // gates.config.json 是選填設定,兩處都沒有就退回內建預設,不印任何訊息。
   const p = resolveConfig(import.meta.dirname, 'gates.config.json');
-  if (!p) return {};
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as {
+  // 解析錯誤、不認識的頂層鍵在這裡大聲失敗(S9),不是未捕捉的堆疊、也不是悄悄回退預設值。
+  const raw = (loadSharedGatesConfig(p, GATE_NAME) ?? {}) as {
     cucumberCwd?: unknown;
     phaseCoverage?: { runTimeoutMs?: unknown };
   };
+  if (raw.cucumberCwd !== undefined) requireConfigType(raw.cucumberCwd, 'cucumberCwd', 'string', GATE_NAME);
+  if (raw.phaseCoverage !== undefined) {
+    requireConfigType(raw.phaseCoverage, 'phaseCoverage', 'object', GATE_NAME);
+    if (raw.phaseCoverage.runTimeoutMs !== undefined) {
+      requireConfigType(raw.phaseCoverage.runTimeoutMs, 'phaseCoverage.runTimeoutMs', 'number', GATE_NAME);
+    }
+  }
   const cucumberCwd = typeof raw.cucumberCwd === 'string' ? raw.cucumberCwd : undefined;
   const runTimeoutMs = raw.phaseCoverage && typeof raw.phaseCoverage.runTimeoutMs === 'number'
     ? raw.phaseCoverage.runTimeoutMs

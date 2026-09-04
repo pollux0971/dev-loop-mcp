@@ -308,3 +308,55 @@ describe('check-next-gates:nextGates.mode', () => {
     expect(code).toBe(1);
   }, SPAWN_TIMEOUT_MS);
 });
+
+// ---------------------------------------------------------------------------
+// S9:設定檔壞掉要大聲失敗(不是未捕捉的堆疊,也不是悄悄套用預設值)。
+// ---------------------------------------------------------------------------
+
+describe('check-next-gates:S9 設定檔壞掉', () => {
+  it('gates.config.json 是壞掉的 JSON → 印「設定檔壞掉」+ 標記,不是未捕捉的堆疊', () => {
+    const root = makeRepo();
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'gates.config.json'), '{ broken json', 'utf8');
+    writeFeature(root, '01-foo', [{ n: 1, status: 'done' }]);
+    writeNext(root, '01-foo', '## Gate\n\n**phase-2** 需要:phase-1\n');
+    commitAll(root, 'init');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=next-gates result=FAIL scanned=0');
+    expect(output).not.toContain('at JSON.parse');
+    expect(output).not.toContain('SyntaxError');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('gates.config.json 有不認識的頂層鍵(打錯字)→ 印「設定檔有不認識的鍵」', () => {
+    const root = makeRepo();
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'gates.config.json'), JSON.stringify({ nextGatess: { mode: 'report' } }), 'utf8');
+    writeFeature(root, '01-foo', [{ n: 1, status: 'done' }]);
+    writeNext(root, '01-foo', '## Gate\n\n**phase-2** 需要:phase-1\n');
+    commitAll(root, 'init');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔有不認識的鍵:nextGatess');
+    expect(output).toContain('gate=next-gates result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('合法設定不受影響(nextGates.mode 照常生效)', () => {
+    const root = makeRepo();
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'gates.config.json'), JSON.stringify({ nextGates: { mode: 'report' } }), 'utf8');
+    writeFeature(root, '01-foo', [{ n: 1, status: 'done' }]);
+    writeNext(root, '01-foo', '## Gate\n\n**phase-2** 需要:等主管口頭同意\n');
+    commitAll(root, 'init');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).toContain('gate=next-gates result=FAIL scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+});

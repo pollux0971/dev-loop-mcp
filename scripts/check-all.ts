@@ -31,10 +31,10 @@
  * `scanned` 就是 `chain` 的長度,不管 `--fail-fast` 有沒有讓後面的項目沒真的跑——
  * 這個數字回答的是「這條鏈設定了幾個目標」,不是「這次真的執行了幾個」。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT as GIT_ROOT } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig, readConfigJson, requireConfigType } from './_root.js';
 
 /** 三支掃描器共用的那句話(這支是第七支,一樣共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -78,10 +78,6 @@ interface PackageJson {
   scripts?: Record<string, string>;
 }
 
-interface GatesConfig {
-  chain?: unknown;
-}
-
 const CHAIN_EXAMPLE = `{
   "chain": ["typecheck", "test", "boundaries", "standalone"]
 }`;
@@ -95,7 +91,12 @@ function loadChain(): string[] {
     console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
     process.exit(1);
   }
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as GatesConfig;
+  // 解析錯誤(壞掉的 JSON)、不認識的頂層鍵(打錯字)都在這裡大聲失敗(S9),不會是
+  // 未捕捉的堆疊,也不會悄悄套用預設值。
+  const raw = (loadGatesConfig(p, GATE_NAME) ?? {}) as { chain?: unknown };
+  // "chain" 有填但型別不對(例如寫成字串而不是陣列)→ 型別錯,跟「根本沒填/填空陣列」
+  // (下面「尚未設定」那條路)是兩種不同的病,訊息要分開。
+  if (raw.chain !== undefined) requireConfigType(raw.chain, 'chain', 'array', GATE_NAME);
   if (!Array.isArray(raw.chain) || raw.chain.length === 0) {
     console.error(`✗ ${p} 沒有 "chain"(或是空陣列)`);
     console.error('check-all 需要在 gates.config.json 加一個非空的 "chain" 陣列,元素是 package.json scripts 底下的名字。範例:\n');
@@ -120,7 +121,10 @@ function loadPackageScripts(): Record<string, string> {
     console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
     process.exit(1);
   }
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as PackageJson;
+  // package.json 不是 gates.config.json,沒有「已知頂層鍵」這個概念(name、scripts、
+  // devDependencies……),只需要壞掉時大聲失敗(readConfigJson),不做頂層鍵檢查
+  // (那是 loadGatesConfig 專門為 gates.config.json 做的事)。
+  const raw = readConfigJson(p, GATE_NAME) as PackageJson;
   return raw.scripts ?? {};
 }
 

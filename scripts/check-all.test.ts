@@ -159,3 +159,51 @@ describe('check-all:--fail-fast 對照 --continue(預設)', () => {
     expect(output).toContain('gate=all result=FAIL scanned=2');
   }, SPAWN_TIMEOUT_MS);
 });
+
+// ---------------------------------------------------------------------------
+// S9:設定檔壞掉要大聲失敗(不是未捕捉的堆疊,也不是悄悄套用預設值)。
+// ---------------------------------------------------------------------------
+
+describe('check-all:S9 設定檔壞掉', () => {
+  it('gates.config.json 是壞掉的 JSON → 印「設定檔壞掉」+ 標記,不是未捕捉的堆疊', () => {
+    const dir = makeFixture({ scripts: { a: PASS }, gatesConfig: { chain: ['a'] } });
+    writeFileSync(join(dir, 'scripts', 'gates.config.json'), '{ this is not json', 'utf8');
+
+    const { code, output } = runCheckAll(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔壞掉:');
+    expect(output).toContain('gate=all result=FAIL scanned=0');
+    expect(output).not.toContain('at JSON.parse');
+    expect(output).not.toContain('SyntaxError');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('"chain" 型別錯(填成字串而不是陣列)→ 印「設定檔鍵型別錯」', () => {
+    const dir = makeFixture({ scripts: { a: PASS }, gatesConfig: { chain: 'a' } });
+
+    const { code, output } = runCheckAll(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔鍵型別錯:chain 應為 array');
+    expect(output).toContain('gate=all result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('gates.config.json 有不認識的頂層鍵(打錯字)→ 印「設定檔有不認識的鍵」', () => {
+    const dir = makeFixture({ scripts: { a: PASS }, gatesConfig: { chian: ['a'] } });
+
+    const { code, output } = runCheckAll(dir);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ 設定檔有不認識的鍵:chian');
+    expect(output).toContain('gate=all result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('合法設定不受影響(有效的 chain 照常跑,行為不變)', () => {
+    const dir = makeFixture({ scripts: { a: PASS, b: PASS }, gatesConfig: { chain: ['a', 'b'] } });
+
+    const { code, output } = runCheckAll(dir);
+
+    expect(code).toBe(0);
+    expect(output).toContain('gate=all result=PASS scanned=2');
+  }, SPAWN_TIMEOUT_MS);
+});
