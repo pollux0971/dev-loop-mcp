@@ -190,3 +190,15 @@
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
 | `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
 §4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
+
+## brownfield 分支(既有專案切換,對應 `docs/06-brownfield.md` 的 8 步)
+
+| placeholder | 填什麼 | 本專案的例子 |
+|---|---|---|
+| `{{TEMPLATE_VERSION}}` | `CLAUDE.md` 記的採用模板版本 | `1.0.0` |
+| `{{ADVISOR_SESSION}}` | 決策權表裡技術顧問的 session 名 | `llm-learning-cards-57` |
+| `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
+| `{{BASELINE_TAG}}` | 切換前打的舊制基準 tag 名(步驟 2) | AI_KM:`baseline-bmad`;nightmare:`safety/main-before-paradigm` |
+| `{{ARCHIVE_DIR}}` | 舊 story / 規格 / evidence 封存目錄(步驟 3) | AI_KM:`archive/`;nightmare:`dev/archive/stories/` |
+| `{{REFERENCE_BACKFILL}}` | 第一個做完的參考回填資料夾(步驟 6) | AI_KM:`06-retrieval` |
+| `{{OLD_STATUS_SOURCE}}` | 切換日起唯讀的舊狀態來源(步驟 8) | nightmare:`dev/stories/` frontmatter |
