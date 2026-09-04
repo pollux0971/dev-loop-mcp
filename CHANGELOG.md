@@ -4,6 +4,49 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.3.5 — 2026-09-05
+
+七個坑,來源 nightmare-assault 與專案 A(協調者、技術顧問、覆核 agent),全部修在文件與 skill 端
+(這版是純 patch:PITFALLS / docs / autopilot 與 mutation-testing 兩個 skill 的措辭,沒有新腳本):
+
+1. **P-53 日期依賴測試**:測試只在跨過某個日期後變紅,失敗訊息不提日期——起因是跑在真實時鐘上的
+   測試把「現在」跟一個寫死的時間常數(`Date.UTC(...)`)比較,常數與真實時間的差距總有一天會跨過
+   臨界值。規則:真實時鐘上的測試不准用寫死的時間常數;覆核修法時要普查同一個常數的每一處用法
+   (實例:39 處用到,只有 2 處真的有關)。
+2. **P-54 送到死終端機**:`orchestration send` 對已死的終端機照樣回 `ok:true`,發送端以為送到了,
+   接收端什麼都沒收到(P-45 同族)。規則:`send` 前先 `terminal show`;收到 `terminal_handle_stale`
+   → 開新終端機,從 REVIEW.md 重新交接。
+3. **P-55 必跑清單裡有一條不是 npm script**:漂移檢查(`sync-gates.sh --check`)在 autopilot 裡放了
+   好幾天,只是一行手打指令,`package.json` 沒有對應 script,沒人真的跑過。規則:清單裡每一條都要是
+   npm script,新加的守門要反向驗證(刻意弄壞 → ✗;修回來 → ✓)。
+4. **P-56 push 帶上未驗的合併**:協調者合併進 main 47 秒後,技術顧問只看 `git status` 就 push,
+   把還沒驗過的合併一起推了上去——`git push` 推的是 HEAD 以下全部,不是「剛做的那個 commit」。
+   規則:push 前 `git log origin/main..HEAD` 逐條驗過;合併後立刻通知,不要累積。
+5. **P-57 「保守選項」沒有定義**:「顧問沉默 30 分鐘 → 走保守選項」這條規則沒有可操作定義,worker
+   讀成「花力氣最少的那個」。定義:**保守選項 = 一次 `git revert` 就能完整還原的那個**。
+6. **P-58 變異分數跨設定檔不可比**:同一份程式碼、同一個工具,兩份 Stryker 設定檔(是否開 TS 型別
+   檢查)跑出 3 分以上的差距,也解釋了先前一次被當成「跑錯了、無法重現」的分數落差。規則:分數要
+   附完整指令與設定檔路徑,不同設定檔的分數不可比較。
+7. **P-59 寫死會過期的識別子**:顧問 session 名、模板 worktree 路徑被寫死進 `CLAUDE.md` 與
+   autopilot,session 重開後就過期。規則:寫死的識別子旁邊要寫「怎麼重新找到它」,失敗要吵(非零
+   結束),不能安靜地假裝沒事。
+
+同時修訂 **P-49**:補第三種「分支全綠、合併後紅」的形狀——兩棵樹對出同一個總數卻組成不同
+(分支 8036+4+4、main 8036+8,總數都是 8044,實際少了四條),以及一個 caveat:對帳比 multiset
+不比 count,而且不能用 `set(names)`(會靜默丟掉重複名稱)。
+
+**`autopilot/SKILL.md`(template)追上專案 A 的版本**並吸收 nightmare-assault 的「同型第三次即升類」
+規則:補上 `check:gates`(P-55)、junit multiset 基準比對(P-49)、審核輪上限放寬到 3 + 檔案鎖排隊
+(P-34)、mutation 分數要附設定檔(P-58)、保守選項定義(P-57)、§4c「分支全綠合併後紅」的三種形狀、
+§4b 的送死終端機規則(P-54)、§3/§4 的「停止前確認 worktree 已 commit」與「同型第三次升類」。
+
+**`mutation-testing/SKILL.md`** 補 P-58:分數要附設定檔路徑,回報格式加一行「指令」。
+
+**`docs/07-practices.md`** 新增 (p) 覆核測試修正的三步、(q) 對帳比 multiset 不比 count。
+
+**`CHECKLIST.md`** 新增「收工前 / push 前檢查」一節(不是 placeholder,是流程提醒):worktree 已
+commit、push 前逐條驗過、必跑清單每條都是 npm script。
+
 ## 1.3.4 — 2026-09-05
 
 專案 A worker 同步 1.3.2 / 1.3.3 到自己的專案時抓到的三個問題,全部修在模板端:

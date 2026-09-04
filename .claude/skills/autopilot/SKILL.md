@@ -25,7 +25,7 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 | 情況 | 誰決定 | 怎麼做 |
 |---|---|---|
 | 派工順序、合併順序、worktree、審核回合 | **協調者自己** | 直接做 |
-| 技術取捨:資料結構、介面形狀、規格措辭、gate 例外、要不要重跑、變異存活怎麼分類 | **技術顧問**(session `{{ADVISOR_SESSION}}`) | SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提 |
+| 技術取捨:資料結構、介面形狀、規格措辭、gate 例外、要不要重跑、變異存活怎麼分類 | **技術顧問**(session `{{ADVISOR_SESSION}}`) | SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。**保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57) |
 | 新功能、新需求、改「不在範圍」 | **使用者** | `/feature` 分流出提案,放進「等老闆」清單,**不擋其他工作** |
 | 改 `contracts/` 硬約定、改 `CLAUDE.md` | **使用者** | 同上,附 ADR 草稿 |
 | 花錢超過當日上限(`{{DAILY_CAP_ENV}}`) | **使用者** | 不跑;@llm 場景延到明天或等他加碼 |
@@ -41,16 +41,33 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
    npm run accept:dry        # 必看「0 ambiguous」:步驟定義撞名不會讓任何測試變紅,只有這步抓得到
    npm run accept:coverage   # 每個 phase feature 用自己的 tag 至少跑到 1 個場景(P-32);0 個資料夾也紅
    npm run check:steps && npm run lint:docs
+   npm run check:gates       # 守門漂移偵測:模板路徑吃 {{TEMPLATE_DIR}},比對安裝目錄的守門腳本與同步當時的
+                             # sha256 是否一致,不一致就是真的漂移。**清單裡的每一條都必須是 npm script**,
+                             # 手打指令放進清單等於沒人會跑(P-55)——新加守門一律先在 package.json 掛一個
+                             # script 再寫進這份清單,並反向驗證一次(刻意弄壞,預期 ✗ exit 1;修回來,預期 ✓ exit 0)。
    ```
    **跑的是 main 現在的完整檢查清單,不是分支開工時的**:分支 base 比 main 舊時,main 新加的守門在分支上不存在,合併後必須補跑。
-   全綠 → tag、清 worktree、通知技術顧問「驗推」;FAIL 的照 test→dev→review 循環派 debug session。
+   **合併後留一份 junit 基準**(`reports/junit/<sha>.xml`,加進 `.gitignore`,不進版控):
+   ```bash
+   npx vitest run --reporter=junit --outputFile="reports/junit/$(git rev-parse --short HEAD).xml"
+   ```
+   下次合併後跟上一份基準比對 testcase 的 **multiset**(名稱 + 次數,或 classname+name 完整限定),**不要比總數**——
+   兩棵樹可能對出同一個總數卻組成不同(分支 8036+4+4、main 8036+8,總數都是 8044,實際少了四條),
+   總數對得上不代表測的是同一組測試;比對時也不要用 `set(names)`,重複名稱會被集合悄悄吃掉(P-49)。
+   全綠 → tag 打在**這次合併的 commit** 上、清 worktree、**立刻**通知技術顧問「驗推」——不要等累積多個合併才通知,
+   也不要在通知前又往 main 疊新 commit:`git push` 推的是 HEAD 以下全部,不是「剛做的那個」,
+   合併與通知之間有 commit 插進來,連那個還沒驗過的合併都會被一起推上去(P-56)。
+   FAIL 的照 test→dev→review 循環派 debug session。
 2. **算 ready**:照 sprint-planning 的規則讀所有 NEXT.md。三種 gate 全滿足 → ready。
 3. **派工**:**同開上限 = 目前 ready 集合的大小**——ready 多少個就可以開多少個,不再固定卡在某個數字
    (`docs/07-practices.md`「三個專案都刻意不遵守的範式條文」)。這個上限不是沒代價,代價由另外兩條規則吸收,
    不是靠「少開」:**一次合一條**(合併回 main 一次只處理一個 phase 的分支,不批次合併)、**rebase 由協調者吸收**
    (worker 的分支落後 main 時,rebase 這件事由協調者做,不要求每個 worker 自己處理)。滿載(所有 ready 都已派出)
-   時不重複派工,回到 1 收割;收割不到東西就做維護清單(§3)等下一輪。**同時處於審核輪(跑變異測試)的 worktree ≤ 1**
-   ——變異測試是唯一吃重的工作,三個同時跑會互相 OOM(P-34);有 Stryker 檔案鎖之後這條才可放寬。每張照角色規則:
+   時不重複派工,回到 1 收割;收割不到東西就做維護清單(§3)等下一輪。~~同時處於審核輪(跑變異測試)的 worktree ≤ 1~~
+   **已放寬回 3,檔案鎖排隊**(P-34):跨 worktree 的檔案鎖合併之後,變異測試會自己排隊,不再需要靠派工節流。
+   **`npm run mutate` 是唯一入口**,審核與開發都只准用它——直接叫 Stryker CLI 會繞過鎖(有測試守著)。
+   **分數要附完整指令與設定檔**(範圍、旗標、`stryker.config.json` 的路徑):同一份程式碼、不同設定檔跑出來的分數
+   不能比較(TS 型別檢查開關就能造成 3 分以上的差距),不附指令與設定檔的分數不算數(P-58)。每張照角色規則:
    測試 agent 先寫紅 commit → 開發 agent 做綠 → 審核 agent(REVIEW.md 交接)。
 4. **整合點**:某個 IN 需要的 phase 全 done → **先開「整合工作」工單**(P-20:roadmap 該段的整合工作欄 + 各 FEATURE.md「Wave 0 的重複」表),合併後 `/integrate IN`;`@e2e @llm` 在預算內自動跑,結果貼進 `docs/integration/IN-REVIEW.md`;`@manual` 進「等老闆」清單。IN 的人工確認未完成前,gate 是「IN 通過」的 phase 維持 todo——這是刻意的,不要繞。
 5. **沒有 ready 的 phase** → 做維護清單(§3),做完一項就回到 2。
@@ -69,8 +86,13 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 7. 本清單第 1–6 項裡,**同一項連續 3 輪都在清單上但沒被實際碰過** → 該項自動升級成一張正式工單
    派出去,不要繼續留在「沒事可做時再看看」的狀態——「有空再做」等於不會做,這是協調者自己
    踩過的坑(`docs/07-practices.md` 「來自專案 A 協調者的做法」)
-8. 以上都空 → **停止迴圈**(`ScheduleWakeup stop`),寫本週 sprint 檔(若有維護;autopilot 常態
-   運作時 sprint 檔是選配,每輪回報已經是預設的進度追蹤方式),把「等老闆」清單整理成一則訊息給使用者
+8. 以上都空 → **停止迴圈**(`ScheduleWakeup stop`)前先做兩件事:
+   - **確認每個 worktree 都 commit 過**——未 commit 的工作在 session 結束時最脆弱,一旦平台或機器重開就不見了;
+     跑不完就先 commit 到分支上,不要留在工作區裡等下一輪。
+   - **技術顧問那邊的對應動作**(協調者提醒即可,實際驗證由顧問做):push 前 `git log --oneline origin/main..HEAD`
+     逐條驗過,不要只看 `git status` 就 push——那擋不住「合併完、還沒驗、又被別的 commit 疊上去」的情況(P-56)。
+   再寫本週 sprint 檔(若有維護;autopilot 常態運作時 sprint 檔是選配,每輪回報已經是預設的進度追蹤方式),
+   把「等老闆」清單整理成一則訊息給使用者
 
 ## 4. 煞車(任一成立就停下該項,其他繼續)
 
@@ -78,9 +100,11 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 - 當日 OpenAI 花費達上限 → 所有 @llm 工作停,非 LLM 工作繼續
 - 完整檢查在 main 上紅 → **先修 main**,不派新工;修的時候若動到測試檔,**同一輪開一張 review 工單事後覆核**,每處寫「為什麼是測試錯不是實作錯」(P-49)
 - 根目錄有**已追蹤檔案**的未 commit 變更,或不在 main → 停,查是誰(P-12 / P-19);未追蹤目錄(例如產出資料)不觸發,但要確認它在 .gitignore 裡
-- 技術顧問 session 不在(`ListAgents` 找不到)→ 技術決策改成「保守選項 + ADR 待覆核」,不問使用者
+- 技術顧問 session 不在(`ListAgents` 找不到)→ 技術決策改成「**保守選項**(一次 `git revert` 就能整個還原的那個,P-57) + ADR 待覆核」,不問使用者
 - 同時進行的 worktree 已達 3 → 不派新工,先收割
 - 已有一個審核輪在跑變異測試 → 其他審核輪先做不含變異的部分,或等待;agent 看到 stryker 退出碼 137 / 144 一律重跑,絕不把當次結果當分數(P-34)
+- **同一種 PITFALLS 類型第三次出現**(不論是條目本身或 REVIEW.md 的退回理由)→ 不逐案修,停下來開一張**範式級工單**
+  (改 template 本體 + 加一條守門或規則),已發生的個案列成該工單的驗收清單,不繼續一個一個修(來源 nightmare-assault,`docs/07-practices.md` (k))
 
 ## 4a. 停止條件 / 不是停止條件
 
@@ -111,6 +135,23 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 
 判斷準則:**能想到下一步該做什麼,就不是停止條件**;真正的停止是「想不出任何一件現在能做的事」。
 
+## 4c. 「分支上全綠、合併後紅」的三種形狀(P-49)
+
+分支全綠**不等於**合併後全綠。除了「main 多了分支沒有的守門」(§2 步驟 1),還有三種形狀:
+
+1. **測試把「一定在 worktree 裡跑」內建成假設** → 到 main 就**永遠紅**(路徑斷言在兩種位置本來就不同)。
+   **涉及路徑的斷言要在 worktree 與 main 兩種位置各跑一次。**
+2. **main 上有分支看不到的檔案被規則掃到** —— 別的 repo 的簽出(`.claude/worktrees/`)、
+   協調者自己寫的文件(可能為了**描述**一個錯誤而引用那個錯誤的字串)。
+   **掃描類測試的 SKIP 清單要含 `.claude/worktrees` 與其他 repo 簽出。**
+3. **兩棵樹對出同一個總數,組成卻不同**(分支 8036+4+4、main 8036+8,總數都是 8044,實際少了四條)——
+   **總數相等不代表測的是同一組測試**。合併前用「每一項來源」寫下預期數字,不是只寫總數;合併後
+   比對 junit testcase 的 **multiset**(名稱+次數,或 classname+name 完整限定),不比總數;
+   也不要用 `set(names)`——重複名稱會被集合悄悄吃掉(見 §2 步驟 1 的 junit 基準)。
+
+**協調者為了修 main 紅燈而動測試檔**:可以先修(§4「先修 main」優先),但**同一輪必須開一張 review 工單事後覆核**,
+工單裡逐處列出「為什麼是測試錯不是實作錯」。覆核者判定任一處其實是**放寬** → **退回**。
+
 ## 4b. 平台操作備忘(Orca,實際踩過的)
 
 - `worker-start --worktree new-top-level` **一定要帶 `--name`**,不帶會 `invalid_argument`
@@ -119,6 +160,10 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
   少中間兩步會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 worktree 裡的 REVIEW.md(P-17)
 - `check --wait` 可能回**已處理過的舊訊息**(`"replayed": true`),要 `--ack <deliveryId>` 再等下一則,不然空轉
 - `check` 回來的訊息 `type` 是 `question`(帶 thread/msg id)時,對方在等 `reply`,不是等一則新訊息——**先 `reply --id <該訊息 id>` 再 `ack`**,順序不能顛倒(`ack` 之後那個 id 就抓不到了);`send` 送得到終端機但不會解除對方的阻塞,沒有任何錯誤訊息(P-45)
+- **`send` 對已經死掉的終端機一樣回 `ok:true`**,發送端以為送到了,接收端什麼都沒收到(P-54,P-45 同族)——
+  `send` 前先 `terminal show` 確認終端機還活著;收到 `terminal_handle_stale` → 開新終端機,從 REVIEW.md 重新交接;
+  送出去後對方沒反應,先懷疑終端機死了,不是先當對方在忙。對照:`SendMessage` 對過期的 session 名會明確失敗
+  並附提示,那才是好的失敗
 - **找 worker 一律用 worktree 路徑尾段比對,永遠不用 title**(title 是 agent 自己會改的顯示文字;找不到會被誤判成死掉而重派,P-39);每個 worktree 兩個 terminal,挑 title 不是 `user@…` 開頭的
 - `orca terminal send` 的旗標是 `--terminal <handle>`(不是 `--handle`),要加 `--enter` agent 才真的收到
 - 工單寫進 `<worktree>/.orca-brief/TASK.md`(未追蹤,不混進 diff);批次改工單文字後 grep 舊字串應為 0 命中(P-40)

@@ -212,3 +212,13 @@
 | `{{REFERENCE_BACKFILL}}` | 第一個做完的參考回填資料夾(步驟 6) | AI_KM:`06-retrieval` |
 | `{{OLD_STATUS_SOURCE}}` | 切換日起唯讀的舊狀態來源(步驟 8) | nightmare:`dev/stories/` frontmatter |
 | `{{SPEND_CHECK_COMMAND}}` | `.claude/skills/autopilot/SKILL.md` | 算當日付費 API 花費的指令,退出碼三態 0/1/2 | `npx tsx scripts/llm-spend.ts --today` |
+
+## 收工前 / push 前檢查(不是 placeholder,是流程提醒)
+
+落地完成、進入日常運作之後,下面三條每輪或每次收工前都要過一遍(來源見 `PITFALLS.md` P-55 / P-56):
+
+- **收工前每個 worktree 已 commit**——未 commit 的工作在 session 結束時最脆弱,平台或機器一重開就不見了。
+- **push 前 `git log --oneline origin/main..HEAD` 逐條驗過**——不要只看 `git status` 就 push;`git push`
+  推的是 HEAD 以下全部,不是「剛做的那個 commit」,合併與 push 之間插進來的任何 commit 都要先驗過。
+- **必跑清單裡的每一條都要是一個 npm script**(或等價的單一入口)——手打指令放進清單等於沒人會跑;
+  新加守門一律先掛一個 `npm run` script 再寫進清單,並用「刻意弄壞、預期 ✗;修回來、預期 ✓」反向驗證過一次。
