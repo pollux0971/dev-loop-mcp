@@ -14,13 +14,22 @@
  *
  *   {
  *     "owners": [["packages/contracts/", "contracts"], ...],   // 順序有意義,先比對較長的前綴
- *     "glue": ["infra", "steps"],                               // 這些擁有者可以 import 任何東西
+ *     "glue": ["infra", "steps", { "owner": "generated", "role": "glue" }],
  *     "aliases": [["@contracts/", "packages/contracts/src/"], ...],
  *     "scanDirs": ["packages", "apps", "scripts"],
  *     "contractsOwner": "contracts"                             // 對到這個擁有者的 import 一律放行
  *   }
  *
- * 不存在就 exit 1 並印出範例——這是硬性要求的設定,不是「留空也能跑」。
+ * `glue` 陣列的每一項要嘛是字串(擁有者名稱——這個擁有者可以 import 任何東西,
+ * 不當來源檢查,舊格式,行為不變),要嘛是 `{ owner, role: "glue" }`(CHANGELOG 1.4.0):
+ * 除了「不當來源檢查」之外,還多一條「不准當 import 目標」——任何人 import 到這個
+ * 擁有者名下的檔案都算違規(印 `glue 不准被 import`)。用在「這個資料夾是產物 /
+ * 只讀寫自己,不該被任何功能依賴」的場景。
+ *
+ * `owners.json` 找不到、或找到但 `owners` 是空陣列——這兩種都當「尚未設定」,exit 1
+ * 並印一句可執行的訊息(「從每個 features 資料夾的 FEATURE.md 的 owner 欄起草」)加上面這份範例,
+ * 不是「留空也能跑」也不是「留空 = PASS」:一個宣稱「沒有違規」但其實根本沒有落點表可
+ * 比對的 gate,比沒有這個 gate 更危險——它會讓看到綠燈的人以為邊界真的被檢查過。
  *
  * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd;
  * `--root <dir>` 明講的話優先):
@@ -86,11 +95,28 @@ function configSearchPathsDisplay(name: string): string {
   return configSearchPathsList(name).join('、');
 }
 
+/**
+ * 一個 `glue` 項目要嘛是純字串(擁有者名稱,舊格式,行為不變:這個擁有者可以
+ * import 任何東西、不當來源檢查),要嘛是 `{ owner, role: "glue" }`(CHANGELOG 1.4.0):
+ * 除了「不當來源檢查」之外,**還多一條「不准當 import 目標」**——任何人 import 到
+ * 這個擁有者名下的檔案都算違規,原因印 `glue 不准被 import`。用在「這個資料夾是
+ * 產物 / 只能被自己讀寫,不該被任何功能依賴」的場景(例如某個生成後即棄的暫存區)。
+ */
+type GlueEntry = string | { owner: string; role: 'glue' };
+
+function glueOwnerName(e: GlueEntry): string {
+  return typeof e === 'string' ? e : e.owner;
+}
+
+function isGlueTargetForbidden(e: GlueEntry): boolean {
+  return typeof e !== 'string' && e.role === 'glue';
+}
+
 interface OwnersConfig {
   /** 落點 → 擁有的功能。順序有意義:先比對較長的前綴。 */
   owners: [prefix: string, owner: string][];
-  /** 這些擁有者是「膠水」,可以 import 任何東西,不當作來源檢查。 */
-  glue: string[];
+  /** 這些擁有者是「膠水」,可以 import 任何東西,不當作來源檢查;見 GlueEntry。 */
+  glue: GlueEntry[];
   /** import alias → 對到的 repo 相對路徑前綴。 */
   aliases: [alias: string, target: string][];
   /** 要掃描的根目錄(相對 ROOT)。 */
@@ -108,7 +134,7 @@ const OWNERS_EXAMPLE = `{
     ["packages/core/src/{{FEATURE_SRC_DIR}}/", "{{FEATURE_OWNER}}"],
     ["features/steps/", "steps"]
   ],
-  "glue": ["infra", "steps"],
+  "glue": ["infra", "steps", { "owner": "generated", "role": "glue" }],
   "aliases": [
     ["@contracts/", "packages/contracts/src/"],
     ["@core/", "packages/core/src/"]
@@ -117,28 +143,50 @@ const OWNERS_EXAMPLE = `{
   "contractsOwner": "contracts"
 }`;
 
+/** 印一則設定錯誤、印 gate 標記(0 目標)、exit 1——每一種設定壞掉都要走這條路,
+ *  不能是沒印標記行就中斷的未捕捉例外(舊版的 bug:見這支腳本 1.4.0 的反向驗證)。 */
+function configError(msg: string): never {
+  console.error(`✗ ${msg}`);
+  console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+  process.exit(1);
+}
+
+/** owners.json 找不到、或找到但落點表是空的——這兩種都是「還沒設定」,不是兩種不同的病,
+ *  用同一句可執行的訊息(消費者回報:光說「設定檔未找到」不夠,要講清楚下一步做什麼)。 */
+function ownersNotConfigured(pathDisplay: string): never {
+  console.error(
+    `✗ 尚未設定:找不到 ${pathDisplay} 或落點表是空的;從 features/*/FEATURE.md 的 owner 欄起草,` +
+      '範例見 template/scripts/boundaries.owners.json',
+  );
+  console.error(OWNERS_EXAMPLE);
+  console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+  process.exit(1);
+}
+
 function loadOwnersConfig(): OwnersConfig {
   const p = findConfigFile('boundaries.owners.json');
-  if (!p) {
-    console.error(`✗ 設定檔未找到於 ${configSearchPathsDisplay('boundaries.owners.json')}`);
-    console.error(
-      'boundaries 需要這份設定檔才知道落點表 / glue / alias 對映 / 掃描範圍(程式跟設定分開,見這支腳本檔頭的說明)。範例:\n',
-    );
-    console.error(OWNERS_EXAMPLE);
-    console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
-    process.exit(1);
-  }
+  if (!p) ownersNotConfigured(configSearchPathsDisplay('boundaries.owners.json'));
   const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<OwnersConfig>;
-  if (!Array.isArray(raw.owners) || raw.owners.length === 0) {
-    throw new Error(`${OWNERS_JSON_PATH} 的 "owners" 必須是非空陣列`);
+  if (!Array.isArray(raw.owners) || raw.owners.length === 0) ownersNotConfigured(p);
+  if (!Array.isArray(raw.glue)) configError(`${OWNERS_JSON_PATH} 缺 "glue"(陣列,可以是空的)`);
+  for (const g of raw.glue) {
+    const isPlainString = typeof g === 'string';
+    const isRoleObject =
+      !isPlainString && g !== null && typeof g === 'object' &&
+      typeof (g as { owner?: unknown }).owner === 'string' &&
+      (g as { role?: unknown }).role === 'glue';
+    if (!isPlainString && !isRoleObject) {
+      configError(
+        `${OWNERS_JSON_PATH} 的 "glue" 每一項要嘛是字串(擁有者名稱),要嘛是 { "owner": "...", "role": "glue" };實際:${JSON.stringify(g)}`,
+      );
+    }
   }
-  if (!Array.isArray(raw.glue)) throw new Error(`${OWNERS_JSON_PATH} 缺 "glue"(陣列,可以是空的)`);
-  if (!Array.isArray(raw.aliases)) throw new Error(`${OWNERS_JSON_PATH} 缺 "aliases"(陣列,可以是空的)`);
+  if (!Array.isArray(raw.aliases)) configError(`${OWNERS_JSON_PATH} 缺 "aliases"(陣列,可以是空的)`);
   if (!Array.isArray(raw.scanDirs) || raw.scanDirs.length === 0) {
-    throw new Error(`${OWNERS_JSON_PATH} 的 "scanDirs" 必須是非空陣列`);
+    configError(`${OWNERS_JSON_PATH} 的 "scanDirs" 必須是非空陣列`);
   }
   if (!raw.contractsOwner || typeof raw.contractsOwner !== 'string') {
-    throw new Error(`${OWNERS_JSON_PATH} 缺 "contractsOwner"(字串)`);
+    configError(`${OWNERS_JSON_PATH} 缺 "contractsOwner"(字串)`);
   }
   return raw as OwnersConfig;
 }
@@ -148,15 +196,15 @@ const EXTS = ['.ts', '.mts', '.js', '.mjs', '.svelte'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'target', '.svelte-kit', 'src-tauri']);
 
 interface AllowEdge { from: string; to: string; reason: string }
-interface Violation { file: string; line: number; spec: string; from: string; to: string; kind: 'cross' | 'absolute' | 'unmapped-target' }
+interface Violation { file: string; line: number; spec: string; from: string; to: string; kind: 'cross' | 'absolute' | 'unmapped-target' | 'glue-target' }
 
 function loadAllow(): AllowEdge[] {
   const p = findConfigFile('boundaries.allow.json');
   if (!p) return []; // 選填設定,兩處都沒有就當沒有例外邊,不印訊息
   const raw = JSON.parse(readFileSync(p, 'utf8')) as unknown;
-  if (!Array.isArray(raw)) throw new Error('boundaries.allow.json 必須是陣列');
+  if (!Array.isArray(raw)) configError('boundaries.allow.json 必須是陣列');
   for (const e of raw as AllowEdge[]) {
-    if (!e.from || !e.to || !e.reason) throw new Error(`boundaries.allow.json 每一筆都要有 from / to / reason:${JSON.stringify(e)}`);
+    if (!e.from || !e.to || !e.reason) configError(`boundaries.allow.json 每一筆都要有 from / to / reason:${JSON.stringify(e)}`);
   }
   return raw as AllowEdge[];
 }
@@ -236,7 +284,8 @@ function resolveSpec(
 function main(): void {
   const config = loadOwnersConfig();
   const allow = loadAllow();
-  const glue = new Set(config.glue);
+  const glue = new Set(config.glue.map(glueOwnerName));
+  const glueTargetForbidden = new Set(config.glue.filter(isGlueTargetForbidden).map(glueOwnerName));
   const violations: Violation[] = [];
   const unmapped: string[] = [];
   let scanned = 0;
@@ -261,6 +310,10 @@ function main(): void {
         if (r.rel.startsWith('..')) { violations.push({ file: rel, line, spec, from, to: '(outside repo)', kind: 'absolute' }); continue; }
         const to = ownerOf(config.owners, r.rel);
         if (!to) { violations.push({ file: rel, line, spec, from, to: '(unmapped)', kind: 'unmapped-target' }); continue; }
+        // glue 的「不准被 import」比 contractsOwner 的一律放行更優先——明講的角色設定
+        // 應該贏過預設的寬容,不然這條規則永遠生效不了(from 已經在上面被排除,
+        // 所以這裡的 to 不會等於 from 本身,不會誤傷 glue 擁有者自己內部的 import)。
+        if (glueTargetForbidden.has(to)) { violations.push({ file: rel, line, spec, from, to, kind: 'glue-target' }); continue; }
         if (to === from || to === config.contractsOwner) continue;
         if (allow.some((e) => e.from === from && e.to === to)) continue;
         violations.push({ file: rel, line, spec, from, to, kind: 'cross' });
@@ -277,7 +330,11 @@ function main(): void {
   if (violations.length) {
     console.log(`\n✗ ${violations.length} 個違規 import:`);
     for (const v of violations) {
-      const why = v.kind === 'cross' ? `${v.from} → ${v.to}` : v.kind === 'absolute' ? '絕對路徑或跳出 repo' : `目標 ${v.spec} 不在任何落點內`;
+      const why =
+        v.kind === 'cross' ? `${v.from} → ${v.to}`
+        : v.kind === 'absolute' ? '絕對路徑或跳出 repo'
+        : v.kind === 'glue-target' ? `glue 不准被 import(${v.to})`
+        : `目標 ${v.spec} 不在任何落點內`;
       console.log(`  ${v.file}:${v.line}  import '${v.spec}'  (${why})`);
     }
     console.log(`\nWave 0 只能 import contracts/ 與自己的目錄。整合後要跨功能,把邊加進 scripts/boundaries.allow.json 並附理由。`);

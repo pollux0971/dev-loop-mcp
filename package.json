@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:scripts": "vitest run --config vitest.scripts.config.ts",
     "typecheck": "tsc --noEmit",
     "accept": "NODE_OPTIONS=--import=tsx cucumber-js",
     "accept:standalone": "NODE_OPTIONS=--import=tsx cucumber-js --tags '@standalone and not @manual'",
@@ -20,7 +21,9 @@
     "check:steps": "tsx scripts/check-step-dup.ts",
     "check:gherkin-dup": "tsx scripts/check-gherkin-dup.ts",
     "accept:coverage": "tsx scripts/check-phase-coverage.ts",
-    "lint:docs": "tsx scripts/check-doc-links.ts"
+    "lint:docs": "tsx scripts/check-doc-links.ts",
+    "check:all": "tsx scripts/check-all.ts",
+    "check:next-gates": "tsx scripts/check-next-gates.ts"
   },
   "devDependencies": {
     "@cucumber/cucumber": "^11.3.0",

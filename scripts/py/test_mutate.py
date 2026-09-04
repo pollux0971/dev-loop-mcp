@@ -115,6 +115,29 @@ def run_mutate_cli(
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
 
 
+def run_mutate_cli_cmd(
+    cwd: Path,
+    *,
+    file: str,
+    replace: str,
+    with_: str,
+    cmd: str,
+    mutate_py: Path = MUTATE_PY,
+    nth: int | None = None,
+) -> subprocess.CompletedProcess:
+    """跟 run_mutate_cli() 平行,呼叫 `--cmd` 模式而不是 `--expect-fail`。"""
+    argv = [
+        sys.executable, str(mutate_py),
+        "--file", file,
+        "--replace", replace,
+        "--with", with_,
+        "--cmd", cmd,
+    ]
+    if nth is not None:
+        argv += ["--nth", str(nth)]
+    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
+
+
 def _find_unique_stripped_line(text: str, literal: str) -> tuple[int, str]:
     lines = text.splitlines()
     matches = [(i, ln) for i, ln in enumerate(lines, start=1) if ln.strip() == literal]
@@ -731,3 +754,115 @@ def test_ac_teeth_disabling_signal_restore_makes_sigterm_leave_dirty_tip(tmp_pat
         f"broken driver: {broken_mutate_py}\nstdout:\n{stdout}\nstderr:\n{stderr}"
     )
     assert "return a - b" in dirty_content
+
+
+# ---------------------------------------------------------------------------
+# --cmd 模式（模板 1.4.0 S5，來源 AI_KM 的請求）：跟 --expect-fail 平行的四個
+# 場景——殺死、存活、突變前就紅、還原後驗證（見 run_mutation_cmd() 的 docstring）。
+# ---------------------------------------------------------------------------
+
+CMD_CHECK_SRC = """import sys
+from target import add
+
+sys.exit(0 if add(2, 3) == 5 else 1)
+"""
+
+
+def test_ac_cmd_mode_kills_and_restores(tmp_path):
+    """--cmd 模式的「殺死」情境：任意 shell 指令（這裡刻意不用 pytest，示範
+    --cmd 不限 pytest）在突變前綠、突變後紅 -> exit 0，檔案還原。"""
+    repo = make_scratch_repo(tmp_path, name="cmd_kill")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "check.py": CMD_CHECK_SRC}, "init")
+
+    result = run_mutate_cli_cmd(
+        repo, file="target.py", replace="return a + b", with_="return a - b",
+        cmd=f"{sys.executable} check.py",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+    assert "突變測試通過" in result.stdout
+
+
+def test_ac_cmd_mode_survives_returns_exit_2(tmp_path):
+    """--cmd 模式的「突變存活」：一個不影響 check.py 判斷結果的無害突變 -> exit 2。"""
+    repo = make_scratch_repo(tmp_path, name="cmd_survive")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "check.py": CMD_CHECK_SRC}, "init")
+
+    result = run_mutate_cli_cmd(
+        repo, file="target.py",
+        replace="def add(a, b):", with_="def add(a, b):  # harmless, behavior unchanged",
+        cmd=f"{sys.executable} check.py",
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+    assert "突變存活" in result.stdout + result.stderr
+
+
+def test_ac_cmd_mode_pre_check_red_returns_exit_1(tmp_path):
+    """--cmd 模式的「突變前就紅」：check.py 在套用突變之前就會失敗（add 本身就是
+    錯的實作）-> exit 1，不嘗試套用任何突變。"""
+    repo = make_scratch_repo(tmp_path, name="cmd_prered")
+    broken_target = "def add(a, b):\n    return a - b\n"  # 一開始就是錯的實作
+    write_and_commit(repo, {"target.py": broken_target, "check.py": CMD_CHECK_SRC}, "init")
+
+    result = run_mutate_cli_cmd(
+        repo, file="target.py", replace="return a - b", with_="return a + b",
+        cmd=f"{sys.executable} check.py",
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "突變前就紅" in result.stdout + result.stderr
+    assert (repo / "target.py").read_text(encoding="utf-8") == broken_target
+
+
+def test_ac_cmd_mode_post_restore_still_red_returns_exit_6(tmp_path):
+    """--cmd 模式獨有的第 4 步：還原後 sha256 比對一致，但指令本身還是紅的（模擬
+    「除了檔案內容之外還有殘留影響」）-> exit 6，不是 0（不能因為 sha256 對得上
+    就宣稱「一切都跟突變前一樣」）。用 monkeypatch 讓 _run_cmd 在第三次呼叫
+    （還原後那一次）刻意回傳非 0，前兩次（突變前基準、突變後）維持真的執行結果，
+    藉此證明第 4 步真的有在檢查，不是只讀程式碼推論。"""
+    repo = make_scratch_repo(tmp_path, name="cmd_postred")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "check.py": CMD_CHECK_SRC}, "init")
+
+    mutate_mod = _load_mutate_module("mutate_under_test_cmd_exit6")
+    real_run_cmd = mutate_mod._run_cmd
+    calls = {"n": 0}
+
+    def fake_run_cmd(root, cmd):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="模擬的殘留影響")
+        return real_run_cmd(root, cmd)
+
+    with mock.patch.object(mutate_mod, "_run_cmd", side_effect=fake_run_cmd):
+        rc = mutate_mod.run_mutation_cmd(
+            root=repo, file="target.py", replace="return a + b", with_="return a - b",
+            cmd=f"{sys.executable} check.py",
+        )
+
+    assert rc == 6
+    assert calls["n"] == 3
+    assert (repo / "target.py").read_text(encoding="utf-8") == TARGET_SRC
+
+
+def test_ac_cmd_mode_mutually_exclusive_with_expect_fail(tmp_path):
+    """--cmd 跟 --expect-fail 是互斥的 argparse mutually exclusive group，兩個一起
+    給要被 argparse 本身拒絕（exit code 2，argparse 用法錯誤的慣例碼，不是
+    mutate.py 自己的 exit code 1）。"""
+    repo = make_scratch_repo(tmp_path, name="cmd_mutex")
+    write_and_commit(repo, {"target.py": TARGET_SRC, "check.py": CMD_CHECK_SRC}, "init")
+
+    result = subprocess.run(
+        [
+            sys.executable, str(MUTATE_PY),
+            "--file", "target.py", "--replace", "return a + b", "--with", "return a - b",
+            "--expect-fail", "test_target.py::test_add",
+            "--cmd", f"{sys.executable} check.py",
+        ],
+        cwd=repo, capture_output=True, text=True,
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "not allowed with argument" in result.stderr

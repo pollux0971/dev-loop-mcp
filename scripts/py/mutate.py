@@ -29,12 +29,25 @@ repo root 用 `git rev-parse --show-toplevel`（依目前工作目錄，非依�
 它指向一個一次性的暫存 repo，不會每次跑測試都在本專案真正的 git 歷史裡
 留下 WIP commit。
 
-用法：
+用法（--expect-fail，pytest node id）：
   python3 dev/tools/mutate.py \\
       --file core/mystery/authority.py \\
       --replace '"core": _CASE_WRITER_POLICY' \\
       --with    '"core": dict(_CASE_WRITER_POLICY)' \\
       --expect-fail tests/test_story_62_14.py::test_core_delegates_by_reference
+
+用法（--cmd，任意 shell 指令，來源 AI_KM 的請求；跟 --expect-fail 互斥，只能給一個）：
+  python3 scripts/py/mutate.py \\
+      --file scripts/check-boundaries.ts \\
+      --replace 'if (to === from ...' \\
+      --with    'if (false ...' \\
+      --cmd     'npx vitest run --config vitest.scripts.config.ts scripts/check-boundaries.test.ts'
+
+--cmd 用在被突變的目標不是用 pytest 驗收的情境（例如本模板自己的 check-*.ts，
+反向驗證要靠跑 `npx tsx` / `npx vitest`，不是 pytest node id）。流程比 --expect-fail
+多一步：(1) 突變前跑一次要求 exit 0（否則「突變前就紅，無法判讀」），(2) 突變後跑一次
+要求非 0（否則「突變存活」），(3) 用 git show 還原、sha256 比對，(4) 還原後**再跑一次**
+要求 exit 0（確認除了檔案內容之外沒有殘留影響）。細節見 run_mutation_cmd() 的 docstring。
 
 機器負載高時，「紅」有可能不是突變造成的，是 timeout／環境問題造成的假紅
 （見 STORY-61-21 dispatcher 補充意見）。本工具因此不只看「有沒有變紅」，
@@ -58,6 +71,10 @@ Exit code：
       成的假紅）—— 檔案已還原，不能當作突變生效的證據
   5 = 上次執行留下的自癒狀態檔無法解析（見下方「被中斷時」說明）——
       需要人工介入，不會自動嘗試突變
+  6 = 僅 --cmd 模式：突變已經被正確偵測到（第 2 步非 0），檔案也已還原、sha256
+      比對一致，但**還原後再跑一次指令仍然是紅的**——代表除了檔案內容之外還有
+      殘留影響（建置快取、背景行程之類），需要人工檢查環境。--expect-fail 模式
+      沒有這個 exit code。
 
 被中斷時（STORY-70-18）：
   高負載機器上，本工具跑到一半可能被訊號殺掉（背景 pytest 過去兩天已
@@ -467,6 +484,201 @@ def run_mutation(
     return 0
 
 
+def _run_cmd(root: Path, cmd: str) -> subprocess.CompletedProcess:
+    # --cmd 允許任意語言的指令（這正是它存在的理由：consumer 想直接對 check-*.ts
+    # 這類沒有獨立 pytest node id 的守門腳本做突變測試，不限本專案的 Python 程式碼）。
+    # 沒辦法像 _run_pytest() 那樣精準地只對 pytest 下旗標，但把
+    # PYTHONDONTWRITEBYTECODE=1 一律設進環境變數是無害的：指令若剛好也呼叫了
+    # Python，一樣受惠於「不沿用 .pyc」的保護（見 STORY-70-13）；指令是其他語言，
+    # 這個環境變數就只是被忽略。
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        cmd, shell=True, cwd=root, capture_output=True, text=True, check=False, env=env,
+    )
+
+
+def run_mutation_cmd(
+    *, root: Path, file: str, replace: str, with_: str, cmd: str,
+    nth: int | None = None,
+) -> int:
+    """跟 run_mutation() 平行的 `--cmd` 版本（來源：AI_KM 的請求）——差別只在「拿什麼
+    判斷突變有沒有生效」:不是跑一個 pytest node id、看斷言是不是真的變紅,而是跑一整條
+    使用者自訂的 shell 指令、看退出碼是不是非零。用在被突變的目標**不是**用 pytest 驗收
+    的情境(例如本模板的 check-*.ts,反向驗證要靠跑 `npx tsx` 或 `npx vitest`,不是
+    pytest node id)。
+
+    四個步驟(比 `--expect-fail` 模式多一步):
+      1. 突變**前**跑一次 `--cmd`,要求 exit 0——不是就代表這個指令本身不是有效的
+         基準,「突變前就紅,無法判讀」,未套用任何突變(對應 exit code 1)。
+      2. 套用突變,再跑一次 `--cmd`,要求非 0——是 0 的話代表「突變存活」,這個突變
+         沒有被任何東西測到(對應 exit code 2,語意跟 `--expect-fail` 模式的 exit 2
+         一致)。
+      3. 用 `git show <sha>:<path>` 還原,sha256 比對,跟 run_mutation() 一樣嚴格
+         (對應 exit code 3——理論上不應發生,見 run_mutation() 的說明)。
+      4. 還原之後**再跑一次** `--cmd`,要求 exit 0——這是 `--expect-fail` 模式沒有的
+         額外一步:任意 shell 指令可能有超出「這個檔案的內容」的殘留狀態(建置快取、
+         背景行程之類),只比對 sha256 不足以證明「一切都跟突變前一樣」,所以多驗一次
+         「指令本身跑起來也一樣是綠的」。這一步紅了不代表突變沒被抓到(第 2 步已經
+         證明抓到了),是「還原之後環境沒有完全恢復原狀」,獨立的一種問題,對應新的
+         exit code 6(`--expect-fail` 模式沒有這個 exit code,因為 pytest node id
+         沒有這種「指令本身有超出檔案內容的副作用」的疑慮)。
+
+    `--cmd` 模式沒有 `--expect-fail` 模式的「inconclusive」(exit 4)概念:任意 shell
+    指令只有 exit 0 / 非 0 兩種狀態可以區分,沒有 pytest 那種「1 = 斷言失敗、
+    2/3/4/5 = 中斷/內部錯誤/用法錯誤/沒收集到測試」的細分——第 2 步只要求「非 0」,
+    不細究是哪一種非 0。
+    """
+    global _ACTIVE
+    _self_heal(root)
+    _install_signal_handlers()
+
+    abs_path = (root / file).resolve()
+    if not abs_path.is_file():
+        raise MutateError(f"檔案不存在: {file}", exit_code=1)
+
+    rel_path = str(abs_path.relative_to(root))
+    _ensure_tracked(root, rel_path)
+
+    committed_wip = False
+    if _has_uncommitted_changes(root, rel_path):
+        _wip_commit(root, rel_path)
+        committed_wip = True
+
+    orig_sha = _blob_sha(root, rel_path)
+    orig_bytes = abs_path.read_bytes()
+    orig_hash = _sha256(orig_bytes)
+
+    blob_bytes = _read_blob_bytes(root, orig_sha)
+    if blob_bytes != orig_bytes:
+        raise MutateError(
+            "內部一致性檢查失敗：git blob 內容與檔案目前內容不同，拒絕繼續 "
+            "（可能代表檔案已被 commit 之外的方式修改）。未套用任何突變。",
+            exit_code=1,
+        )
+
+    orig_text = orig_bytes.decode("utf-8")
+    offsets = _find_occurrence_offsets(orig_text, replace)
+    occurrences = len(offsets)
+    if occurrences == 0:
+        raise MutateError(
+            f"在 {rel_path} 裡找不到 --replace 指定的字面字串，未套用任何突變：\n"
+            f"  {replace!r}",
+            exit_code=1,
+        )
+
+    if nth is None:
+        if occurrences != 1:
+            line_numbers = [_offset_to_line(orig_text, o) for o in offsets]
+            raise MutateError(
+                f"--replace 指定的字串在 {rel_path} 出現 {occurrences} 次（非唯一），"
+                f"無法歸因是哪一處被突變，未套用任何突變。出現的行號：{line_numbers}。"
+                f"請改用只出現一次的字串，或加 --nth N 明示要突變第幾處。",
+                exit_code=1,
+            )
+        target_offset = offsets[0]
+    else:
+        if nth < 1 or nth > occurrences:
+            raise MutateError(
+                f"--nth {nth} 超出範圍：--replace 指定的字串在 {rel_path} "
+                f"只出現 {occurrences} 次。",
+                exit_code=1,
+            )
+        target_offset = offsets[nth - 1]
+
+    print(f"[mutate.py] 突變前先跑一次基準指令（應為綠）: {cmd}")
+    baseline = _run_cmd(root, cmd)
+    print(f"[mutate.py] 基準指令 exit code = {baseline.returncode}")
+    if baseline.returncode != 0:
+        raise MutateError(
+            f"--cmd 指定的指令在套用突變之前就不是綠的（exit code "
+            f"{baseline.returncode}）——突變前就紅，無法判讀。未套用任何突變。\n"
+            "指令輸出尾段:\n"
+            + "\n".join((baseline.stdout + baseline.stderr).splitlines()[-20:]),
+            exit_code=1,
+        )
+
+    mutated_text = (
+        orig_text[:target_offset] + with_ + orig_text[target_offset + len(replace):]
+    )
+
+    state_file = _write_state_file(root, rel_path, orig_sha)
+    _ACTIVE = {
+        "root": root, "abs_path": abs_path, "rel_path": rel_path,
+        "orig_sha": orig_sha, "state_file": state_file,
+    }
+
+    print(f"[mutate.py] 已封存基準（WIP commit: {committed_wip}），blob sha = {orig_sha}")
+    print(
+        f"[mutate.py] 套用突變於 {rel_path}（共 {occurrences} 處出現，"
+        f"只取代第 {nth or 1} 處，行號 {_offset_to_line(orig_text, target_offset)}）"
+    )
+    print(f"[mutate.py] 跑指令（突變後）: {cmd}")
+
+    try:
+        abs_path.write_text(mutated_text, encoding="utf-8")
+        result = _run_cmd(root, cmd)
+        print(f"[mutate.py] 突變後指令 exit code = {result.returncode}")
+        tail = "\n".join((result.stdout + result.stderr).splitlines()[-20:])
+        print(f"[mutate.py] 指令輸出（尾 20 行）:\n{tail}")
+        survived = result.returncode == 0
+    finally:
+        # 無論指令跑成怎樣（含拋例外），都一定要走到還原這一步——這是紅線 2
+        # 「未 commit 變更未被封存前絕不修改檔案」的另一半：已修改的檔案絕不能因為
+        # 中途出錯就留在突變狀態。
+        restored_bytes = _read_blob_bytes(root, orig_sha)
+        abs_path.write_bytes(restored_bytes)
+        restored_hash = _sha256(restored_bytes)
+        state_file.unlink(missing_ok=True)
+        _ACTIVE = None
+        if restored_hash != orig_hash:
+            print(
+                f"[mutate.py] 嚴重錯誤：還原後 hash 不一致！"
+                f"\n  預期: {orig_hash}\n  實際: {restored_hash}",
+                file=sys.stderr,
+            )
+            return 3
+        print(f"[mutate.py] 已用 git show {orig_sha}:{rel_path} 還原，hash 比對一致（{restored_hash}）")
+
+    if survived:
+        print(
+            "[mutate.py] 突變存活：套用突變後指令仍然通過（exit code 0，且突變前也是"
+            "綠的，不是「突變前就紅」）——這個突變沒有被 --cmd 指定的指令測到。"
+            "檔案已安全還原，但這代表這個突變目標需要重新設計，或是 --cmd 指到的指令"
+            "覆蓋範圍不夠。",
+            file=sys.stderr,
+        )
+        # 語意對應 run_mutation() 的退出碼(「突變沒有讓測試變紅」那一碼)——刻意不用
+        # 字面的 return 語句直接寫那個數字：mutate.py 自己就是本檔的突變測試目標
+        # (見 test_ac7/test_ac8)，`--replace` 是逐字串比對,兩處字面相同的字串會讓
+        # 那組 meta 測試找到多個出現位置、拒絕執行(「非唯一」)。用具名變數繞開巧合,
+        # 語意也更清楚——數字本身寫在下面這一行。
+        cmd_mode_survived_exit_code = 2
+        return cmd_mode_survived_exit_code
+
+    # 第 4 步:還原之後再跑一次,確認指令本身也真的回到「乾淨的綠」,不只是檔案內容
+    # 的 sha256 對得上——見這個函式的 docstring。
+    print(f"[mutate.py] 還原後再跑一次指令（應為綠）: {cmd}")
+    post_restore = _run_cmd(root, cmd)
+    print(f"[mutate.py] 還原後指令 exit code = {post_restore.returncode}")
+    if post_restore.returncode != 0:
+        print(
+            f"[mutate.py] 還原後指令仍為紅（exit code {post_restore.returncode}）——"
+            "檔案內容的 sha256 已經比對一致，但指令本身還是紅的，可能有超出檔案內容"
+            "的殘留影響（例如建置快取、背景行程）。請人工檢查環境。\n"
+            "指令輸出尾段:\n"
+            + "\n".join((post_restore.stdout + post_restore.stderr).splitlines()[-20:]),
+            file=sys.stderr,
+        )
+        return 6
+
+    print(
+        f"[mutate.py] 突變測試通過（--cmd 模式）：指令突變前綠、突變後真的變紅"
+        f"（exit code {result.returncode}），已安全還原、hash 比對一致，還原後指令也再次確認是綠的。"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="安全的突變測試驅動工具（不用兩個 dash 版的 checkout 還原，見 STORY-61-21）",
@@ -474,8 +686,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--file", required=True, help="要突變的檔案路徑（相對 repo 根目錄）")
     parser.add_argument("--replace", required=True, help="要被取代的字面字串（非 regex）")
     parser.add_argument("--with", dest="with_", required=True, help="取代成的字面字串")
-    parser.add_argument("--expect-fail", required=True,
-                        help="套用突變後應該變紅的 pytest node id，例如 tests/foo.py::test_bar")
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument(
+        "--expect-fail",
+        help="套用突變後應該變紅的 pytest node id，例如 tests/foo.py::test_bar。"
+             "跟 --cmd 互斥，只能給一個。",
+    )
+    mode_group.add_argument(
+        "--cmd",
+        help="套用突變後應該變紅的任意 shell 指令（不限 pytest，例如 "
+             "'npx vitest run scripts/check-boundaries.test.ts'）。跟 --expect-fail 互斥。"
+             "流程：突變前跑一次要求 exit 0（否則「突變前就紅，無法判讀」），突變後跑一次"
+             "要求非 0（否則「突變存活」），還原後再跑一次要求 exit 0 才算通過。",
+    )
     parser.add_argument("--nth", type=int, default=None,
                         help="--replace 字串出現多次時，明示要突變第幾處（1-indexed）。"
                              "省略時要求 --replace 只能出現恰好一次，否則拒絕執行。")
@@ -483,6 +706,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         root = find_repo_root()
+        if args.cmd is not None:
+            return run_mutation_cmd(
+                root=root, file=args.file, replace=args.replace, with_=args.with_,
+                cmd=args.cmd, nth=args.nth,
+            )
         return run_mutation(
             root=root, file=args.file, replace=args.replace, with_=args.with_,
             expect_fail=args.expect_fail, nth=args.nth,

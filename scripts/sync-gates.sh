@@ -86,6 +86,16 @@
 #   標頭的檔案被列出並刪除,目錄本身清空後也刪除,其他檔案不受影響。
 #   `--check` 的檔名無關性:目標目錄放一個專案自己的 `check-foo.test.ts`(沒有 SOURCE
 #   標頭)→ `--check` 仍然綠,且預設不提這個檔案;加 `--verbose` → 印一行「(非模板檔,略過)」。
+#   接線檢查(CHANGELOG 1.4.0,細節見下面 `## 接線檢查` 段):同步進去的 check-boundaries.ts
+#   一開始沒有任何 script 呼叫它 → `--check` 紅、印「同步進來但沒接線」;在 package.json
+#   加一行 `"boundaries": "tsx scripts/check-boundaries.ts"` → 重跑 `--check` 轉綠;拿掉
+#   那一行、改成在 gates.config.json 加 `"unwired": [{ "file": "check-boundaries.ts",
+#   "reason": "..." }]` → 一樣綠;把 reason 清空 → 紅(allowlist 條目本身不合法)。
+#   plain sync(非 --check)在全新的假 consumer 上跑一次 → 印出「建議加進 package.json」
+#   清單(含每一支還沒接線的 check-*.ts)跟 `needs-config:` 清單(含 boundaries.owners.json
+#   跟 gates.config.json,因為都是這次才新建的佔位檔;standalone.json 一開始就不存在,
+#   也會被列出);先手動放好一份填過的 boundaries.owners.json、`standalone.json` 再同步 →
+#   `needs-config:` 只剩 gates.config.json(或整條都不印,如果三個都先準備好了)。
 set -euo pipefail
 TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:?目標 repo 根目錄}"; shift || true
@@ -239,6 +249,87 @@ prune_unselected() {
   done
 }
 
+# ## 接線檢查(CHANGELOG 1.4.0)
+#
+# 同步進來的 check-*.ts 只是「檔案存在」,不代表有人真的會跑它——沒有任何 npm script
+# 呼叫到它的檔名,就是裝了但沒接線的死碼,直到哪天有人手動 `npx tsx` 才會被發現(或永遠
+# 不會被發現)。`--check` 因此額外檢查:package.json 的 `scripts` 底下,是不是有某個值
+# 提到這支檔案的檔名(字串包含即可,不要求精確等於某個慣例)。
+#
+# 三種豁免,不算「沒接線」:
+#   1. `_root.ts`——共用 helper,本來就不會被 npm script 直接呼叫。
+#   2. `*.test.ts`(跟著 `check-*.ts` 這個 glob 一起同步進來的測試檔,例如
+#      `check-boundaries.test.ts`)——它們跑在 vitest 裡,是被測試框架的 include glob
+#      找到,不是被 package.json 的某個 script 用檔名呼叫,天生不需要接線。
+#   3. `check-all.ts`——只有在 consumer 的 `gates.config.json` 已經填了非空的 `chain`
+#      才豁免(它是靠 chain 被間接呼叫);沒填 chain 的話它自己都跑不起來(見
+#      check-all.ts 的「0 目標」規則),接不接線是次要問題,但這裡還是照樣要求接線,
+#      沒填 chain 又沒接線一樣紅——這樣「裝了 check-all.ts 但既沒設定也沒接線」不會被
+#      誤判成「反正 check-all 本來就會自己紅,不用管接線」。
+#
+# 明講的豁免:consumer 的 `gates.config.json` 可以加 `"unwired": [{ "file": "...",
+# "reason": "..." }]`,理由是「這支我們刻意不接線」——但 `reason` 一定要非空字串,
+# 沒填 reason 的 allowlist 條目算它自己壞掉(不是「這條允許成立」),一樣紅。
+
+# $1=檔名(base) → 0 = 依三種內建規則之一豁免、不用檢查接線;1 = 要照走接線檢查。
+is_wiring_exempt_by_default() {
+  local base="$1"
+  [ "$base" = "_root.ts" ] && return 0
+  case "$base" in
+    *.test.ts) return 0 ;;
+  esac
+  return 1
+}
+
+# $1=gates.config.json 路徑 → exit 0 代表已經有非空的 "chain" 陣列(check-all.ts 因此豁免接線)。
+has_chain_configured() {
+  local cfg="$1"
+  [ -f "$cfg" ] || return 1
+  node -e '
+    try {
+      const fs = require("fs");
+      const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      process.exit(Array.isArray(c.chain) && c.chain.length ? 0 : 1);
+    } catch (e) { process.exit(1); }
+  ' "$cfg" 2>/dev/null
+}
+
+# $1=gates.config.json 路徑 → 逐行印 "檔名<TAB>理由"(理由可能是空字串,代表這條
+# allowlist 本身不合法,呼叫端要把它當失敗處理,不是當「豁免成立」)。檔案不存在或
+# 沒有 "unwired" 欄位就什麼都不印。
+read_unwired_list() {
+  local cfg="$1"
+  [ -f "$cfg" ] || return 0
+  node -e '
+    try {
+      const fs = require("fs");
+      const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const list = Array.isArray(c.unwired) ? c.unwired : [];
+      for (const e of list) {
+        const file = e && typeof e.file === "string" ? e.file : "";
+        const reason = e && typeof e.reason === "string" ? e.reason : "";
+        if (file) process.stdout.write(file + "\t" + reason + "\n");
+      }
+    } catch (e) { /* 壞掉的 gates.config.json 交給讀它的人報,這裡不重複報同一個錯 */ }
+  ' "$cfg" 2>/dev/null
+}
+
+# $1=package.json 路徑、$2=檔名 → exit 0 代表 scripts 底下有某個值提到這個檔名。
+is_wired_in_package_json() {
+  local pkg="$1" base="$2"
+  [ -f "$pkg" ] || return 1
+  node -e '
+    try {
+      const fs = require("fs");
+      const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const scripts = pkg && pkg.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {};
+      const base = process.argv[2];
+      const hit = Object.values(scripts).some((v) => typeof v === "string" && v.includes(base));
+      process.exit(hit ? 0 : 1);
+    } catch (e) { process.exit(1); }
+  ' "$pkg" "$base"
+}
+
 if [ "$MODE" = "--check" ]; then
   # --check 是自包含的:不讀 $TEMPLATE_DIR,只讀已經裝好的那份檔案本身;不需要語言選集。
   is_config_file() {
@@ -259,6 +350,47 @@ if [ "$MODE" = "--check" ]; then
     fi
   done
   for cfg in "${CONFIG_FILES[@]}"; do echo "○ $cfg(你的設定檔,不比對)"; done
+
+  # 接線檢查(見上面「## 接線檢查」的說明)。只管 $DEST 底下的 .ts(py 工具不是靠
+  # package.json 的 scripts 呼叫,不在這個檢查範圍內)。
+  gates_cfg="$DEST/gates.config.json"
+  unwired_raw="$(read_unwired_list "$gates_cfg" || true)"
+  for dst in "$DEST"/*.ts; do
+    [ -f "$dst" ] || continue
+    base="$(basename "$dst")"
+    header="$(sed -n '1p' "$dst")"
+    echo "$header" | grep -qE '^// SOURCE: template v' || continue   # 非模板檔,接不接線不歸這支腳本管
+    if is_wiring_exempt_by_default "$base"; then
+      echo "○ $base(不需接線:helper 或測試檔)"
+      continue
+    fi
+    if [ "$base" = "check-all.ts" ] && has_chain_configured "$gates_cfg"; then
+      echo "○ $base(不需接線:gates.config.json 已設定 chain)"
+      continue
+    fi
+    allow_hit=0; allow_reason=""
+    if [ -n "$unwired_raw" ]; then
+      while IFS=$'\t' read -r ufile ureason; do
+        [ "$ufile" = "$base" ] || continue
+        allow_hit=1; allow_reason="$ureason"
+      done <<< "$unwired_raw"
+    fi
+    if [ "$allow_hit" = 1 ]; then
+      if [ -z "$allow_reason" ]; then
+        echo "✗ gates.config.json 的 unwired 允許 $base,但沒填 reason(允許清單條目本身不合法)"
+        fail=1
+      else
+        echo "○ $base(允許清單:$allow_reason)"
+      fi
+      continue
+    fi
+    if is_wired_in_package_json "$TARGET/package.json" "$base"; then
+      echo "✓ $base 已接線"
+    else
+      echo "✗ $base 同步進來但沒接線:package.json 沒有任何 script 呼叫它"
+      fail=1
+    fi
+  done
 else
   # sync(非 --check)才需要 $TEMPLATE_DIR 的 VERSION 與 commit,拿新內容寫進去。
   mkdir -p "$DEST"
@@ -320,11 +452,44 @@ else
     prune_unselected
   fi
 
+  # needs-config 清單(CHANGELOG 1.4.0)要記「複製設定檔之前,consumer 原本就沒有這份
+  # 設定」——複製動作本身會把 boundaries.owners.json / gates.config.json 從無變有
+  # (放模板的佔位範例進去),如果在複製之後才判斷存在與否,永遠測不出「這是這次同步才
+  # 生出來的佔位檔」。standalone.json 不屬於 CONFIG_FILES(不是模板的一部分,見這支
+  # 腳本檔頭「程式與設定分開」段),沒有任何步驟會建立它,純粹檢查存在與否。
+  needs_config=()
+  [ -f "$DEST/boundaries.owners.json" ] || needs_config+=(boundaries.owners.json)
+  [ -f "$TARGET/standalone.json" ] || needs_config+=(standalone.json)
+  [ -f "$DEST/gates.config.json" ] || needs_config+=(gates.config.json)
+
   for cfg in "${CONFIG_FILES[@]}"; do
     if [ ! -f "$DEST/$cfg" ]; then
       cp "$TEMPLATE_DIR/scripts/$cfg" "$DEST/"; echo "→ $DEST/$cfg(新建)"
     fi
   done
+
+  # 接線建議(CHANGELOG 1.4.0):列出這次同步進來、目前沒有任何 npm script 呼叫的
+  # check-*.ts,印出建議加進 package.json 的那一行——只印,不動 package.json(那是
+  # consumer 自己的檔案,見這支腳本檔頭的分工原則)。
+  suggest_lines=()
+  for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
+    base="$(basename "$src")"
+    is_wiring_exempt_by_default "$base" && continue
+    if [ "$base" = "check-all.ts" ] && has_chain_configured "$DEST/gates.config.json"; then continue; fi
+    is_wired_in_package_json "$TARGET/package.json" "$base" && continue
+    slug="${base#check-}"; slug="${slug%.ts}"
+    suggest_lines+=("  \"check:${slug}\": \"tsx scripts/${base}\"")
+  done
+  if [ "${#suggest_lines[@]}" -gt 0 ]; then
+    echo
+    echo "建議加進 package.json 的 \"scripts\"(不會自動改,那是你的檔案):"
+    printf '%s\n' "${suggest_lines[@]}"
+  fi
+
+  if [ "${#needs_config[@]}" -gt 0 ]; then
+    echo
+    echo "needs-config: $(IFS=,; echo "${needs_config[*]}")(剛建立或原本就沒有,填好之前對應的 gate 會紅,不是壞了)"
+  fi
 fi
 
 [ "$n" -gt 0 ] || { echo "掃到 0 支守門,這不是很乾淨,是腳本壞了"; exit 1; }
