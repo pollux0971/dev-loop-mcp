@@ -18,15 +18,22 @@
 
 契約 → fixtures → 每個能力的 phase-1 gherkin → scaffold commit → 分叉。I1 之前沒有一條真的路徑,所以 **@e2e @llm 那次真跑會集中暴露所有「只有真呼叫才踩到」的坑**(P-22~P-24),把它當成必經的一天,不是意外。
 
-## brownfield:第一天的三件事(兩個專案重來都會這樣做)
+## brownfield:切入順序(照做,每步附「漏了會怎樣」)
 
-1. **決策權表進 main 的 `CLAUDE.md`,使用者親口批**;同時做一次「矛盾掃描」,把舊鐵律改到跟新表一致。
-   沒有這步,協調者會對顧問轉述的每一句「使用者說」正確地拒絕——B 停了三次。
-2. **一個 checkout 一個 session、tag `baseline-<舊制名>`、根目錄 `.gitignore` 先擋素材檔**。三個十分鐘的事,漏了各付一小時以上(P-12、素材差點進公開 repo)。
-3. **scaffold + 一個參考回填 + 它的反向驗證(檢查點在 repo 裡,P-28)**,再分叉。
-   參考回填給後面每個資料夾一個能抄的形狀,比任何文件有效;挑最小、最純的那個能力當範本。
+兩個 brownfield 專案(B:272 story、C:823 story)兩天內切完,事後合出來的順序。**順序本身就是規則**:每一步都是下一步的前提。
 
-然後才是:切能力資料夾(從已經能跑的路徑倒推,8–15 個)→ 把已存在的路徑寫成 `docs/integration/i1.feature`(@e2e 就是它,@regression 收今天已能做的事)→ 分叉回填。
+| # | 做什麼 | 漏了會怎樣(實例) |
+|---|---|---|
+| 1 | **決策權表進 main 的 `CLAUDE.md`,使用者本人 commit**;同時做「矛盾掃描」,把舊鐵律改到跟新表一致 | B:新規則在分支不在 main,協調者對顧問轉述的每句「使用者說」正確地拒絕,切換停三次。B:鐵律 #1「改契約先問使用者」與新表「回應側收緊顧問可批」同檔互相矛盾,參考順位處理不了 |
+| 2 | **一個 checkout 一個 session;tag `baseline-<舊制名>` 與 `safety/main-before-paradigm`;根目錄 `.gitignore` 先擋素材檔** | B:在協調者的 checkout 開分支,對方啟動時載到尚未生效的規則(P-12)。B:論文 PDF 差點被 `git add -A` 掃進公開 repo。C:切換前沒回滾點就不敢合 |
+| 3 | **封存不轉換**:story 庫 `git mv` 到 archive/,頂端 superseded 標頭;真內容蒸餾 ≤200 行凍結的 `00-design.md` + 產品決策唯讀表 `PD-nn`;未完成 story 映射成**素材**、加 `superseded_by`;封存做成可重跑腳本 | B:93k 行裡 76 條同模板,轉成 Gherkin 就是模板重生。C:main 在分支分出後還在長,一次性封存會漏,所以腳本要可重跑 |
+| 4 | **契約先讀程式碼既有的 enum / 格式**,沿用不發明第二套;會落到磁碟或線路的枚舉進硬約定 | C:verdict 與 ending 是兩個時間點,複審才發現,改了三輪;沿用程式碼既有四值後一輪定案 |
+| 5 | **scaffold commit**:runner 設定、共用 World、`common.steps`、落點表、standalone.json、`_template`;既有 CI 先拆成獨立 job 再加 accept job | A:分叉前沒定共用檔,合併時互踩(P-01)。B:單一 CI job 一顆紅燈蓋掉一切 |
+| 6 | **一個參考回填做完再分叉**:挑最小最純的能力,場景綁既有測試的同一入口,FEATURE.md 放回填對照表,反向驗證(突變生產碼 → 場景紅)且檢查點在 repo 裡 | B:參考回填 06-retrieval 給後面 11 個一個能抄的形狀,比任何文件有效。B:反向驗證的紅來自 scratchpad 腳本,審核接受了(P-28) |
+| 7 | **守門進 repo 再分叉**:step 撞名、gherkin 逐字重複、每個 phase 至少跑到 1 個場景、doc 連結;掃到 0 也紅 | A:合併後 cucumber 報 duplicate step(P-02)。B:tag 打錯字整個資料夾沒跑而 CI 全綠(P-32) |
+| 8 | **分叉**:每個能力一個 worktree,一次全開沒問題;合併一次一個,合完跑完整檢查再合下一個;切換日起舊狀態來源唯讀、只讀 FEATURE.md,過渡期 ≤ 1 sprint | C:board 雙讀舊 frontmatter 與 FEATURE.md,兩個真相,顧問的 checklist 三處前提隔天就過期 |
+
+每一步的產出都是**可以 `git ls-files` 到的東西**;做完一步沒有新檔案進 repo,那一步就沒做完。
 
 ## 既有資產怎麼處理(最省的做法)
 
