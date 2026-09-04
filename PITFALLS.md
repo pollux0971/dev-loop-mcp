@@ -7,7 +7,7 @@
 | # | 症狀 | 為什麼 | 範式怎麼防 | 來源 |
 |---|---|---|---|---|
 | P-01 | 平行 worktree 合併時 `package.json` / lock / `tsconfig` / 共用步驟檔互相衝突 | 分叉前沒定共用檔,每個 worker 各自加依賴與 workspace | 分叉前先做 scaffold commit;共用檔只有協調者改(`docs/03` 角色段、README 步驟 4) | 專案 A,Wave 0 |
-| P-02 | 合併後 cucumber 報 duplicate step definition | 同一句 gherkin 在兩個資料夾出現,兩個 worker 各自定義 | 分叉前掃所有 feature 找重複句,只在 `common.steps.ts` 定義一次;只用在 `@manual` 的句子不定義;**合併門檻加 `npm run accept:dry` 看 0 ambiguous**——撞名不會讓任何測試變紅,只有 dry-run 抓得到 | 專案 A,Wave 0 |
+| P-02 | 合併後 cucumber 報 duplicate step definition | 同一句 gherkin 在兩個資料夾出現,兩個 worker 各自定義 | 分叉前掃所有 feature 找重複句,只在 `common.steps.ts` 定義一次;只用在 `@manual` 的句子不定義;**合併門檻加 `npm run accept:dry` 看 0 ambiguous** + `check:steps`(每句**恰好一個定義**,不看在不在 common——後者是代理指標,兩個方向都會錯) | 專案 A,Wave 0 |
 | P-03 | 十一個 agent 對「十個 phase」「契約 1.0.0」各自解讀 | 文件漂移:同一個事實寫在多處 | 狀態只有一個來源(`FEATURE.md` phase 表),其他地方只引用 | 專案 A,Wave 0 |
 | P-04 | 測著死代碼的綠燈、測試把 git 追蹤的基準檔刪掉、瀏覽器崩潰沒被任何測試抓到 | 實作者只測自己寫的東西,不測規格要的 | 開發 agent 不碰測試;審核 agent 負責所有測試,含檔案級變異分數、真實呼叫路徑交叉比對、UI 親自起 dev server(`docs/03` 審核清單) | 專案 A,Wave 0 審核 |
 | P-05 | 「WIP ≤ 2」的建議跟「全平行」互相矛盾,agent 不知道聽哪個 | 規則沒有標明例外 | 打破建議時記 ADR,不默默做(`docs/02` ADR-014 類) | 專案 A,Wave 0 |
@@ -41,6 +41,7 @@
 | P-30 | brownfield 切換停了三次:協調者對顧問轉述的每句「使用者說」都拒絕 | 新 CLAUDE.md / 決策權表在分支上、不在 main,協調者讀到的仍是舊規則;peer 轉述不算授權(這個拒絕是對的) | 第一天就把決策權表寫進 main 的 CLAUDE.md、使用者親口批;同時掃描同一檔內新舊段落的矛盾 | 專案 B |
 | P-31 | 切換後 autopilot 在零內容佔位目錄、指向不存在路徑的規則、mock 墳場上「做完」東西 | brownfield 的殘骸不在新範式清單裡,但也沒人清 | 切換時一次清(刪佔位、grandfather 清單、失效規則);清之前讀內容,不用「不在清單裡」當刪除判準 | 專案 B、C |
 | P-32 | 某個資料夾的場景**一個都沒跑**,驗收指令退出碼 0、輸出跟全過一樣;一個 tag 打錯字(`@retrieval` → `@retrievel`)整個資料夾消失而 CI 全綠 | tag 過濾器選到 0 個場景時 runner 視為成功;沒有任何東西要求「每個資料夾至少跑到一個」 | `check-phase-coverage`:對每個存在的 `phase-N.feature` 用它自己的 tag 單獨 dry-run,要求 N ≥ 1,掃到 0 個資料夾也紅;掛進完整檢查;反向驗證就是改錯一個 tag 字母 | 專案 B 協調者 |
+| P-33 | 守門對著**代理指標**(「句子在不在 common.steps.ts」)而不是不變量(「恰好一個定義」):三個定義因其中一個在 common 而假綠,能力句被整合檔重用而假紅 | 寫守門時拿了一個好記的規則當斷言,沒問「runner 真正會炸的條件是什麼」;同型第三次(閉包檔數上限、恰好 N 個型別錯誤、這次) | 守門的斷言對著**不變量**寫:先寫下「工具自己會炸的條件」,再讓守門只檢查那個;規則性的偏好(該住哪個檔)寫成失敗訊息裡的建議,不當斷言 | 專案 B 協調者 |
 | P-12 | 一個 session 遵守著一份「磁碟上、分支上都不存在」的 `CLAUDE.md` / 規則檔;它的 subagent 把那份規則當既成事實推理 | harness 在 session 啟動時從**工作樹**讀 `CLAUDE.md` 與 `.claude/rules/*`,不是從分支讀。共用 checkout 被另一個 session 暫時切到別的分支,這個 session 剛好在那一刻啟動;之後切回去,**已載入的 context 不會回退** | 1. 一個 session 一個 worktree,不共用 checkout(唯一的結構性解);共用的根 checkout 永遠停在 main,任何人不在上面 `git checkout` 別的分支。2. 非得共用時,切分支前先讓對方 session 結束。3. session 自保:一份會改變整個工作方式的規則檔,先 `git show <自己的分支>:CLAUDE.md` 驗證它在自己的分支上存在,再相信 system prompt 的呈現 | 專案 B 協調者(ai-km-32) |
 | P-13 | `@manual` 場景人親手確認了,功能還是壞的 | 人看到的畫面走的是**退化路徑**(fallback 佔位值、兩邊都退化成同一預設值所以相等),確認本身是真的,被確認的東西是假的 | 測試與 harness 記錄「每個測試 / 每次執行走了哪條分支」(退化見證器);`@manual` 確認前先看見證器報告,退化路徑上的綠燈與確認都不算 | 專案 C(nightmare-assault),一天抓到七個 |
 
