@@ -28,10 +28,11 @@
  *        定義 1 次 → OK,不管那個定義住在哪個 *.steps.ts 檔
  *        定義 ≥2 次 → 列出這句話與每個定義所在的檔案,退出 1
  *
- * 用法:
- *   npx tsx scripts/check-step-dup.ts          # 檢查,任何被定義 ≥2 次的句子退出 1
- *   npx tsx scripts/check-step-dup.ts --list   # 列出每個跨 ≥2 資料夾的句子與它的定義檔清單
- *                                               # (0 個定義印 "(undefined)"),不判斷退出碼
+ * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
+ *   npx tsx scripts/check-step-dup.ts               # 複製進 repo 後執行
+ *   npx tsx <template>/scripts/check-step-dup.ts    # 從模板路徑直接執行,cwd 需在目標 repo
+ *   npx tsx scripts/check-step-dup.ts --list        # 列出每個跨 ≥2 資料夾的句子與它的定義檔清單
+ *                                                    # (0 個定義印 "(undefined)"),不判斷退出碼
  *
  * 退出碼:
  *   0  沒有被定義 ≥2 次的步驟形狀
@@ -49,9 +50,9 @@
  *       (跨資料夾但恰好 1 個定義 → OK)→ 綠,不用改任何檔案。
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
+import { ROOT } from './_root.js';
 
-const ROOT = resolve(import.meta.dirname, '..');
 const LIST_ONLY = process.argv.includes('--list');
 const STEPS_DIR = join(ROOT, 'features/steps');
 

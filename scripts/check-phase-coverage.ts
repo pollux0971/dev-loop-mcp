@@ -16,8 +16,9 @@
  *        後只加自己的 `--import=tsx`)
  *     4. 解析輸出裡的 `N scenarios`,要求 N ≥ 1
  *
- * 用法:
- *   npx tsx scripts/check-phase-coverage.ts               # 全部 phase 檔
+ * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
+ *   npx tsx scripts/check-phase-coverage.ts                    # 複製進 repo 後執行,全部 phase 檔
+ *   npx tsx <template>/scripts/check-phase-coverage.ts         # 從模板路徑直接執行,cwd 需在目標 repo
  *   npx tsx scripts/check-phase-coverage.ts --only 04-scheduler
  *   npx tsx scripts/check-phase-coverage.ts --list         # 只列出會檢查哪些檔案,不執行
  *
@@ -36,9 +37,8 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join, resolve } from 'node:path';
-
-const ROOT = resolve(import.meta.dirname, '..');
+import { join } from 'node:path';
+import { ROOT } from './_root.js';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);

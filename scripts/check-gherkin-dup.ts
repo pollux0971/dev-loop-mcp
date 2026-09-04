@@ -12,8 +12,9 @@
  *      每行去頭尾空白後,以換行接起來
  *   3. 本體逐字相同(不看場景名稱)的兩個以上場景 → 列出檔案:行號成對,退出 1
  *
- * 用法:
- *   npx tsx scripts/check-gherkin-dup.ts
+ * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
+ *   npx tsx scripts/check-gherkin-dup.ts               # 複製進 repo 後執行
+ *   npx tsx <template>/scripts/check-gherkin-dup.ts    # 從模板路徑直接執行,cwd 需在目標 repo
  *
  * 退出碼:
  *   0  沒有本體逐字相同的場景
@@ -26,9 +27,8 @@
  *   (b) 刪掉剛貼的複製場景,還原檔案 → 重跑 → 應該綠。
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
-
-const ROOT = resolve(import.meta.dirname, '..');
+import { join, relative } from 'node:path';
+import { ROOT } from './_root.js';
 
 function toPosix(p: string): string {
   return p.split('\\').join('/');

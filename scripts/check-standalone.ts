@@ -2,8 +2,9 @@
  * 單獨執行檢查(見 docs/02-decision-map.md ADR-005)。跑 standalone.json 裡每個非互動指令,
  * 要求退出碼符合預期且輸出含 expect 關鍵字。
  *
- * 用法:
- *   npx tsx scripts/check-standalone.ts                 # 全部非互動
+ * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
+ *   npx tsx scripts/check-standalone.ts                 # 複製進 repo 後執行,全部非互動
+ *   npx tsx <template>/scripts/check-standalone.ts      # 從模板路徑直接執行,cwd 需在目標 repo
  *   npx tsx scripts/check-standalone.ts --only <key>
  *   npx tsx scripts/check-standalone.ts --list          # 只列出,不執行
  *   npx tsx scripts/check-standalone.ts --timeout 60000 # 每個指令的毫秒上限(預設 120000)
@@ -12,9 +13,8 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-
-const ROOT = resolve(import.meta.dirname, '..');
+import { join } from 'node:path';
+import { ROOT } from './_root.js';
 
 type Manifest = Record<
   string,

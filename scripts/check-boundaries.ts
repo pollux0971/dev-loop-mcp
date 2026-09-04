@@ -7,16 +7,17 @@
  *   3. node 內建模組與 node_modules
  *   4. scripts/boundaries.allow.json 明列的例外邊(整合後逐條加,附理由)
  *
- * 用法:
- *   npx tsx scripts/check-boundaries.ts            # 檢查整個 repo
- *   npx tsx scripts/check-boundaries.ts --verbose  # 也印出每個檔案的歸屬
+ * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
+ *   npx tsx scripts/check-boundaries.ts                        # 複製進 repo 後執行
+ *   npx tsx <template>/scripts/check-boundaries.ts             # 從模板路徑直接執行,cwd 需在目標 repo
+ *   npx tsx scripts/check-boundaries.ts --verbose               # 也印出每個檔案的歸屬
  *
  * 退出碼:0 無違規;1 有違規或有檔案不在任何落點內。
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { ROOT } from './_root.js';
 
-const ROOT = resolve(import.meta.dirname, '..');
 const VERBOSE = process.argv.includes('--verbose');
 
 /**

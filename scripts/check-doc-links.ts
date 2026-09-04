@@ -1,20 +1,22 @@
 /**
  * 文件連結檢查(見 docs/03-agile-workflow.md「文件漂移」維護項)。
  *
- * 掃描根目錄、docs/、features/、contracts/ 底下的 *.md,抓 markdown 相對連結
+ * 掃描根目錄、docs/、features/、contracts/、.claude/ 底下的 *.md,抓 markdown 相對連結
  * `[text](path)`,確認目標檔案或目錄存在。文件裡的相對連結是唯一沒有編譯器、
  * 沒有測試會幫你檢查的東西——檔案搬走、改名之後,連結安靜地爛掉,直到有人手動點才發現。
+ * `.claude/` 底下是 commands / rules / skills,agent 每次載入都會讀,壞連結的代價比一般 docs 更貴。
  *
  * 規則:
- *   1. 掃描範圍:repo 根目錄下直接的 *.md(不遞迴),加上 docs/、features/、contracts/
- *      底下遞迴的所有 *.md;排除任何路徑含 node_modules 或 archive/ 的檔案
+ *   1. 掃描範圍:repo 根目錄下直接的 *.md(不遞迴),加上 docs/、features/、contracts/、
+ *      .claude/ 底下遞迴的所有 *.md;排除任何路徑含 node_modules、archive/、.claude/worktrees/ 的檔案
  *   2. 排除:``` 圍欄程式碼區塊、行內反引號 code span 裡的內容(先整段剝掉,保留行數)
  *   3. 抓 `[text](path)` 形式的連結(含圖片 `![alt](path)` 的 path 部分);排除
  *      http(s):、mailto: 開頭,以及純錨點 `#...`;path 裡的 `#fragment` 一律去掉再判斷
  *   4. 目標相對於「連結所在檔案」所在目錄解析,要求該路徑存在(檔案或目錄都算通過)
  *
- * 用法:
- *   npx tsx scripts/check-doc-links.ts
+ * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
+ *   npx tsx scripts/check-doc-links.ts               # 複製進 repo 後執行
+ *   npx tsx <template>/scripts/check-doc-links.ts    # 從模板路徑直接執行,cwd 需在目標 repo
  *
  * 退出碼:
  *   0  沒有壞掉的連結
@@ -30,25 +32,30 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { ROOT } from './_root.js';
 
-const ROOT = resolve(import.meta.dirname, '..');
 const SKIP_SEGMENTS = new Set(['node_modules', 'archive']);
+/** 路徑前綴(相對於 ROOT,posix 分隔),整個子樹排除。 */
+const SKIP_PREFIXES = ['.claude/worktrees'];
 
 function toPosix(p: string): string {
   return p.split('\\').join('/');
 }
 
 function isSkipped(relPath: string): boolean {
-  return toPosix(relPath).split('/').some((seg) => SKIP_SEGMENTS.has(seg));
+  const posix = toPosix(relPath);
+  if (posix.split('/').some((seg) => SKIP_SEGMENTS.has(seg))) return true;
+  return SKIP_PREFIXES.some((prefix) => posix === prefix || posix.startsWith(`${prefix}/`));
 }
 
-function* walkMd(dir: string): Generator<string> {
+function* walkMd(dir: string, relDir: string): Generator<string> {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
-    if (SKIP_SEGMENTS.has(name)) continue;
+    const rel = relDir ? `${relDir}/${name}` : name;
+    if (isSkipped(rel)) continue;
     const st = statSync(full);
-    if (st.isDirectory()) yield* walkMd(full);
+    if (st.isDirectory()) yield* walkMd(full, rel);
     else if (name.endsWith('.md')) yield full;
   }
 }
@@ -60,8 +67,8 @@ function collectMarkdownFiles(): string[] {
     const full = join(ROOT, name);
     if (statSync(full).isFile() && name.endsWith('.md')) files.push(full);
   }
-  for (const dir of ['docs', 'features', 'contracts']) {
-    for (const f of walkMd(join(ROOT, dir))) files.push(f);
+  for (const dir of ['docs', 'features', 'contracts', '.claude']) {
+    for (const f of walkMd(join(ROOT, dir), dir)) files.push(f);
   }
   return files.filter((f) => !isSkipped(toPosix(relative(ROOT, f))));
 }
@@ -105,7 +112,7 @@ function stripFragment(target: string): string {
 function main(): void {
   const files = collectMarkdownFiles();
   if (files.length === 0) {
-    console.log('✗ 掃到 0 個 .md 檔(根目錄、docs/、features/、contracts/)。這不是很乾淨,是掃描器壞了。');
+    console.log('✗ 掃到 0 個 .md 檔(根目錄、docs/、features/、contracts/、.claude/)。這不是很乾淨,是掃描器壞了。');
     process.exit(1);
   }
 
