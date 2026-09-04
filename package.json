@@ -16,7 +16,11 @@
     "mutate": "stryker run",
     "standalone": "tsx scripts/check-standalone.ts",
     "boundaries": "tsx scripts/check-boundaries.ts",
-    "accept:dry": "NODE_OPTIONS=--import=tsx cucumber-js --tags 'not @manual' --dry-run"
+    "accept:dry": "NODE_OPTIONS=--import=tsx cucumber-js --tags 'not @manual' --dry-run",
+    "check:steps": "tsx scripts/check-step-dup.ts",
+    "check:gherkin-dup": "tsx scripts/check-gherkin-dup.ts",
+    "accept:coverage": "tsx scripts/check-phase-coverage.ts",
+    "lint:docs": "tsx scripts/check-doc-links.ts"
   },
   "devDependencies": {
     "@cucumber/cucumber": "^11.3.0",

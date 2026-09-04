@@ -190,5 +190,3 @@
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
 | `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
 §4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
-
-| `{{PHASE_COVERAGE_CHECK}}` | `.claude/skills/autopilot/SKILL.md` | 每個 phase feature 以自己的 tag 至少跑到 1 個場景的檢查指令(P-32) | `npm run accept:coverage`(來源專案待做)|
