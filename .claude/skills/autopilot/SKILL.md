@@ -74,6 +74,9 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
   `terminal create` → `terminal send 'claude --dangerously-skip-permissions' --enter` → `terminal wait --for tui-idle` → `dispatch --inject`。
   少中間兩步會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 worktree 裡的 REVIEW.md(P-17)
 - `check --wait` 可能回**已處理過的舊訊息**(`"replayed": true`),要 `--ack <deliveryId>` 再等下一則,不然空轉
+- **找 worker 一律用 worktree 路徑尾段比對,永遠不用 title**(title 是 agent 自己會改的顯示文字;找不到會被誤判成死掉而重派,P-39);每個 worktree 兩個 terminal,挑 title 不是 `user@…` 開頭的
+- `orca terminal send` 的旗標是 `--terminal <handle>`(不是 `--handle`),要加 `--enter` agent 才真的收到
+- 工單寫進 `<worktree>/.orca-brief/TASK.md`(未追蹤,不混進 diff);批次改工單文字後 grep 舊字串應為 0 命中(P-40)
 - 開 worktree 明確指定起點(`--base-branch main` 或 `git worktree add -b <branch> <path> main`),開完驗 `git merge-base --is-ancestor main <branch>`(P-18)
 
 ## 5. 每輪回報格式(給使用者看的,越短越好)
