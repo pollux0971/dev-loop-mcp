@@ -1,7 +1,10 @@
 # scripts/ — 守門腳本
 
-`check-boundaries.ts`、`check-standalone.ts`、`check-doc-links.ts` 是三支掃描器,
-`_root.ts` 是它們共用的 repo 根解析,`sync-gates.sh` 把這些程式複製進目標 repo。
+`check-boundaries.ts`、`check-standalone.ts`、`check-doc-links.ts`、`check-phase-coverage.ts`、
+`check-step-dup.ts`、`check-gherkin-dup.ts` 是掃描器,`_root.ts` 是它們共用的 repo 根解析,
+`sync-gates.sh` 把這些程式複製進目標 repo。`verify-against.sh <consumer repo 根>` 是出版前的
+機械檢查:把模板版每支 `check-*.ts` 跟那個 consumer 已裝的同名檔各跑一次,比退出碼、輸出、
+旗標清單三件事——出版規則見 `template/README.md`「版本」段。
 
 ## 程式與設定分開
 
@@ -32,16 +35,29 @@
   的設定,不是「留空也能跑」。落點表如果你也在別處維護一份人類可讀的版本(例如
   `packages/core/README.md`),那份表要跟這裡同步。
 
-- `gates.config.json` — `check-phase-coverage.ts` 讀的設定,目前只有一個欄位:
+- `gates.config.json` — `check-phase-coverage.ts` 與 `check-doc-links.ts` 讀的設定:
 
   ```json
-  { "cucumberCwd": "." }
+  {
+    "cucumberCwd": ".",
+    "docLinks": {
+      "skipSegments": [],
+      "skipPrefixes": []
+    }
+  }
   ```
 
   - `cucumberCwd`:cucumber 的執行目錄,相對 ROOT。這份檔**不存在也能跑**——
     `check-phase-coverage.ts` 會退回自動偵測(ROOT 有 `cucumber.js` 等設定檔就用
     ROOT;否則掃 ROOT 的直接子目錄找第一個含 cucumber 設定的目錄),都偵測不到
     才 exit 1。多數專案(cucumber 設定在 repo 根)不需要這份檔。
+  - `docLinks.skipSegments` / `docLinks.skipPrefixes`:`check-doc-links.ts` 的排除清單,
+    **追加**到內建預設,不是取代。內建預設是
+    `skipSegments = [node_modules, .stryker-tmp, dist, .git, target, .svelte-kit, archive]`、
+    `skipPrefixes = [.claude/worktrees, contracts/fixtures]`。專案自己的建置產物目錄
+    (例如某個少見的打包輸出目錄名)加在這裡,不必改 `check-doc-links.ts` 本體。
+    這份檔不存在,或存在但沒填 `docLinks`,就只用內建預設。實際生效的排除清單會印在
+    `check-doc-links.ts` 輸出的第一行。
   - 什麼時候需要填:cucumber 設定不在 repo 根,而是在某個 workspace package
     底下(例如 `features/cucumber.js` + `features/node_modules/.bin/cucumber-js`),
     自動偵測掃到的又不是你要的那個目錄時,直接寫死 `"cucumberCwd": "features"`

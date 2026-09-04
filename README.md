@@ -47,6 +47,12 @@
 
 `boundaries.allow.json`、`boundaries.owners.json` 這兩份是專案自己的設定(見 `scripts/README.md`),sync 只在目標不存在時建一次,之後永遠不覆蓋——升版不會把你填好的落點表洗掉。
 
+**出版規則:沒有對至少一個 consumer 跑過 `scripts/verify-against.sh <consumer repo 根>` 不打 tag。**
+這支腳本把模板版每支 `check-*.ts` 跟那個 consumer repo 已裝的同名檔各跑一次,比退出碼、
+輸出、旗標清單三件事,列出差異——這是出版前的機械檢查,不是取代人的判斷。差異逐項標
+「刻意改進」還是「迴歸」,寫進那一版的 `CHANGELOG.md` 條目;consumer 還沒裝任何守門腳本
+(例如全新模板、第一次落地)則只跑模板版本身,做退出碼與 0 目標守衛檢查,不算漏做這一步。
+
 ## 5 步驟落地到新專案
 
 ### 步驟 0:複製
