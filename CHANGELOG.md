@@ -4,6 +4,10 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.3.3 — 2026-09-05
+
+- autopilot §0 的花費檢查改三態退出碼(0 未達 / 1 已達 / 2 算不出來),2 → 停付費工作 + 工單 + 通知顧問;PITFALLS P-47「不知道不是零」(來源:專案 A worker 依 P-44 第二輪 grep 找到)。
+
 ## 1.3.2 — 2026-09-05
 
 1. **嚴格 tsc 修復**:`check-phase-coverage.ts` 的 `loadGatesConfig` 在

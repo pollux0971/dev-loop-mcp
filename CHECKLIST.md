@@ -211,3 +211,4 @@
 | `{{ARCHIVE_DIR}}` | 舊 story / 規格 / evidence 封存目錄(步驟 3) | AI_KM:`archive/`;nightmare:`dev/archive/stories/` |
 | `{{REFERENCE_BACKFILL}}` | 第一個做完的參考回填資料夾(步驟 6) | AI_KM:`06-retrieval` |
 | `{{OLD_STATUS_SOURCE}}` | 切換日起唯讀的舊狀態來源(步驟 8) | nightmare:`dev/stories/` frontmatter |
+| `{{SPEND_CHECK_COMMAND}}` | `.claude/skills/autopilot/SKILL.md` | 算當日付費 API 花費的指令,退出碼三態 0/1/2 | `npx tsx scripts/llm-spend.ts --today` |
