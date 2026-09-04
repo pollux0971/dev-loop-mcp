@@ -35,7 +35,8 @@
   3. 測試不准動 git 追蹤的檔案,要寫就複製到暫存目錄(曾有測試把基準檔刪掉)
   4. UI phase 審核者**親自起 dev server 看一眼**
   5. **開發 agent 的每個自主判斷逐一手動破壞一次**,確認有測試會紅;開發交付時要列出自主判斷清單(P-29)
-  6. 反向驗證的紅必須來自 committed、掛進 test 的檢查;掃描器掃到 0 個目標要 FAIL(P-28)——自動測試與審核都沒踩到的瀏覽器崩潰,開一次就看到
+  6. 反向驗證的紅必須來自 committed、掛進 test 的檢查;掃描器掃到 0 個目標要 FAIL(P-28)
+  7. ADR / REVIEW 裡每個量化數字重跑一次產生它的指令(P-15);commit message 每句宣稱找一個會紅的測試(P-35);開發輪交付前自跑變異、分數貼 REVIEW.md——自動測試與審核都沒踩到的瀏覽器崩潰,開一次就看到
 - **分叉前先做一次 scaffold commit**(見 `template/README.md` 的步驟 4):workspace 骨架、
   依賴一次裝齊並 commit lock、runner 的 loader 設定、邊界 / standalone 檢查腳本、
   通用步驟只定義一次、落點表——這些都在分叉之前釘好,worktree 只跑 `npm ci`。
