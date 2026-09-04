@@ -42,6 +42,11 @@
  *   npx tsx scripts/check-phase-coverage.ts --cwd features # 指定 cucumber 執行目錄(相對 ROOT)
  *   npx tsx scripts/check-phase-coverage.ts --run          # 額外加跑段二(真跑,見上)
  *
+ * `--run` 對每個 phase 檔的逾時毫秒數由 `scripts/gates.config.json` 的
+ * `phaseCoverage.runTimeoutMs` 決定,預設 600000(10 分鐘);這份檔不存在,或存在但沒填
+ * 這個欄位,就用預設值。逾時是跟「輸出裡找不到 N scenarios」不同的病(前者是執行本身沒
+ * 跑完,後者是跑完了但解析不出來),訊息會明說「逾時」並附上目前的逾時值,不會混在一起。
+ *
  * 退出碼:
  *   0  每個 phase 檔用自己的 tag 都至少比對到 1 個場景(有 --run 時,段二也要全部通過)
  *   1  任一 phase 檔比對到 0 個場景,或 tag 掛錯,或執行/解析失敗;
@@ -63,6 +68,12 @@
  *   (e) `--run`:對一個已知會失敗的 phase(例如故意讓某個 step 斷言錯誤)跑
  *       `--run` → 應該紅且印出 failed;拿掉 `--run` 只跑 dry-run → 應該綠
  *       (因為 dry-run 不執行斷言)。這就是兩段分開存在的理由。
+ *   (f) 第一行不是 tag 行:把某個 phase 檔第一行從 tag 行改成 `# PROPOSAL` 這類註解
+ *       (tag 移到第二行)。重跑 → 應該紅,訊息含「第一行必須是 tag 行」那句,不是只說
+ *       「缺少 @xxx」讓人以為要加 tag 而不是搬動 tag 的位置。改回來 → 應該綠。
+ *   (g) `--run` 逾時:把 `scripts/gates.config.json` 的 `phaseCoverage.runTimeoutMs`
+ *       設成 `1`(1 毫秒,任何 phase 都來不及跑完),跑 `--run` → 應該紅,訊息含「逾時」,
+ *       不是「輸出裡找不到 N scenarios」。改回正常值(或刪掉這個欄位退回預設)→ 應該綠。
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -121,13 +132,26 @@ function hasTag(line: string, tag: string): boolean {
 const CUCUMBER_CONFIG_FILES = ['cucumber.js', 'cucumber.cjs', 'cucumber.mjs', 'cucumber.json', 'cucumber.yaml', 'cucumber.yml'];
 const CWD_SCAN_SKIP = new Set(['node_modules', '.git', 'dist', 'archive']);
 
-interface GatesConfig { cucumberCwd?: string }
+interface GatesConfig { cucumberCwd?: string; runTimeoutMs?: number }
+
+/** `--run`(段二,真跑)對每個 phase 檔各自套用的逾時毫秒數;`gates.config.json` 沒有
+ *  這份檔、或有但沒填 `phaseCoverage.runTimeoutMs` 時用這個預設值。 */
+const DEFAULT_RUN_TIMEOUT_MS = 600_000;
 
 function loadGatesConfig(): GatesConfig {
   const p = join(ROOT, 'scripts', 'gates.config.json');
   if (!existsSync(p)) return {};
-  const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<GatesConfig>;
-  return { cucumberCwd: typeof raw.cucumberCwd === 'string' ? raw.cucumberCwd : undefined };
+  const raw = JSON.parse(readFileSync(p, 'utf8')) as {
+    cucumberCwd?: unknown;
+    phaseCoverage?: { runTimeoutMs?: unknown };
+  };
+  const runTimeoutMs = raw.phaseCoverage && typeof raw.phaseCoverage.runTimeoutMs === 'number'
+    ? raw.phaseCoverage.runTimeoutMs
+    : undefined;
+  return {
+    cucumberCwd: typeof raw.cucumberCwd === 'string' ? raw.cucumberCwd : undefined,
+    runTimeoutMs,
+  };
 }
 
 function hasCucumberConfig(dir: string): boolean {
@@ -216,15 +240,29 @@ function runDryRun(cwd: string, tagExpr: string): { scenarios: number; output: s
 interface RunResult { scenarios: number; passed: number; bad: string[]; output: string }
 type RunOutcome = RunResult | { error: string; output: string };
 
-/** 真跑(段二):解析 "N scenarios (詳細)",詳細裡出現 failed/undefined/ambiguous 就記在 bad。 */
-function runActual(cwd: string, tagExpr: string): RunOutcome {
+/** 真跑(段二):解析 "N scenarios (詳細)",詳細裡出現 failed/undefined/ambiguous 就記在 bad。
+ *  `timeoutMs` 由呼叫端(gates.config.json 的 phaseCoverage.runTimeoutMs,預設 600000)決定,
+ *  對每個 phase 檔各自套用——一個 phase 卡住逾時,不影響其他 phase 檔的逾時額度。 */
+function runActual(cwd: string, tagExpr: string, timeoutMs: number): RunOutcome {
   const r = spawnSync('npx', ['cucumber-js', '--tags', tagExpr, '--format', 'summary'], {
     cwd,
     encoding: 'utf8',
     env: baseEnv(),
-    timeout: 120_000,
+    timeout: timeoutMs,
   });
   const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  // 逾時偵測要放在一般 error 分支「之前」:實測 Node 對 spawnSync 逾時的行為是
+  // 同時設定 r.error(code === 'ETIMEDOUT')「與」r.signal(通常是 SIGTERM、status 為
+  // null)——先判斷 r.error 會把逾時吃成一句普通的 "spawnSync npx ETIMEDOUT"、
+  // 混進「執行/解析失敗」那個泛用分支,呼叫端看不出來要調的是 runTimeoutMs 還是去
+  // 修設定/環境。這裡兩種訊號(error.code、signal)都當逾時處理,訊息明說「逾時」。
+  const isTimeout = (r.error && (r.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') || !!r.signal;
+  if (isTimeout) {
+    return {
+      error: `逾時(超過 ${timeoutMs}ms 未完成${r.signal ? `,收到訊號 ${r.signal}` : ''}——可用 scripts/gates.config.json 的 "phaseCoverage.runTimeoutMs" 調高)`,
+      output,
+    };
+  }
   if (r.error) return { error: r.error.message, output };
   const m = output.match(/(\d+)\s+scenarios?\s*\(([^)]*)\)/);
   if (!m) return { error: '輸出裡找不到 "N scenarios (N passed)"', output };
@@ -266,7 +304,10 @@ function main(): void {
     const nameTag = `@${p.name}`;
     const phaseTag = `@phase-${p.phase}`;
     if (!hasTag(line, nameTag) || !hasTag(line, phaseTag)) {
-      failures.push(`${p.relFile}  第一行缺少 ${nameTag} 或 ${phaseTag}(實際:${line.trim() || '(空白)'})`);
+      failures.push(
+        `${p.relFile}  第一行缺少 ${nameTag} 或 ${phaseTag}(實際:${line.trim() || '(空白)'})。` +
+          `第一行必須是 tag 行(\`@name @phase-N …\`),註解或 \`# PROPOSAL\` 之類請放第二行起。`,
+      );
       console.log(`  ✗ ${p.relFile}  tag 掛錯`);
       continue;
     }
@@ -298,14 +339,15 @@ function main(): void {
   }
 
   // ---- 段二:--run(真跑) ----
+  const runTimeoutMs = loadGatesConfig().runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
   console.log(
-    `\nphase-coverage: 段二(--run,真跑)檢查 ${tagOkFiles.length} 個 phase 檔(要求 "N scenarios (N passed)",排除 failed/undefined/ambiguous)`,
+    `\nphase-coverage: 段二(--run,真跑)檢查 ${tagOkFiles.length} 個 phase 檔(要求 "N scenarios (N passed)",排除 failed/undefined/ambiguous;每個 phase 檔逾時 ${runTimeoutMs}ms)`,
   );
 
   const runFailures: string[] = [];
   for (const p of tagOkFiles) {
     const tagExpr = `@${p.name} and @phase-${p.phase}`;
-    const result = runActual(cucumberCwd, tagExpr);
+    const result = runActual(cucumberCwd, tagExpr, runTimeoutMs);
     if ('error' in result) {
       runFailures.push(`${p.relFile}  執行/解析失敗:${result.error}`);
       console.log(`  ✗ ${p.relFile}  執行/解析失敗:${result.error}`);

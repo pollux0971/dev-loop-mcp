@@ -6,6 +6,11 @@
 機械檢查:把模板版每支 `check-*.ts` 跟那個 consumer 已裝的同名檔各跑一次,比退出碼、輸出、
 旗標清單三件事——出版規則見 `template/README.md`「版本」段。
 
+`py/mutate.py` + `py/test_mutate.py` 是定向反向驗證工具的 **Python 版**(來源專案 C,模板
+1.3.1 收入,用法與規格對應見 `py/README.md` 與 `docs/07-practices.md` (e))。`sync-gates.sh`
+把它們同步到目標 repo 的 `scripts/py/`,同樣每次同步覆蓋、靠版本標頭防漂移——只是標頭語法
+用 `#`(Python 註解)不是 `//`。TS 版(`mutate.ts`)尚未落地。
+
 ## 程式與設定分開
 
 三支掃描器的**程式**(`.ts` / `.sh`)跟着模板走版本、被 `sync-gates.sh` 覆蓋更新;
@@ -40,6 +45,9 @@
   ```json
   {
     "cucumberCwd": ".",
+    "phaseCoverage": {
+      "runTimeoutMs": 600000
+    },
     "docLinks": {
       "skipSegments": [],
       "skipPrefixes": []
@@ -51,6 +59,12 @@
     `check-phase-coverage.ts` 會退回自動偵測(ROOT 有 `cucumber.js` 等設定檔就用
     ROOT;否則掃 ROOT 的直接子目錄找第一個含 cucumber 設定的目錄),都偵測不到
     才 exit 1。多數專案(cucumber 設定在 repo 根)不需要這份檔。
+  - `phaseCoverage.runTimeoutMs`:`--run`(段二,真跑)對**每個** phase 檔各自套用的
+    逾時毫秒數,預設 `600000`(10 分鐘)。這份檔不存在,或存在但沒填這個欄位,就用
+    預設值。逾時時 exit 1,訊息說「逾時」,不是「找不到 N scenarios」——逾時代表這個
+    phase 真跑起來卡住了,不代表 tag 掛錯或場景數是 0,這是兩種不同的病,訊息要分得
+    出來。什麼時候需要調高:某個 phase 的場景本身就跑得慢(例如打真實外部服務、跑
+    大量資料),預設 10 分鐘不夠。段一(dry-run)不受這個欄位影響,固定 60 秒逾時。
   - `docLinks.skipSegments` / `docLinks.skipPrefixes`:`check-doc-links.ts` 的排除清單,
     **追加**到內建預設,不是取代。內建預設是
     `skipSegments = [node_modules, .stryker-tmp, dist, .git, target, .svelte-kit, archive]`、
@@ -58,8 +72,8 @@
     (例如某個少見的打包輸出目錄名)加在這裡,不必改 `check-doc-links.ts` 本體。
     這份檔不存在,或存在但沒填 `docLinks`,就只用內建預設。實際生效的排除清單會印在
     `check-doc-links.ts` 輸出的第一行。
-  - 什麼時候需要填:cucumber 設定不在 repo 根,而是在某個 workspace package
-    底下(例如 `features/cucumber.js` + `features/node_modules/.bin/cucumber-js`),
+  - 什麼時候需要填(`cucumberCwd`):cucumber 設定不在 repo 根,而是在某個 workspace
+    package 底下(例如 `features/cucumber.js` + `features/node_modules/.bin/cucumber-js`),
     自動偵測掃到的又不是你要的那個目錄時,直接寫死 `"cucumberCwd": "features"`
     比每次都靠自動偵測穩定。也可以用 `--cwd <dir>` 旗標一次性覆蓋(優先權比這份
     設定檔高)。

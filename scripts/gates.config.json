@@ -1,5 +1,8 @@
 {
   "cucumberCwd": ".",
+  "phaseCoverage": {
+    "runTimeoutMs": 600000
+  },
   "docLinks": {
     "skipSegments": [],
     "skipPrefixes": []

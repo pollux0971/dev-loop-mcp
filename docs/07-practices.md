@@ -138,11 +138,12 @@ ADR / REVIEW 裡一個量化數字(72 對 / 34 對)審核輪重跑後其實是 7
 B 的 `mutate.mjs` 走同樣的核心邏輯,退出碼用 `exit 5` 代表「突變沒有讓測試變紅」這個最關鍵的分類,
 並且是 DoD 明文要求的形式:「這條場景對這行程式碼一定要紅」。
 
-**狀態**:這是規格,不是已經收進本模板的實作。**TS 版待做**——本模板的工具鏈是 TypeScript,
+**狀態**:這是規格,不是全部已經收進本模板的實作。**TS 版待做**——本模板的工具鏈是 TypeScript,
 應該以 `scripts/mutate.ts` 的形式落地,介面比照上面的 CLI 形狀(`--file --replace --with
 --expect-fail [--expect-message] [--nth]`)。**Python 版**(C 的 `mutate.py`)已有實戰驗證,
-但那是另一個語言生態的既有程式碼,**待使用者授權後**才收進 `scripts/py/`——不要在沒有授權的
-情況下把別的專案的實作檔案原樣搬進本模板。
+**已收於 `scripts/py/mutate.py`**(連同 meta-test `scripts/py/test_mutate.py`,模板 1.3.1,
+使用者授權;用法見 `scripts/py/README.md`)——多處命中拒絕與 `--nth` 是專案 C 原本就有的
+實作(STORY-70-14),`--expect-message` 目前 Python 版尚未支援。
 
 **跟變異測試分數的關係**:見文末「三個專案都刻意不遵守的範式條文」——嚴格級門檻現在變異分數與
 定向反向驗證二選一都算數。

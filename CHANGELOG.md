@@ -4,6 +4,32 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.3.1 — 2026-09-05
+
+1. 收 Python 版定向反向驗證工具:`scripts/py/mutate.py` + `scripts/py/test_mutate.py`(meta-test),
+   原樣複製自 nightmare-assault(專案 C)`dev/tools/mutate.py` / `tests/test_mutate.py`
+   (HEAD `4f1948ac`),使用者授權收入;檔頭加 SOURCE 註解,`MUTATE_PY` 改成同目錄相對路徑
+   讓 meta-test 能在 `scripts/py/` 下獨立跑(`python3 -m pytest test_mutate.py -q`,不依賴
+   專案 C 的 repo 佈局或 `conftest.py`)。多處命中 `--replace` 拒絕並列出行號、`--nth <k>`
+   指定第幾處——這是專案 C 原本就有的實作(STORY-70-14),連同對應的兩個測試
+   (`test_ac_nth_rejects_non_unique_replace_without_nth`、
+   `test_ac_nth_mutates_only_the_specified_occurrence`)一起收進來,既有 17 個測試全過。
+   新增 `scripts/py/README.md` 說明用法、exit code 表、跟 `docs/07-practices.md` (e) 的對應;
+   (e) 節的「Python 版待授權」改成「已收於 `scripts/py/mutate.py`」。`sync-gates.sh` 新增
+   `scripts/py/*.py` 的同步(每次覆蓋、版本標頭用 `#` 開頭的 Python 註解,不是 `//`),
+   設定檔清單不變。
+2. `PITFALLS.md` 加 P-44:修完一類問題(三支開發用掃描器加了 0 目標守衛)卻漏了使用者資料
+   健檢 `lint`——它對空目錄照樣印「0 problems found」exit 0。
+3. `README.md`「版本」段加「採用節奏」:consumer 鎖定一版一次驗到底、每個整合點最多升一次
+   (除非某版修的是正擋著你的迴歸);模板端只在 consumer 回報或整合點出版。
+4. `check-phase-coverage.ts`:(a) 第一行不是 tag 行時的失敗訊息加一句「第一行必須是 tag 行
+   (`@name @phase-N …`),註解或 `# PROPOSAL` 之類請放第二行起」;(b) `--run` 對每個 phase 檔
+   的逾時毫秒數改成可設定:`gates.config.json` 的 `phaseCoverage.runTimeoutMs`(預設
+   600000),逾時時訊息明說「逾時」,不會混進「輸出裡找不到 N scenarios」那個泛用分支
+   (Node 對 spawnSync 逾時同時設定 `r.error.code === 'ETIMEDOUT'` 與 `r.signal`,兩者都要
+   判斷,不能只看其中一個)。`gates.config.json` 範例與 `scripts/README.md` 補這個欄位。
+5. 來源:使用者授權收 Python 工具(專案 C)、專案 B 對 coverage 的 diff(見 1.2.1 條目補充)。
+
 ## 1.3.0 — 2026-09-05
 
 結構改動:新增文件與工單模板,把三個採用專案(B:AI_KM、C:nightmare-assault)回報的做法、
@@ -55,6 +81,7 @@
 - 新增 `--run` 旗標:預設仍是 dry-run(只抓 tag 掛錯與 undefined,不執行 step 內容);加 `--run` 時額外真跑一段,要求 `N scenarios (N passed)` 且 N ≥ 1,輸出含 failed/undefined/ambiguous 一律算該 phase 紅。兩段分開印,因為兩段抓的病不同(dry-run 抓接線問題、`--run` 抓執行期的邏輯問題)。
 - 新增 `scripts/gates.config.json`(範例 `{"cucumberCwd": "."}`),納入 `sync-gates.sh` 的 `CONFIG_FILES`(目標不存在時才複製一次,`--check` 跳過比對);`scripts/README.md` 補說明。
 - 來源:專案 B 對 1.2.0 的 diff——AI_KM 的 cucumber 設定在 `features/` 底下,不在 repo 根。
+- consumer 驗證實例:專案 B:coverage 抓到 `02-authorization/phase-2.feature` 第一行是 `# PROPOSAL` 註解不是 tag 行,其自有的 coverage 只掃 phase-1、只驗選得到場景,結構上看不到。
 
 ## 1.2.0 — 2026-09-05
 
