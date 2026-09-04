@@ -15,7 +15,8 @@
     "accept:integration": "NODE_OPTIONS=--import=tsx cucumber-js docs/integration --tags 'not @manual'",
     "mutate": "stryker run",
     "standalone": "tsx scripts/check-standalone.ts",
-    "boundaries": "tsx scripts/check-boundaries.ts"
+    "boundaries": "tsx scripts/check-boundaries.ts",
+    "accept:dry": "NODE_OPTIONS=--import=tsx cucumber-js --tags 'not @manual' --dry-run"
   },
   "devDependencies": {
     "@cucumber/cucumber": "^11.3.0",

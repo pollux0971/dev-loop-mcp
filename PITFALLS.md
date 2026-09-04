@@ -7,7 +7,7 @@
 | # | 症狀 | 為什麼 | 範式怎麼防 | 來源 |
 |---|---|---|---|---|
 | P-01 | 平行 worktree 合併時 `package.json` / lock / `tsconfig` / 共用步驟檔互相衝突 | 分叉前沒定共用檔,每個 worker 各自加依賴與 workspace | 分叉前先做 scaffold commit;共用檔只有協調者改(`docs/03` 角色段、README 步驟 4) | 專案 A,Wave 0 |
-| P-02 | 合併後 cucumber 報 duplicate step definition | 同一句 gherkin 在兩個資料夾出現,兩個 worker 各自定義 | 分叉前掃所有 feature 找重複句,只在 `common.steps.ts` 定義一次;只用在 `@manual` 的句子不定義 | 專案 A,Wave 0 |
+| P-02 | 合併後 cucumber 報 duplicate step definition | 同一句 gherkin 在兩個資料夾出現,兩個 worker 各自定義 | 分叉前掃所有 feature 找重複句,只在 `common.steps.ts` 定義一次;只用在 `@manual` 的句子不定義;**合併門檻加 `npm run accept:dry` 看 0 ambiguous**——撞名不會讓任何測試變紅,只有 dry-run 抓得到 | 專案 A,Wave 0 |
 | P-03 | 十一個 agent 對「十個 phase」「契約 1.0.0」各自解讀 | 文件漂移:同一個事實寫在多處 | 狀態只有一個來源(`FEATURE.md` phase 表),其他地方只引用 | 專案 A,Wave 0 |
 | P-04 | 測著死代碼的綠燈、測試把 git 追蹤的基準檔刪掉、瀏覽器崩潰沒被任何測試抓到 | 實作者只測自己寫的東西,不測規格要的 | 開發 agent 不碰測試;審核 agent 負責所有測試,含檔案級變異分數、真實呼叫路徑交叉比對、UI 親自起 dev server(`docs/03` 審核清單) | 專案 A,Wave 0 審核 |
 | P-05 | 「WIP ≤ 2」的建議跟「全平行」互相矛盾,agent 不知道聽哪個 | 規則沒有標明例外 | 打破建議時記 ADR,不默默做(`docs/02` ADR-014 類) | 專案 A,Wave 0 |

@@ -180,3 +180,13 @@
 |---|---|---|
 | `{{TODAY}}` | `docs/01-roadmap.md`、`docs/02-decision-map.md` | 目前日期,或該批決策/roadmap 定案的日期 |
 | `{{PROJECT_NAME}}` | `CLAUDE.md`、`docs/00-design.md`、`package.json` | 專案名稱(文件用可讀名稱,`package.json` 用 kebab-case) |
+
+## `.claude/skills/autopilot/SKILL.md`(協調者的自動推進迴圈,可選)
+
+| placeholder | 填什麼 | 本專案的例子 |
+|---|---|---|
+| `{{ADVISOR_SESSION}}` | 技術顧問 session 的名字(`ListAgents` 看得到) | `llm-learning-cards-57` |
+| `{{LINT_COMMAND}}` | 對產出資料做健檢的指令 | `npm run lint:wiki` |
+| `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
+| `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
+§4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
