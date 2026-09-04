@@ -4,14 +4,56 @@
 #
 # 用法:
 #   <template>/scripts/sync-gates.sh <目標 repo 根> [目標子目錄,預設 scripts]
-#   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --check   # 只比對,不寫:標頭壞掉或內容被動過 → exit 1
+#   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --check     # 只比對,不寫:標頭壞掉或內容被動過 → exit 1
+#   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --lang ts,py  # 明講語言集合
+#   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --prune     # 同步後清掉不在本次選集內的舊檔
+#   <template>/scripts/sync-gates.sh <目標 repo 根> [子目錄] --check --verbose  # --check 印出「略過的非模板檔」
 #
-# 複製的檔:_root.ts、check-*.ts(程式,每次同步都覆蓋,靠版本標頭防漂移),以及
-# scripts/py/*.py(定向反向驗證工具 mutate.py 與它的 meta-test test_mutate.py,同樣每次
-# 同步都覆蓋、同樣靠版本標頭防漂移——只是標頭用 `#` 開頭的 Python 註解,不是 `//`)。
+# 旗標可以任意順序、任意組合(--check 跟 --prune 不能同時給,--check 不寫檔、--prune 會刪檔,
+# 兩者互斥)。
+#
+# 複製的檔:_root.ts、check-*.ts(程式,每次同步都覆蓋,靠版本標頭防漂移;ts 永遠同步,
+# 不受語言選集影響),以及 scripts/py/*.py(定向反向驗證工具 mutate.py 與它的 meta-test
+# test_mutate.py,同樣每次同步都覆蓋、同樣靠版本標頭防漂移——只是標頭用 `#` 開頭的
+# Python 註解,不是 `//`;**只在語言選集含 py 時才同步**,見下「語言選集」)。
 # 設定檔 CONFIG_FILES(boundaries.allow.json、boundaries.owners.json、gates.config.json)**只在目標不存在時**複製一次,
 # 之後永遠不覆蓋——那是每個專案自己填的落點表跟例外清單,不是模板的一部分。`--check` 對這些檔案
 # 一律跳過比對,印一行「(你的設定檔,不比對)」,不會因為專案改了自己的設定就報紅。
+#
+# ## 語言選集(CHANGELOG 1.3.4 (1))
+#
+# 舊版無條件同步 `scripts/py/*.py`,把 Python 版的定向反向驗證工具塞進純 TypeScript
+# 專案——多裝一條沒人用得到的路,而且那條路完全繞過該專案可能已經立好的「測試唯一入口」
+# 檔案鎖(PITFALLS P-51)。改成:每次同步先決定「這次要同步哪些語言」,再只同步選中的:
+#
+#   1. `--lang ts,py` 旗標(逗號分隔)——明講就照講的做。
+#   2. 目標安裝目錄(`$DEST/gates.config.json`,即 sync 後這份設定通常跟著裝的地方)或
+#      `<目標 repo 根>/scripts/gates.config.json` 的 `sync.languages` 陣列(先找到哪個算哪個)。
+#   3. 自動偵測:目標 repo 根有 `pyproject.toml` / `setup.cfg` / `requirements*.txt`,
+#      或(排除 `node_modules`、`.git`、本次的安裝目錄本身之後)找得到任何 `*.py` 檔
+#      → 含 `py`;否則只有 `ts`。（排除安裝目錄本身是必要的:不排除的話,同步進去的
+#      `scripts/py/mutate.py` 下次跑會被自動偵測誤判成「這個 repo 有 Python」,選集
+#      永遠回不去純 ts,形成自我循環。）
+#
+# `ts` 永遠在選集裡,不管走哪一條——六支 `.ts` 守門是這套範式的核心,沒有「純 Python
+# 專案」這種概念。每次同步都印一行「選集 <語言清單>(<依據>)」,依據是上面四種之一,
+# 不用猜這次為什�麼同步了(或沒同步)Python 工具。
+#
+# `--prune`:同步完成後,掃目標安裝目錄(含 `py/`)裡**有 SOURCE 標頭、但所屬語言不在
+# 本次選集內**的檔案,列出來刪掉(該語言目錄清空後,目錄本身也刪);**沒有 SOURCE 標頭
+# 的檔案一律不碰**——那可能是這個專案自己寫的東西,不是這支腳本能判斷「不需要」的對象。
+# 不加 `--prune` 只同步、不清舊檔(語言選集從 py 改回 ts,`scripts/py/*.py` 會留在原地,
+# 直到有人加 `--prune` 才清)。
+#
+# ## `--check`(CHANGELOG 1.3.4 (2))
+#
+# 掃目標安裝目錄(含 `py/`)底下**所有檔案**(設定檔 CONFIG_FILES 除外,那些檔案本來就
+# 印固定的「你的設定檔,不比對」一行),第一行符合 `^(//|#) SOURCE: template v` 的才當
+# 「這是模板同步進來的檔案」拿去比對;不符合的印「(非模板檔,略過)」,**預設不印**,
+# 只有 `--verbose` 才印。舊版用 `check-*.ts` 這個檔名 glob 列舉目標目錄,會吃到專案自己
+# 寫的 `check-*.test.ts`(沒有 SOURCE 標頭,格式當然「不對」)並要求它也符合標頭格式,
+# 逼專案要嘛改檔名迎合守門、要嘛容忍常態紅燈(PITFALLS P-52)——新版靠**自己留下的標記**
+# (SOURCE 標頭)認自己裝的東西,不靠檔名猜。sha256 自我一致性、HOTFIX 例外邏輯不變,見下。
 #
 # 每個 .ts 檔頭插入:// SOURCE: template vX.Y.Z (<commit>) sha256=<檔身雜湊> — 勿手改;升版用 sync-gates.sh
 # 每個 scripts/py/*.py 檔頭插入:# SOURCE: template vX.Y.Z (<commit>) sha256=<檔身雜湊> — 勿手改;升版用 sync-gates.sh
@@ -38,10 +80,46 @@
 #   路徑或搬到看不到模板的機器上)→ `--check` 照樣能跑且結果正確(綠或紅視內容而定);
 #   改一個字 → 照樣紅。
 #   設定檔:改目標 repo 的 boundaries.owners.json 一個字 → --check 印「(你的設定檔,不比對)」且不紅。
+#   語言選集:純 TypeScript 假 repo(無任何 Python 跡象)同步 → 選集只有 ts、`scripts/py/`
+#   不存在;加一個 `requirements.txt` 重跑 → 選集含 py、`scripts/py/*.py` 出現;刪掉
+#   `requirements.txt` 再帶 `--prune` 重跑 → 選集回到只有 ts,`scripts/py/` 底下有 SOURCE
+#   標頭的檔案被列出並刪除,目錄本身清空後也刪除,其他檔案不受影響。
+#   `--check` 的檔名無關性:目標目錄放一個專案自己的 `check-foo.test.ts`(沒有 SOURCE
+#   標頭)→ `--check` 仍然綠,且預設不提這個檔案;加 `--verbose` → 印一行「(非模板檔,略過)」。
 set -euo pipefail
 TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="${1:?目標 repo 根目錄}"; SUBDIR="${2:-scripts}"; MODE="${3:-}"
-[ "$SUBDIR" = "--check" ] && { SUBDIR=scripts; MODE=--check; }
+TARGET="${1:?目標 repo 根目錄}"; shift || true
+
+SUBDIR="scripts"; SUBDIR_SET=0
+MODE=""
+PRUNE=0
+VERBOSE=0
+LANG_FLAG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) MODE="--check"; shift ;;
+    --prune) PRUNE=1; shift ;;
+    --verbose) VERBOSE=1; shift ;;
+    --lang)
+      [ $# -ge 2 ] || { echo "✗ --lang 需要語言清單,例如 ts,py"; exit 1; }
+      LANG_FLAG="$2"; shift 2
+      ;;
+    -*)
+      echo "✗ 未知旗標:$1"; exit 1
+      ;;
+    *)
+      if [ "$SUBDIR_SET" = 1 ]; then echo "✗ 未知參數:$1"; exit 1; fi
+      SUBDIR="$1"; SUBDIR_SET=1
+      shift
+      ;;
+  esac
+done
+
+if [ "$PRUNE" = 1 ] && [ "$MODE" = "--check" ]; then
+  echo "✗ --prune 不能跟 --check 一起用(--check 不寫檔,--prune 會刪檔)"
+  exit 1
+fi
+
 DEST="$TARGET/$SUBDIR"
 PY_DEST="$DEST/py"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
@@ -57,14 +135,6 @@ sha256_stdin() {
   else shasum -a 256 | awk '{print $1}'; fi
 }
 
-# --check 是自包含的:不讀 $TEMPLATE_DIR,只讀已經裝好的那份檔案本身。
-# sync(非 --check)才需要 $TEMPLATE_DIR 的 VERSION 與 commit,拿新內容寫進去。
-if [ "$MODE" != "--check" ]; then
-  mkdir -p "$DEST"
-  VERSION="$(cat "$TEMPLATE_DIR/VERSION")"
-  COMMIT="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-fi
-
 # 同步單一檔案(非 --check 專用):$1=來源檔、$2=標頭註解字元(// 或 #)、$3=目的目錄。
 # .ts 與 scripts/py/*.py 共用同一套邏輯(每次同步覆蓋、版本 + sha256 標頭防漂移、
 # HOTFIX 例外),差別只在標頭的註解語法與目的目錄。
@@ -79,14 +149,15 @@ sync_one() {
   mv "$tmp" "$dst"; echo "→ $dst"
 }
 
-# 自我一致性檢查(--check 專用):$1=顯示用的檔名、$2=已安裝的檔案路徑、$3=標頭註解字元。
+# 自我一致性檢查(--check 專用):$1=顯示用的檔名、$2=已安裝的檔案路徑。
 # 不碰 $TEMPLATE_DIR——這是「自包含」的核心:凡是這支函式需要的資訊,全部從 $dst 自己身上讀。
+# 註解字元(// 或 #)不用外部傳入,從檔案自己的第一行判斷。
 check_one() {
-  local name="$1" dst="$2" comment="$3"
+  local name="$1" dst="$2"
   if [ ! -f "$dst" ]; then echo "✗ 缺 $dst"; fail=1; return; fi
   local header embedded_hash hotfix_date skip_lines actual_hash age
   header="$(sed -n '1p' "$dst")"
-  if ! echo "$header" | grep -qE "^${comment} SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}"; then
+  if ! echo "$header" | grep -qE '^(//|#) SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}'; then
     echo "✗ $name 缺 SOURCE 標頭或格式不對(第一行:$header)"; fail=1; return
   fi
   embedded_hash="$(echo "$header" | grep -oE 'sha256=[0-9a-f]{64}' | cut -d= -f2)"
@@ -109,35 +180,157 @@ check_one() {
   fi
 }
 
+# 語言選集是否含 $1(在 LANGS 全域陣列裡找)。
+is_lang_selected() {
+  local target="$1" l
+  for l in "${LANGS[@]}"; do [ "$l" = "$target" ] && return 0; done
+  return 1
+}
+
+# $1 = gates.config.json 路徑 → 有 sync.languages 陣列就把逗號分隔的清單印到 stdout、
+# exit 0;沒有這個欄位、檔案不是合法 JSON,或陣列是空的 → exit 1、不印東西。
+# 用 node(這整套工具本來就依賴 node/tsx)parse,不額外依賴 jq。
+read_sync_languages() {
+  node -e '
+    try {
+      const fs = require("fs");
+      const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const langs = cfg && cfg.sync && Array.isArray(cfg.sync.languages) ? cfg.sync.languages : null;
+      if (langs && langs.length) { process.stdout.write(langs.join(",")); process.exit(0); }
+      process.exit(1);
+    } catch (e) { process.exit(1); }
+  ' "$1" 2>/dev/null
+}
+
+# 自動偵測:$1=consumer 根、$2=本次的安裝目錄(排除,見上面檔頭「語言選集」段的解釋)。
+# 找到訊號時把理由寫進全域 PY_SIGNAL_REASON,供選集依據訊息使用。
+detect_python_signal() {
+  local root="$1" dest="$2" found
+  if [ -f "$root/pyproject.toml" ]; then PY_SIGNAL_REASON="找到 pyproject.toml"; return 0; fi
+  if [ -f "$root/setup.cfg" ]; then PY_SIGNAL_REASON="找到 setup.cfg"; return 0; fi
+  if ls "$root"/requirements*.txt >/dev/null 2>&1; then PY_SIGNAL_REASON="找到 requirements*.txt"; return 0; fi
+  found="$(find "$root" -name '*.py' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path "$dest/*" 2>/dev/null | head -1)"
+  if [ -n "$found" ]; then PY_SIGNAL_REASON="找到 $found"; return 0; fi
+  return 1
+}
+
+# 同步完成後清掉「有 SOURCE 標頭、但所屬語言不在本次選集內」的檔案(--prune 專用)。
+# 沒有 SOURCE 標頭的檔案一律不碰。
+prune_unselected() {
+  local prune_langs=(ts py)
+  local prune_dirs=("$DEST" "$PY_DEST")
+  local i=0 lang dir f
+  while [ "$i" -lt "${#prune_langs[@]}" ]; do
+    lang="${prune_langs[$i]}"; dir="${prune_dirs[$i]}"
+    i=$((i+1))
+    if is_lang_selected "$lang"; then continue; fi
+    [ -d "$dir" ] || continue
+    for f in "$dir"/*; do
+      [ -f "$f" ] || continue
+      if head -1 "$f" | grep -qE '^(//|#) SOURCE: template v'; then
+        echo "− $f(不在本次選集 ${LANGS[*]} 內,已刪除)"
+        rm -f "$f"
+      fi
+    done
+    if [ -d "$dir" ] && [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+      rmdir "$dir"
+      echo "− $dir(清空後已刪除)"
+    fi
+  done
+}
+
 if [ "$MODE" = "--check" ]; then
-  for dst in "$DEST"/_root.ts "$DEST"/check-*.ts; do
+  # --check 是自包含的:不讀 $TEMPLATE_DIR,只讀已經裝好的那份檔案本身;不需要語言選集。
+  is_config_file() {
+    local base="$1" c
+    for c in "${CONFIG_FILES[@]}"; do [ "$base" = "$c" ] && return 0; done
+    return 1
+  }
+  for dst in "$DEST"/* "$PY_DEST"/*; do
     [ -f "$dst" ] || continue
-    n=$((n+1))
-    check_one "$(basename "$dst")" "$dst" "//"
+    base="$(basename "$dst")"
+    is_config_file "$base" && continue
+    header="$(sed -n '1p' "$dst")"
+    if echo "$header" | grep -qE '^(//|#) SOURCE: template v'; then
+      n=$((n+1))
+      check_one "$base" "$dst"
+    else
+      [ "$VERBOSE" = 1 ] && echo "○ $base(非模板檔,略過)"
+    fi
   done
-  for dst in "$PY_DEST"/*.py; do
-    [ -f "$dst" ] || continue
-    n=$((n+1))
-    check_one "$(basename "$dst")" "$dst" "#"
-  done
+  for cfg in "${CONFIG_FILES[@]}"; do echo "○ $cfg(你的設定檔,不比對)"; done
 else
+  # sync(非 --check)才需要 $TEMPLATE_DIR 的 VERSION 與 commit,拿新內容寫進去。
+  mkdir -p "$DEST"
+  VERSION="$(cat "$TEMPLATE_DIR/VERSION")"
+  COMMIT="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+  # 語言選集(CHANGELOG 1.3.4 (1)):--lang 旗標 > 目標的 gates.config.json 的
+  # sync.languages > 自動偵測。ts 永遠在集合裡。
+  declare -a LANGS=()
+  LANGS_BASIS=""
+  if [ -n "$LANG_FLAG" ]; then
+    IFS=',' read -ra LANGS <<< "$LANG_FLAG"
+    LANGS_BASIS="--lang 旗標"
+  else
+    CONFIG_LANGS=""
+    CONFIG_PATH=""
+    for cand in "$DEST/gates.config.json" "$TARGET/scripts/gates.config.json"; do
+      if [ -f "$cand" ]; then
+        val="$(read_sync_languages "$cand" || true)"
+        if [ -n "$val" ]; then CONFIG_LANGS="$val"; CONFIG_PATH="$cand"; break; fi
+      fi
+    done
+    if [ -n "$CONFIG_LANGS" ]; then
+      IFS=',' read -ra LANGS <<< "$CONFIG_LANGS"
+      LANGS_BASIS="設定檔 $CONFIG_PATH 的 sync.languages"
+    else
+      PY_SIGNAL_REASON=""
+      if detect_python_signal "$TARGET" "$DEST"; then
+        LANGS=(ts py)
+        LANGS_BASIS="自動偵測:找到 Python 跡象($PY_SIGNAL_REASON)"
+      else
+        LANGS=(ts)
+        LANGS_BASIS="自動偵測:無 Python"
+      fi
+    fi
+  fi
+  # 去空白項、永遠含 ts。
+  trimmed=()
+  for l in "${LANGS[@]}"; do
+    l="$(echo "$l" | tr -d '[:space:]')"
+    [ -n "$l" ] && trimmed+=("$l")
+  done
+  LANGS=("${trimmed[@]}")
+  has_ts=0
+  for l in "${LANGS[@]}"; do [ "$l" = "ts" ] && has_ts=1; done
+  [ "$has_ts" = 1 ] || LANGS=(ts "${LANGS[@]}")
+  echo "選集 $(IFS=,; echo "${LANGS[*]}")(${LANGS_BASIS})"
+
   for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
     sync_one "$src" "//" "$DEST"
   done
-  for src in "$TEMPLATE_DIR"/scripts/py/*.py; do
-    sync_one "$src" "#" "$PY_DEST"
-  done
-fi
+  if is_lang_selected py; then
+    for src in "$TEMPLATE_DIR"/scripts/py/*.py; do
+      sync_one "$src" "#" "$PY_DEST"
+    done
+  fi
 
-if [ "$MODE" = "--check" ]; then
-  for cfg in "${CONFIG_FILES[@]}"; do echo "○ $cfg(你的設定檔,不比對)"; done
-else
+  if [ "$PRUNE" = 1 ]; then
+    prune_unselected
+  fi
+
   for cfg in "${CONFIG_FILES[@]}"; do
     if [ ! -f "$DEST/$cfg" ]; then
       cp "$TEMPLATE_DIR/scripts/$cfg" "$DEST/"; echo "→ $DEST/$cfg(新建)"
     fi
   done
 fi
+
 [ "$n" -gt 0 ] || { echo "掃到 0 支守門,這不是很乾淨,是腳本壞了"; exit 1; }
-if [ "$MODE" = "--check" ]; then [ "$fail" = 0 ] && echo "✓ 守門內容自同步以來未被更動" || exit 1
-else echo "已同步 $n 支守門到 $DEST(含 $PY_DEST 底下的 Python 版工具;template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"; fi
+if [ "$MODE" = "--check" ]; then
+  [ "$fail" = 0 ] && echo "✓ 守門內容自同步以來未被更動" || exit 1
+else
+  if is_lang_selected py; then py_note="含 $PY_DEST 底下的 Python 版工具;"; else py_note=""; fi
+  echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"
+fi

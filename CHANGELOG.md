@@ -4,6 +4,64 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.3.4 — 2026-09-05
+
+專案 A worker 同步 1.3.2 / 1.3.3 到自己的專案時抓到的三個問題,全部修在模板端:
+
+1. **`sync-gates.sh` 語言選集 + `--prune`**:舊版無條件同步 `scripts/py/*.py`,把定向
+   反向驗證工具的 Python 版塞進純 TypeScript 專案,還繞過了該專案剛立起來的
+   `npm run mutate` 唯一入口(檔案鎖 + 四條「不准繞過鎖」測試掃不到 `.py`,PITFALLS
+   P-51)。改成:語言集合由 `--lang ts,py` 旗標 > 目標安裝目錄(或 `<目標根>/scripts/`)
+   的 `gates.config.json` 的 `sync.languages` 陣列 > 自動偵測(consumer 根有
+   `pyproject.toml` / `requirements*.txt` / `setup.cfg`,或排除 `node_modules`、`.git`、
+   本次安裝目錄本身後找得到 `*.py` → 含 `py`;`ts` 永遠在集合裡)決定,每次同步印一行
+   「選集 <清單>(<依據>)」。新增 `--prune`:同步後把安裝目錄(含 `py/`)裡**有 SOURCE
+   標頭、但所屬語言不在本次選集內**的檔案列出並刪除,該語言目錄清空後一併刪除;**沒有
+   SOURCE 標頭的檔案一律不碰**。`gates.config.json` 的 `sync.languages` 欄位補進
+   `scripts/README.md`(模板出貨的預設 `gates.config.json` 不含這個欄位,填了語言集合
+   會蓋掉自動偵測,對第一次落地的新專案不是好預設)。
+2. **`sync --check` 只比對有 SOURCE 標頭的檔**:舊版用 `check-*.ts` 這個檔名 glob 列舉
+   目標目錄,會吃到專案自己寫的 `check-*.test.ts`(沒有 SOURCE 標頭)並要求它也符合標頭
+   格式,逼專案要嘛改檔名迎合守門、要嘛容忍常態紅燈(PITFALLS P-52)。改成:掃目標目錄
+   (含 `py/`)所有檔,第一行符合 `SOURCE: template v` 的才拿去比對;其餘印
+   「(非模板檔,略過)」,預設不印,新增 `--verbose` 才印。sha256 自我一致性、HOTFIX
+   例外邏輯不變。
+3. **`verify-against.sh` 讀到模板自己的佔位設定**:模板版 `check-*.ts` 是直接對
+   `$TEMPLATE_DIR/scripts/*.ts` 執行(不經 `sync-gates.sh` 複製),找設定檔的順位 1
+   (「腳本自己所在的目錄」)在這個情境下是模板自己的 `scripts/`——裡面是給新專案抄的
+   佔位 `boundaries.owners.json`,對 consumer 的真實落點表永遠比出「差異」,即使
+   consumer 早就同步好、跟模板行為完全一致。修法:`_root.ts` 的 `resolveConfig` /
+   `configSearchPaths` 新增第 0 順位——環境變數 `GATES_CONFIG_DIR`(若設且該目錄
+   存在);`check-boundaries.ts`、`check-doc-links.ts` 有自己本地的設定搜尋(因為要跟著
+   各自的 `--root` 覆蓋走,不能直接用 `_root.ts` 模組層級固定的 ROOT)同步加上同一個
+   第 0 順位。`verify-against.sh` 跑模板版 `check-*.ts` 時設
+   `GATES_CONFIG_DIR=<consumer 守門安裝目錄>`,consumer 版不受影響。`scripts/README.md`
+   補完整順序:env > 腳本自身目錄 > `ROOT/scripts`。反向驗證:對主 repo(已同步 1.3.2
+   版 + 自己的 `boundaries.owners.json`)跑 `verify-against.sh`,boundaries 那支的
+   「差異」在修完後消失,六支掃描器全部 `✓ 一致`。
+4. PITFALLS 加 **P-51**(模板同步塞 Python 工具、繞過唯一入口鎖)與 **P-52**
+   (`--check` 用檔名 glob 猜「哪些是我的」,吃到專案的 `.test.ts`),兩條都插在
+   P-12 之前(來源:專案 A worker)。
+5. `docs/07-practices.md` (l) 節末尾補一則實例:協調者與技術顧問都推測「六份
+   standalone 回歸內容不同」,worker 實測證明六份跑的是同一個 subprocess,找到比
+   allowlist 更好的解(一份共用場景掛六個 `@iN`)——「兩個人的推測一致並不會讓它變成
+   事實」。
+
+**反向驗證紀錄**:
+- `sync-gates.sh`:純 TS 假 repo 同步 → 印「選集 ts(自動偵測:無 Python)」,`scripts/py/`
+  不存在;加 `requirements.txt` 重跑 → 選集含 `py`,`scripts/py/*.py` 出現;刪掉
+  `requirements.txt` 再帶 `--prune` 重跑 → 選集回到只有 `ts`,`scripts/py/` 底下的檔
+  被列出並刪除、目錄本身也刪除,其餘 `.ts` 檔不受影響。
+- `sync --check`:目標目錄放一個沒有 SOURCE 標頭的 `check-foo.test.ts` → 綠且預設不提;
+  `--verbose` → 印「(非模板檔,略過)」。改一支已同步檔案的一個字 → 紅(sha256 不符);
+  HOTFIX 例外、24 小時後過期轉紅、重新 sync 轉綠,行為與 1.3.2 前相同,均已重跑驗證。
+- `verify-against.sh`:對主 repo(`/data/python/llm_learning-cards`,已裝 1.3.2 同步版
+  + 自己的 `boundaries.owners.json`)跑,六支掃描器(boundaries / doc-links /
+  gherkin-dup / phase-coverage / standalone / step-dup)全部 `✓ 一致`,`exit 0`;
+  主 repo `git status --short` 前後皆為空(verify-against 沒有在 consumer 留檔)。
+- `template/scripts/*.ts` 在 `--strict --exactOptionalPropertyTypes
+  --noUncheckedIndexedAccess` 下 `tsc --noEmit` 通過。
+
 ## 1.3.3 — 2026-09-05
 
 - autopilot §0 的花費檢查改三態退出碼(0 未達 / 1 已達 / 2 算不出來),2 → 停付費工作 + 工單 + 通知顧問;PITFALLS P-47「不知道不是零」(來源:專案 A worker 依 P-44 第二輪 grep 找到)。
@@ -63,6 +121,9 @@
    - **(F) 分支與提交**:`docs/03-agile-workflow.md` 補一條——「測試先紅」階段 `.feature`
      可以先進 main(tag 讓紅對 CI 隱形),**紅的單元測試不行**,合併點在綠之後;誤合了
      用 `revert`,不用 `test.fails` / `.skip` 藏。PITFALLS 加 **P-46** 記這條。
+
+已知迴歸(1.3.4 修):`--check` 用 `check-*.ts` glob 吃到專案自己的 `.test.ts` 檔;
+`verify-against.sh` 跑模板版時讀到模板自己的佔位 `boundaries.owners.json`。
 
 **反向驗證紀錄(這一版實際跑過,不是紙上談兵)**:
 - gherkin-dup allowlist:假 repo 兩個 `docs/integration/*.feature` 場景名、步驟本體都

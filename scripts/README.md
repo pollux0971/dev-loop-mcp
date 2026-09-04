@@ -21,6 +21,33 @@
 (加上退出碼必須是 0 或 1)判斷一次執行「算不算數」——見該腳本檔頭「執行有效性」段,這是
 CHANGELOG 1.3.2 (C) 修的迴歸:退出碼 127(command not found)以前會被誤判成「✓ 通過」。
 
+## 語言選集與 `--prune`(CHANGELOG 1.3.4 (1))
+
+`sync-gates.sh` 不再無條件同步 Python 版工具(`scripts/py/*.py`)——舊版每次同步都塞進
+目標 repo,即使那是個純 TypeScript 專案,多裝一條沒人用得到的路。現在先決定「這次要同步
+哪些語言」(印一行「選集 <清單>(<依據>)」),依序:
+
+1. `--lang ts,py` 旗標(逗號分隔)。
+2. 目標安裝目錄或 `<目標 repo 根>/scripts/` 的 `gates.config.json` 裡 `sync.languages` 陣列
+   (見下「程式與設定分開」段的欄位說明)。
+3. 自動偵測:目標 repo 根有 `pyproject.toml` / `setup.cfg` / `requirements*.txt`,或排除
+   `node_modules`、`.git`、本次安裝目錄本身之後找得到任何 `*.py` → 含 `py`;否則只有 `ts`。
+
+`ts` 永遠在選集裡,不管走哪一條——沒有「純 Python 專案」這種概念,六支 `.ts` 守門是核心。
+
+加 `--prune`:同步完成後掃安裝目錄(含 `py/`),把**有 SOURCE 標頭、但所屬語言不在本次
+選集內**的檔案列出來刪掉(該語言的目錄清空後也一併刪除);**沒有 SOURCE 標頭的檔案一律
+不碰**。不加 `--prune` 就只同步、不清舊檔——語言選集從 `py` 改回 `ts` 之後,`scripts/py/`
+會留在原地,直到有人加 `--prune`。
+
+`--check` 現在掃安裝目錄(含 `py/`)底下**所有檔案**(設定檔 CONFIG_FILES 除外,那些檔案
+固定印「你的設定檔,不比對」),**第一行符合 `SOURCE: template v` 的才拿去比對**;不符合的
+一律印「(非模板檔,略過)」,預設不印,只有 `--verbose` 才印。舊版用 `check-*.ts` 這個檔名
+glob 列舉,會吃到專案自己寫的 `check-*.test.ts`(沒有 SOURCE 標頭)並要求它也符合標頭格式,
+逼專案要嘛改檔名迎合守門、要嘛容忍常態紅燈(PITFALLS P-52)——新版靠**自己留下的標記**認
+自己裝的東西,不靠檔名猜(同一個道理見 PITFALLS P-33「守門對著代理指標」)。sha256 自我
+一致性、HOTFIX 例外邏輯不變。
+
 ## 型別驗證
 
 模板的型別驗證用**採用專案最嚴的 tsconfig**(`strict`、`exactOptionalPropertyTypes`、
@@ -51,14 +78,23 @@ NODE_PATH=<採用專案根>/node_modules npx tsc --noEmit \
 它們讀的**設定**是專案自己的東西,`sync-gates.sh` 只在目標不存在時建一次,之後
 永遠不覆蓋:
 
-**找設定檔的順序**(CHANGELOG 1.3.2 (A)):每支需要設定檔的掃描器,一律先找**自己所在
-的目錄**(`import.meta.dirname`——`sync-gates.sh` 把腳本裝到哪裡,設定檔通常也跟著裝在
-哪裡,例如 cucumber 設定不在根目錄的專案常把整套裝進 `features/scripts/`),再找
-`<ROOT>/scripts/`。舊版只認 `ROOT/scripts/`,腳本裝在別處時設定檔就永遠讀不到——不會報錯,
-只會安靜套用內建預設或觸發自動偵測,像是設定死掉了一樣(採用專案實測的迴歸)。必要設定
-(`boundaries.owners.json`)兩處都找不到會印「設定檔未找到於 <兩個路徑>」並 exit 1;
-選填設定(`boundaries.allow.json`、`gates.config.json`)兩處都找不到就靜默套用預設,
-不印訊息。
+**找設定檔的順序**(CHANGELOG 1.3.2 (A);env 優先權見 CHANGELOG 1.3.4 (3)):
+0. 環境變數 `GATES_CONFIG_DIR`(若設且該目錄存在)。
+1. 呼叫端腳本**自己所在的目錄**(`import.meta.dirname`——`sync-gates.sh` 把腳本裝到哪裡,
+   設定檔通常也跟著裝在哪裡,例如 cucumber 設定不在根目錄的專案常把整套裝進
+   `features/scripts/`)。
+2. `<ROOT>/scripts/`。
+
+舊版只認第 2 步,腳本裝在別處時設定檔就永遠讀不到——不會報錯,只會安靜套用內建預設或觸發
+自動偵測,像是設定死掉了一樣(採用專案實測的迴歸)。第 0 步是後來加的:`verify-against.sh`
+直接對模板路徑下的 `.ts` 執行(不經 `sync-gates.sh` 複製),此時「腳本自己所在的目錄」
+(第 1 步)是模板自己的 `scripts/`——裡面放的是給新專案抄的佔位設定,對 boundaries 這種
+硬性設定,永遠讀到模板的佔位 `boundaries.owners.json`,對 consumer 的真實落點表永遠比出
+「差異」。`GATES_CONFIG_DIR` 讓呼叫端明講「這次設定要去哪裡找」,不受「腳本實際放在哪個
+目錄」影響——`verify-against.sh` 跑模板版 `check-*.ts` 時會設成 consumer 的守門安裝目錄。
+必要設定(`boundaries.owners.json`)三處都找不到會印「設定檔未找到於 <搜尋過的路徑>」並
+exit 1;選填設定(`boundaries.allow.json`、`gates.config.json`)三處都找不到就靜默套用
+預設,不印訊息。
 
 - `boundaries.allow.json` — 允許的跨界例外邊(`{from, to, reason}` 陣列)。
 - `boundaries.owners.json` — `check-boundaries.ts` 的落點表跟掃描範圍,格式:
@@ -142,6 +178,18 @@ NODE_PATH=<採用專案根>/node_modules npx tsc --noEmit \
     自動偵測掃到的又不是你要的那個目錄時,直接寫死 `"cucumberCwd": "features"`
     比每次都靠自動偵測穩定。也可以用 `--cwd <dir>` 旗標一次性覆蓋(優先權比這份
     設定檔高)。
+  - `sync.languages`(選填,CHANGELOG 1.3.4 (1)):`sync-gates.sh` 這次要同步哪些語言的
+    掃描器,例如:
+
+    ```json
+    { "sync": { "languages": ["ts"] } }
+    ```
+
+    填了就固定用這個清單(優先權比自動偵測高,比 `--lang` 旗標低),不填就交給
+    `sync-gates.sh` 自動偵測(見上「語言選集與 `--prune`」段)。`ts` 不寫也會自動補上。
+    **模板出貨的預設 `gates.config.json` 不含這個欄位**——寫死一個語言集合會蓋掉自動
+    偵測,對第一次落地、還沒人手動填過設定的新專案不是好預設;要固定選集,自己在專案的
+    `gates.config.json` 加這個區塊。
 
 `standalone.json`(repo 根,不在 `scripts/` 底下)不是模板的「設定檔清單」的一部分,
 它本來就是每個專案自己寫的 manifest;但同一個道理適用——`check-standalone.ts`

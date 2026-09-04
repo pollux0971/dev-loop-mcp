@@ -29,6 +29,16 @@
 #   - check-phase-coverage.ts  加 `--list`(不真的跑 cucumber,以免太慢)
 #   - check-doc-links.ts / check-step-dup.ts / check-gherkin-dup.ts  原樣執行
 #
+# consumer 的設定,不是模板自己的佔位設定(CHANGELOG 1.3.4 (3)):模板版腳本是直接對
+# `$TEMPLATE_DIR/scripts/*.ts` 執行,不經 `sync-gates.sh` 複製——這些腳本找設定檔的
+# 順位 1 是「腳本自己所在的目錄」,對模板版來說那個目錄就是模板自己的 `scripts/`,裡面
+# 放的是給新專案抄的佔位 `boundaries.owners.json` / `gates.config.json`,永遠讀不到
+# consumer 的真實設定,對 boundaries 這種硬性設定必然比出「差異」(不是迴歸,是這支腳本
+# 自己跑法造成的假差異)。修法:跑模板版(只跑模板版,consumer 版不受影響)時設環境變數
+# `GATES_CONFIG_DIR=<consumer 守門安裝目錄>`——`_root.ts` 的 `resolveConfig`(以及
+# `check-boundaries.ts` / `check-doc-links.ts` 各自的本地版本)把它當第 0 順位,蓋過
+# 「腳本自己所在的目錄」。
+#
 # 每一對(存在才比)先各自判斷「這次執行算不算數」,再比三件事:
 #
 #   執行有效性(CHANGELOG 1.3.2 (C);修的是這支腳本自己的同型 bug——退出碼 127
@@ -202,7 +212,11 @@ for name in "${FILES[@]}"; do
 
   out_t="$WORKDIR/${name}.template.out"
   out_c="$WORKDIR/${name}.consumer.out"
-  rc_t="$(run_capture "$template_file" "$out_t" "${FLAGS[@]}")"
+  # 模板版設 GATES_CONFIG_DIR 指到 consumer 已裝的安裝目錄,讓它讀 consumer 的真實設定
+  # 而不是模板自己的佔位設定(見檔頭「consumer 的設定,不是模板自己的佔位設定」)。
+  # consumer 版不必設——它本來就裝在 $CONSUMER_SCRIPTS_DIR,「腳本自己所在的目錄」
+  # 順位就已經是那裡。
+  rc_t="$(GATES_CONFIG_DIR="$CONSUMER_SCRIPTS_DIR" run_capture "$template_file" "$out_t" "${FLAGS[@]}")"
   rc_c="$(run_capture "$consumer_file" "$out_c" "${FLAGS[@]}")"
 
   file_diff=0
