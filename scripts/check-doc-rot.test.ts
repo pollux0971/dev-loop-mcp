@@ -56,6 +56,16 @@ const ONE_RULE = [
   { pattern: 'llm-learning-cards-\\d+', reason: '寫死的顧問 session 名字', since: '2026-09-05', incident: 'P-59' },
 ];
 
+/**
+ * P-83(來源 專案 A,2026-09-05,採用模板 1.4.1 之後):消費者自己的「不准繞過鎖」
+ * 掃描器把這份測試檔裡寫死的一段連續字面值(繞過檔案鎖直接跑變異測試的 Stryker CLI
+ * 指令)當成真的違規命中——對那支掃描器來說,fixture 裡的字面值跟真的貼在文件裡的
+ * 字面值長得一模一樣。改成陣列 `.join(' ')` 串接組出來,這份檔案自己就不再含一段
+ * 可以照抄貼上的連續字面值(見 `template/scripts/no-bypass-literal.test.ts`、
+ * PITFALLS.md P-83)。
+ */
+const STRYKER_BYPASS_LITERAL = ['npx', 'stryker', 'run'].join(' ');
+
 describe('check-doc-rot:命中黑名單', () => {
   it('一個檔案命中一條規則、預設 docRot.mode(report)→ marker 印 FAIL 但 exit 0,訊息含 file:line 與規則資訊', () => {
     const root = makeRoot();
@@ -428,7 +438,7 @@ describe('check-doc-rot:S13 (c) --self-test', () => {
     const root = makeRoot();
     writeBlacklist(root, [
       { pattern: 'llm-learning-cards-\\d+', reason: 'r1', since: '2026-09-05', incident: 'P-59' },
-      { pattern: 'npx stryker run', reason: 'r2', since: '2026-09-05', incident: 'mutate-lock-bypass' },
+      { pattern: STRYKER_BYPASS_LITERAL, reason: 'r2', since: '2026-09-05', incident: 'mutate-lock-bypass' },
       { pattern: '核心四項', reason: 'r3', since: '2026-09-05', incident: 'nightmare-assault' },
     ]);
 
@@ -438,6 +448,18 @@ describe('check-doc-rot:S13 (c) --self-test', () => {
     expect(output).toContain('✓ self-test:3 條規則,探針全部命中自己');
     expect(output).toContain('gate=doc-rot result=PASS');
   }, SPAWN_TIMEOUT_MS);
+
+  it('串接組出來的 STRYKER_BYPASS_LITERAL,拼出來仍然是真正的違規指令(不是改壞了語意)', () => {
+    // 不能直接寫死那句 Stryker CLI 指令的完整字面值來比對——那樣這份檔案又會多一次
+    // 可以照抄貼上的連續字面值,繞了一圈又踩回 P-83。改用字元碼獨立重建同一個字串:
+    // 兩種構造方式
+    // (陣列串接 vs. 字元碼)各自壞掉的機率互相獨立,才夠格叫「pin」,不是同義反覆。
+    const rebuiltFromCharCodes = String.fromCharCode(
+      110, 112, 120, 32, 115, 116, 114, 121, 107, 101, 114, 32, 114, 117, 110,
+    );
+    expect(STRYKER_BYPASS_LITERAL).toBe(rebuiltFromCharCodes);
+    expect(STRYKER_BYPASS_LITERAL).toHaveLength(15);
+  });
 
   it('一條規則的探針合成不出來(對自己沒命中)→ 印指名哪一條,exit 1(不是靜默當成過)', () => {
     const root = makeRoot();

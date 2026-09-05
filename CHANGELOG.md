@@ -4,11 +4,13 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
-## 1.4.2 — 未發布(草稿,2026-09-05)
+## 1.4.2 — 2026-09-05
 
-**本版未打 tag,等 09-07 聯合回顧後併入**——內容已經 commit 進 `template/dev-paradigm` 分支,
-`template/VERSION` 仍寫 `1.4.1`,由技術顧問在聯合回顧後統一決定要不要升版與打 tag。
 來源:專案 A 協調者、專案 A 審核 agent(2026-09-05)。
+
+- 模板自己不得含可照抄的 Stryker CLI 字面(專案 A 的『不准繞過鎖』掃描器抓到 1.4.1 的
+  doc-rot 測試資料與黑名單條目;fixture 改串接、黑名單改 `\s+` regex、新增
+  no-bypass-literal 守門;來源 專案 A worker/協調者)。
 
 ### `check-phase-status.ts`(S15,report 模式)
 
@@ -73,7 +75,7 @@
   worktree 跑 Stryker)整類不可信,同一天三環境四次都各自紅過一次;修法是這類測試跟
   `npm run mutate` 共用跨 worktree 檔案鎖,不是放寬逾時;單檔 `vitest run <單一檔案>` 不用搶鎖。
 
-### PITFALLS.md:P-75 – P-82,`P-49` 補充
+### PITFALLS.md:P-75 – P-83,`P-49` 補充
 
 - **P-75** 狀態表漂移(`01-data-layer/phase-4` 兩輪覆核發現;fix = `check-phase-status.ts`
   report 模式)。
@@ -86,6 +88,42 @@
 - **P-82** 子行程探針 + 逾時的守門在負載下整類不可信(三環境四次;修 = 全套測試與 Stryker
   共用鎖,不放寬逾時)。
 - **P-49 補充**:基準值要自己量不抄;`file:line` 引用的行號會腐爛,修正時優先拿掉行號。
+- **P-83** 模板帶進來的測試資料觸發消費者的守門(1.4.1 的 doc-rot fixture 與黑名單條目
+  逐字寫死了一句可照抄的 Stryker CLI 指令;fix = fixture 改陣列串接、黑名單改 `\s+`
+  regex、新增 `no-bypass-literal.test.ts`;B1 用 SOURCE 標頭開豁免被拒絕)。
+
+### `no-bypass-literal.test.ts`:模板自己不得含可照抄的 Stryker CLI 字面(PITFALLS P-83)
+
+- 背景:專案 A 自己的「不准繞過鎖」掃描器(掃全部文字檔,找可以照抄貼上、繞過變異測試
+  檔案鎖的 Stryker CLI 指令)把模板 1.4.1 兩處自己的東西當真的違規命中——
+  `check-doc-rot.test.ts` 的一筆 `--self-test` fixture、`doc-rot.blacklist.json` 出貨的
+  一筆黑名單條目,兩處都逐字寫死了同一句指令(見 P-83)。
+- **B2(no exemptions anywhere)**:不採用「幫有 SOURCE 標頭的模板同步檔開白名單」
+  (B1)——「來源可查」不等於「內容可信」,而且這個豁免會蓋住 `template/scripts/` 底下
+  30 多個檔案,形同幫整個目錄開後門。改成兩處都動:fixture 用
+  `['npx', 'stryker', 'run'].join(' ')` 串接組出來,不留連續字面值(`check-doc-rot.test.ts`
+  另外補一個字元碼獨立重建的 pin 測試,確認串接組出來的還是原本那句指令,不是改壞了
+  語意);黑名單的 pattern 從逐字字串改成語意相同、但沒有可照抄字面值的 `\s+` regex
+  (`npx\s+stryker\s+run`,`--self-test` 既有的 `synthesizeProbe` 已經處理 `\s+` → 空格,
+  不用改動)。
+- 新增 `template/scripts/no-bypass-literal.test.ts`:掃 `template/scripts/**`(含這份測試
+  檔自己,不排除)找 `npx\s+stryker\s+(run|init)` 這個 regex 跟 `stryker`+空格+`run`
+  這個字面,兩者任一命中都算,期望零命中;含三個反向驗證(串接組出來的違規字串放進臨時
+  目錄要被抓到、沒有 `npx` 前綴一樣算、`node_modules` 底下的命中不算)。
+- 來源:專案 A worker/協調者,2026-09-05。
+
+### 升級指南:1.4.1 → 1.4.2
+
+- 跑一次 `sync-gates.sh`(或專案自己的同步腳本)把 `.ts` / `scripts/py/*.py` 同步到新版。
+- `doc-rot.blacklist.json` 是 copy-once 設定檔(只在目標不存在時複製一次,之後永遠不覆蓋)
+  ——**同步不會幫你把既有的那份改掉**,已經裝過模板的專案要自己手動把那一筆
+  `incident: "mutate-lock-bypass"` 的條目,從 `"pattern": "npx stryker run"` 改成
+  `"pattern": "npx\\s+stryker\\s+run"`(JSON 裡兩個反斜線),不然自己專案的 doc-rot 黑名單
+  本身仍然含一段可照抄的 Stryker CLI 指令。
+- `check:phase-status` 是新守門(`gates.config.json` 的 `phaseStatus`,`mode` 預設
+  `"report"`,見上一節):`package.json` 有這個 script 不代表已經接進必跑鏈,要自己把
+  `"check:phase-status"` 加進 `gates.config.json` 的 `chain` 陣列(跟 `check-all.ts` 講的
+  一樣,鏈不會自動長出新項目)。
 
 ### docs/07-practices.md:(aa) – (ag)
 

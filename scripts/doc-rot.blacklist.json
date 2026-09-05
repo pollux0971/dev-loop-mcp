@@ -9,10 +9,11 @@
     "incident": "P-59"
   },
   {
-    "pattern": "npx stryker run",
-    "reason": "裸的 npx stryker run 繞過檔案鎖直接跑變異測試——鎖存在是為了讓審核上限(cap)有意義,抄這個指令會讓鎖形同虛設",
+    "pattern": "npx\\s+stryker\\s+run",
+    "reason": "繞過檔案鎖、直接呼叫 Stryker CLI 跑變異測試的指令(完整字面看 pattern 欄本身,這裡不重複打一次方便照抄貼上的版本)——鎖存在是為了讓審核上限(cap)有意義,抄這種指令會讓鎖形同虛設",
     "since": "2026-09-05",
-    "incident": "mutate-lock-bypass"
+    "incident": "mutate-lock-bypass",
+    "note": "1.4.2:pattern 從逐字寫死的指令字串改成 `\\s+` regex,語意不變(照樣抓得到中間只有一個空格的原始指令),但這份黑名單自己不再含一段可以照抄貼上的完整 CLI 指令——來源:專案 A 的『不准繞過鎖』掃描器抓到 1.4.1 這一筆本身就是違規,見 PITFALLS.md P-83、CHANGELOG 1.4.2"
   },
   {
     "pattern": "核心四項",
