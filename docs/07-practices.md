@@ -821,6 +821,23 @@ worker 沒有照做,先實測發現六份跑的是同一個 subprocess,找到比
 
 **刻意不遵守的專案**:無。
 
+## (aj) consumer 自己的守門測試檔叫 `check-X.local.test.ts`,兩份都跑
+
+**做法**:模板出貨的 `check-X.ts` 附帶 `check-X.test.ts`(有 SOURCE 標頭,sync 每次覆蓋)。consumer 想對同一支
+守門加自己的測試(補到 53 條、變異測過那種),檔名一律 `check-X.local.test.ts`——sync 只複製模板有的檔名,
+`--prune` 只刪有 SOURCE 標頭的檔,`.local` 這個名字在兩邊都安全。vitest 的 scanner config(`vitest.scanner-X.config.ts`)
+的 `include` 兩份都列,Stryker 對掃描器變異時兩組測試都算分。`boundaries.owners.json` 兩份都要有落點。
+
+**為什麼**:P-85——1.4.x 之前模板不出貨測試檔,consumer 自然而然把自己的測試叫 `check-X.test.ts`;模板一開始出貨同名檔,
+sync 就把它們靜默蓋掉。1.5.0 起 sync 會拒絕,但拒絕只是不讓你損失,不是幫你決定名字;名字要 consumer 自己選一個
+**跟模板的命名空間永遠不會撞**的,`.local` 就是那個空間。同一個道理適用所有「模板會覆蓋的目錄」:consumer 的東西
+要有自己的後綴,不靠「模板目前沒有這個檔名」這種會過期的事實。
+
+**怎麼落地**:採用步驟(README)多一句;`sync-gates.sh` 被拒絕時的訊息直接寫出建議檔名;CHECKLIST 的採用節加「scripts/ 裡
+有沒有沒 SOURCE 標頭的 check-*.test.ts」一問。模板本身的測試斷言只在 `check-X.test.ts`,不會去讀 `.local`。
+
+**刻意不遵守的專案**:無(AI_KM 沒有自寫的 check-*.test.ts;nightmare 只用 py 側,不受影響)。
+
 ## 三個專案都刻意不遵守的範式條文
 
 有三條範式本體的規則,三個專案**都**明確選擇不照做,而且都有記錄下來的理由——這不是散漫,

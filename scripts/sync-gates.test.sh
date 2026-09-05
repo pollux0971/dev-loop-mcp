@@ -13,9 +13,11 @@ SYNC_GATES="$TEMPLATE_DIR/scripts/sync-gates.sh"
 
 FAILURES=0
 CONSUMER=""
+CONSUMER2=""
 
 cleanup() {
   [ -n "$CONSUMER" ] && [ -d "$CONSUMER" ] && rm -rf "$CONSUMER"
+  [ -n "$CONSUMER2" ] && [ -d "$CONSUMER2" ] && rm -rf "$CONSUMER2"
 }
 trap cleanup EXIT
 
@@ -59,6 +61,22 @@ assert_exit_code() {
   else
     fail "$desc(預期 exit $expected,實際 $actual)"
   fi
+}
+
+# $1=描述、$2=實際值、$3=預期值(泛用字串相等,不假設是 exit code——用來比對 sha256 之類)
+assert_eq() {
+  local desc="$1" actual="$2" expected="$3"
+  if [ "$actual" = "$expected" ]; then
+    pass "$desc"
+  else
+    fail "$desc(預期 $expected,實際 $actual)"
+  fi
+}
+
+# $1=檔案路徑 → sha256(用來斷言「這個檔案完全沒被動過」)
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
 }
 
 CONSUMER="$(mktemp -d)"
@@ -191,6 +209,93 @@ hook_code=$?
 rm -f "$CONSUMER/.mutate.lock"
 assert_exit_code "own pid(保證活著)的 .mutate.lock 存在時 hook 拒絕 commit" "$hook_code" "1"
 assert_contains "hook 訊息講清楚是哪個鎖檔跟 pid" "$hook_out" ".mutate.lock"
+
+echo
+echo "== 步驟 9(CHANGELOG 1.5.0,P-85):sync 拒絕蓋掉 consumer 自己的無標頭檔 =="
+# 用一個乾淨的第二個假 consumer,跟上面 8 個步驟共用的 $CONSUMER 隔開——這裡要驗證的是
+# 「目的檔已經存在」這件事本身,不想跟前面步驟裝好的一堆有標頭的檔案糾纏。
+
+CONSUMER2="$(mktemp -d)"
+(
+  cd "$CONSUMER2"
+  git init -q
+  git config user.email "sync-gates-test@example.com"
+  git config user.name "sync-gates-test"
+  git config commit.gpgsign false
+)
+cat > "$CONSUMER2/package.json" <<'EOF'
+{
+  "name": "fake-consumer-2",
+  "private": true,
+  "scripts": {
+    "test": "echo no-op"
+  }
+}
+EOF
+
+echo
+echo "-- 9a:consumer 自己先放一支無標頭的 check-boundaries.test.ts,sync 要整批拒絕 --"
+mkdir -p "$CONSUMER2/scripts"
+own_file="$CONSUMER2/scripts/check-boundaries.test.ts"
+cat > "$own_file" <<'EOF'
+// 這是 consumer 自己寫的測試,不是模板同步進來的,沒有 SOURCE 標頭
+describe("placeholder", () => {});
+EOF
+own_hash_before="$(sha256_of "$own_file")"
+
+sync9a_out="$("$SYNC_GATES" "$CONSUMER2" 2>&1)"
+sync9a_code=$?
+assert_exit_code "已有無標頭同名檔時,sync 要整批拒絕" "$sync9a_code" "1"
+assert_contains "訊息含衝突檔名 check-boundaries.test.ts" "$sync9a_out" "check-boundaries.test.ts"
+assert_contains "訊息講清楚沒有 SOURCE 標頭" "$sync9a_out" "沒有 SOURCE 標頭"
+
+own_hash_after="$(sha256_of "$own_file")"
+assert_eq "consumer 自己的檔案內容原封不動(sha256 相同)" "$own_hash_after" "$own_hash_before"
+if [ -f "$CONSUMER2/scripts/_root.ts" ]; then
+  fail "拒絕時應該一個檔都不寫,但 _root.ts 出現了"
+else
+  pass "拒絕時一個檔都沒寫:_root.ts 不存在"
+fi
+
+echo
+echo "-- 9b:改名為 .local.test.ts 後重跑,sync 要放行,且 .local 檔不被動 --"
+local_file="$CONSUMER2/scripts/check-boundaries.local.test.ts"
+mv "$own_file" "$local_file"
+local_hash_before="$(sha256_of "$local_file")"
+
+sync9b_out="$("$SYNC_GATES" "$CONSUMER2" 2>&1)"
+sync9b_code=$?
+assert_exit_code "改名成 .local.test.ts 後 sync 要放行" "$sync9b_code" "0"
+
+if [ -f "$local_file" ]; then
+  pass ".local 檔仍然存在"
+else
+  fail ".local 檔不見了"
+fi
+local_hash_after="$(sha256_of "$local_file")"
+assert_eq ".local 檔內容不被動(sha256 相同)" "$local_hash_after" "$local_hash_before"
+
+echo
+echo "-- 9c:已有 SOURCE 標頭的舊版同名檔,sync 要照舊覆蓋(回歸,不受先掃後寫影響) --"
+current_version="$(cat "$TEMPLATE_DIR/VERSION")"
+target_file="$CONSUMER2/scripts/check-boundaries.test.ts"
+if [ -f "$target_file" ]; then
+  pass "9b 的 sync 已經把 check-boundaries.test.ts 同步進來(帶 SOURCE 標頭)"
+else
+  fail "9b 之後 check-boundaries.test.ts 應該已經存在"
+fi
+version_escaped="${current_version//./\\.}"
+sed -i "1s/template v${version_escaped}/template v0.0.1/" "$target_file"
+assert_contains "改版本號後第一行變成舊版標頭" "$(sed -n '1p' "$target_file")" "template v0.0.1"
+
+sync9c_out="$("$SYNC_GATES" "$CONSUMER2" 2>&1)"
+sync9c_code=$?
+assert_exit_code "有 SOURCE 標頭的舊版同名檔,sync 要照舊覆蓋成功" "$sync9c_code" "0"
+assert_contains "覆蓋後第一行變回目前版本的標頭" "$(sed -n '1p' "$target_file")" "template v${current_version}"
+assert_not_contains "舊版標頭字串不再出現" "$(sed -n '1p' "$target_file")" "v0.0.1"
+
+local_hash_final="$(sha256_of "$local_file")"
+assert_eq ".local 檔在整個步驟 9 期間內容都不變" "$local_hash_final" "$local_hash_before"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then

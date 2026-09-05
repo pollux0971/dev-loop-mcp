@@ -97,6 +97,25 @@
 #   跟 gates.config.json,因為都是這次才新建的佔位檔;standalone.json 一開始就不存在,
 #   也會被列出);先手動放好一份填過的 boundaries.owners.json、`standalone.json` 再同步 →
 #   `needs-config:` 只剩 gates.config.json(或整條都不印,如果三個都先準備好了)。
+#
+# ## 先掃後寫:拒絕覆蓋 consumer 自己的檔(CHANGELOG 1.5.0)
+#
+# 舊版 `sync_one()` 對每支來源檔案無條件 `mv "$tmp" "$dst"`——如果 consumer 自己寫了
+# 一支同名的 `check-X.test.ts`(沒有 SOURCE 標頭),會被靜默蓋掉,一句話都不講
+# (專案 A 實際損失三支檔案,靠 git HEAD 復原;見 PITFALLS P-85)。新版 sync(非
+# `--check`)在寫任何檔之前**先掃後寫**:對本次選集(ts 永遠在選集裡;py 看語言
+# 選集)的每一支來源檔,算出對應的目的檔路徑;若目的檔已存在且第一行不符
+# `^(//|#) SOURCE: template v`(判斷方式跟 `--check` 認「這是不是模板裝的」同一套,
+# 見上面「## `--check`」段),就記一筆衝突。掃完只要有任何衝突,列出**全部**命中的
+# 檔案路徑、每一筆都印
+# 「✗ <dst> 已存在且沒有 SOURCE 標頭(是你們自己的檔);請改名(例如 <base>.local.<ext>)
+# 或刪掉後重跑,sync 不會蓋掉它」,然後 exit 1,**一個檔都不寫**——不要寫一半才停,
+# 那樣 consumer 的 scripts/ 會是半新半舊,比全部不寫更難排查。
+# 這條規則沒有旗標可以跳過(不給 `--force`):要蓋過去是 consumer 自己的決定,方法是
+# 把自己的檔案改名成 `<base>.local.<ext>`(例如 `check-boundaries.local.test.ts`)
+# 或直接刪掉再重跑——不是模板幫你決定「這支我猜是舊版留下的可以蓋」。
+# 設定檔(CONFIG_FILES)完全不受影響,它們本來就只在目標不存在時才複製一次,這條規則
+# 跟它們的邏輯無關。`--check` 與 `--prune` 的行為不變(見上面各自的段落)。
 set -euo pipefail
 TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:?目標 repo 根目錄}"; shift || true
@@ -452,6 +471,31 @@ else
   for l in "${LANGS[@]}"; do [ "$l" = "ts" ] && has_ts=1; done
   [ "$has_ts" = 1 ] || LANGS=(ts "${LANGS[@]}")
   echo "選集 $(IFS=,; echo "${LANGS[*]}")(${LANGS_BASIS})"
+
+  # 先掃後寫(CHANGELOG 1.5.0,P-85):寫任何檔之前,先對本次選集的每一支來源檔,
+  # 算出目的檔路徑,檢查「已存在且第一行不是 SOURCE 標頭」——那代表 consumer 自己
+  # 寫了同名的檔案,不是模板裝的。任一命中就列出全部命中,exit 1,一個檔都不寫。
+  conflicts=()
+  for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
+    name="$(basename "$src")"; dst="$DEST/$name"
+    if [ -f "$dst" ] && ! head -1 "$dst" | grep -qE '^(//|#) SOURCE: template v'; then
+      conflicts+=("$dst")
+    fi
+  done
+  if is_lang_selected py; then
+    for src in "$TEMPLATE_DIR"/scripts/py/*.py; do
+      name="$(basename "$src")"; dst="$PY_DEST/$name"
+      if [ -f "$dst" ] && ! head -1 "$dst" | grep -qE '^(//|#) SOURCE: template v'; then
+        conflicts+=("$dst")
+      fi
+    done
+  fi
+  if [ "${#conflicts[@]}" -gt 0 ]; then
+    for dst in "${conflicts[@]}"; do
+      echo "✗ $dst 已存在且沒有 SOURCE 標頭(是你們自己的檔);請改名(例如 <base>.local.<ext>)或刪掉後重跑,sync 不會蓋掉它"
+    done
+    exit 1
+  fi
 
   for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
     sync_one "$src" "//" "$DEST"

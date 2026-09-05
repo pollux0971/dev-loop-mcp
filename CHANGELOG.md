@@ -4,6 +4,30 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.5.0 — 2026-09-05
+
+來源:專案 A 協調者(REVIEW.md §二.1,PITFALLS P-85);AI_KM 顧問、nightmare 顧問 2026-09-05 同意修法。
+**minor:`sync-gates.sh` 的寫檔行為改變(從靜默覆蓋改成拒絕),沒有新旗標、沒有設定鍵、沒有檔案結構改變。
+升版動作 = 重 sync 一次;若被拒絕,照訊息把自己的檔改名 `<base>.local.<ext>` 再跑。**
+
+- **修 bug(資料流失)**:1.4.x 起模板出貨 `check-*.test.ts`,sync 的複製迴圈用檔名 glob 一路覆蓋,
+  會把 consumer 自己寫的同名測試檔(沒有 SOURCE 標頭)靜默蓋掉。專案 A 實際損失三檔(從 HEAD 還原)。
+  現在**先掃後寫**:寫任何檔之前,對本次選集(ts 永遠;py 看選集)每一支來源檔算出目的路徑,
+  目的檔已存在且第一行不符 `^(//|#) SOURCE: template v` → 印
+  `✗ <dst> 已存在且沒有 SOURCE 標頭(是你們自己的檔);請改名(例如 <base>.local.<ext>)或刪掉後重跑,sync 不會蓋掉它`
+  列出全部命中、exit 1、**一個檔都不寫**。`--check`、`--prune`、設定檔不覆蓋的邏輯都不變。
+- `sync-gates.test.sh` 新增步驟 9(三案例:無標頭同名檔 → 整批拒絕且原檔 sha256 不變、`_root.ts` 沒被寫;
+  改名 `.local` 後 → exit 0 且 `.local` 不變;舊版 SOURCE 標頭同名檔 → 照舊覆蓋)。反向驗證做過:
+  停用檢查後 4 條斷言準確地紅,復原後 34 條全綠。
+- PITFALLS 新增 P-85;`docs/07-practices.md` 新增 (aj) consumer 自有守門測試檔的命名與 include 規則;
+  README 採用段補一句被拒絕時怎麼做。
+- 出版前 `verify-against.sh` 對專案 A(main 0998d12):六支 gate 退出碼、旗標清單全部一致;只有 `check-boundaries.ts`
+  的輸出差在三行「設定:<路徑>」後面多一個 `(GATES_CONFIG_DIR)` 標記——模板那邊是 verify-against 用環境變數指定設定目錄、
+  consumer 那邊是自己找到的,1.4.1 起守門會印出設定的**來源**,所以兩種呼叫法本來就該印不一樣。**刻意差異,不是迴歸**;
+  `sync-gates.test.sh` 34 條、`npm run test:scripts` 167 條全綠。
+- 版號說明:原本規劃「1.4.4 = 09-07 聯合回顧後的文件版」,但改腳本行為依本檔規則是 minor,
+  而且這個坑正在其他兩個專案的升版路徑上,不等回顧。回顧版順延為 1.5.1 / 1.6.0。
+
 ## 1.4.3 — 2026-09-05
 
 來源:專案 A 協調者(2026-09-05,PITFALLS P-84)。**patch:只有守門的錯誤訊息與新增的自我測試,

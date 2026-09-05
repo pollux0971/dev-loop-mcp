@@ -49,7 +49,7 @@
 之後模板升版,用 `git diff template/v<採用版>..template/v<新版> -- template/` 看差異決定要不要跟。
 三個專案用同一套東西,沒有版本一週後就是三套。
 
-守門腳本用 `scripts/sync-gates.sh <你的 repo 根>` 複製進去(檔頭會寫來源版本),CI 才自包含;升版重跑一次,`--check` 可放進 CI 抓手改。不要直接呼叫模板路徑(CI 與別台機器沒有它)。
+守門腳本用 `scripts/sync-gates.sh <你的 repo 根>` 複製進去(檔頭會寫來源版本),CI 才自包含;升版重跑一次,`--check` 可放進 CI 抓手改。不要直接呼叫模板路徑(CI 與別台機器沒有它)。sync 若印「已存在且沒有 SOURCE 標頭」就是它撞到你們自己寫的同名檔,它不會蓋、也一個檔都沒寫:把你們的檔改名 `<base>.local.<ext>`(例如 `check-boundaries.local.test.ts`)再跑一次(1.5.0,P-85)。
 
 `boundaries.allow.json`、`boundaries.owners.json` 這兩份是專案自己的設定(見 `scripts/README.md`),sync 只在目標不存在時建一次,之後永遠不覆蓋——升版不會把你填好的落點表洗掉。
 
