@@ -200,6 +200,7 @@
 | `{{RULES_FILE_SECTION}}` | 規則檔裡 worker 必須先讀的特定節,不要只寫「讀規則」 | `CLAUDE.md` 的「五條硬規則」與「做決定時」表 |
 | `{{FULL_CHECK_COMMANDS}}` | 完成前必跑的完整檢查指令(通常跟 autopilot §0 或 §2 的收割檢查一致) | `npm run boundaries && npm test && npm run accept:standalone && npm run accept:dry && npm run accept:coverage` |
 | `{{KNOWN_RED_NOTE}}` | 專案特有的「哪些紅是還沒做,不是弄壞了」說明 | 「`packages/core` 尚未實作 `weekly-goal`,相關場景紅屬預期,不要修」 |
+| `{{SPEND_CHECK_COMMAND}}` | 同 `.claude/skills/autopilot/SKILL.md`——worktree 起手也要跑一次,退出碼三態 0/1/2 | `npx tsx scripts/llm-spend.ts --today` |
 
 ## brownfield 分支(既有專案切換,對應 `docs/06-brownfield.md` 的 8 步)
 
@@ -212,7 +213,28 @@
 | `{{ARCHIVE_DIR}}` | 舊 story / 規格 / evidence 封存目錄(步驟 3) | AI_KM:`archive/`;nightmare:`dev/archive/stories/` |
 | `{{REFERENCE_BACKFILL}}` | 第一個做完的參考回填資料夾(步驟 6) | AI_KM:`06-retrieval` |
 | `{{OLD_STATUS_SOURCE}}` | 切換日起唯讀的舊狀態來源(步驟 8) | nightmare:`dev/stories/` frontmatter |
-| `{{SPEND_CHECK_COMMAND}}` | `.claude/skills/autopilot/SKILL.md` | 算當日付費 API 花費的指令,退出碼三態 0/1/2 | `npx tsx scripts/llm-spend.ts --today` |
+| `{{SPEND_CHECK_COMMAND}}` | 算當日付費 API 花費的指令,退出碼三態 0/1/2(見 `.claude/skills/autopilot/SKILL.md`) | `npx tsx scripts/llm-spend.ts --today` |
+
+## worktree 起手 / 凍結期間 / 動測試檔(不是 placeholder,是流程提醒)
+
+- **clone 完不會自動有的三樣**:
+  1. `.env`——`.gitignore` 排除,不會跟著 `git clone` / `git worktree add` 帶過來,新 worktree
+     要自己連結(建議)或複製上層現有的那份,不要假設它已經在那裡。
+  2. **pre-commit hook**——`sync-gates.sh` 把 hook 檔同步進 `scripts/hooks/pre-commit`,但**不會**
+     自動裝進 `.git/hooks/`(那是每個 worktree/checkout 各自的東西),sync 印出的手動安裝指令
+     要自己跑一次,不裝不會報錯,只是少了「commit 那一刻」這道防線。
+  3. `TEMPLATE_DIR`——協調者手動對模板路徑跑腳本(例如 `verify-against.sh`,或想直接讀模板版
+     `check-*.ts` 對照)時假設的環境變數,指向模板 checkout 的路徑;新 worktree 不會自動繼承
+     上一個 worktree 設過的殼層變數,每次開新 worktree 要自己重新確認或重設。
+  每次開新 worktree 起手都要覆核這三樣,不要假設「跟上一個 worktree 一樣」。
+
+- **凍結期間(當日花費達上限、或 autopilot §4 其他煞車條件成立)可以做的事**:派工(非 LLM
+  工作)、開單、回訊、worktree 內工作(不涉及 main 或付費呼叫的部分)——凍結指的是「不派新的
+  付費/main 工作」,不是「什麼都不能做」;不要把煞車條件過度解讀成整條迴圈停擺。
+
+- **協調者動測試檔(即使只是改註解)一律報備**——`*.test.ts` 名義上是「開發不能碰」的檔案,
+  協調者代勞時同樣要留痕(見 `docs/07-practices.md` (n)),不因為只改註解、看起來無害就省略
+  報備;同一輪開一張 review 工單事後覆核(見 PITFALLS P-49)。
 
 ## 收工前 / push 前檢查(不是 placeholder,是流程提醒)
 
@@ -232,3 +254,8 @@
 - **在 main 上改任何檔案之前**,對每一個目前 in-progress 的分支跑一次
   `git diff --name-only main...<branch> | grep <要改的檔案>`,全部為空才動手——這條跟上一條是同一個
   「main 是共用資源」的問題在不同層面的檢查(pid 層 vs 分支內容層),兩個都要做(來源 nightmare-assault D14)。
+- **含子行程探針 + 逾時的測試(真跑 cucumber 那類)跟 `npm run mutate` 共用同一把跨 worktree 的檔案鎖**
+  (PITFALLS P-82,`.claude/skills/mutation-testing/SKILL.md` 有完整說明)——負載下(同機另一個
+  worktree 在跑 Stryker)這類測試會因為逾時假紅,假紅跟真紅退出碼與訊息一模一樣;**單檔
+  `vitest run <單一檔案>` 不用搶鎖**,只有子行程探針類測試與 `npm run mutate` 本身要排隊;
+  看到這類測試紅先確認是不是卡在等鎖,**不要用放寬逾時當修法**。

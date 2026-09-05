@@ -14,7 +14,7 @@
 | **協調者**(coordinator) | 開 worktree、依 gherkin 派工、找獨立審核者複查、合併進 main、統一改共用檔與 ADR 編號 | 不自己寫實作 |
 | **技術顧問**(advisor) | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push | 不直接改 worker 的分支 |
 | **開發 worker**(dev) | 只寫實作 | **不新增不修改 `*.test.ts` 與 `features/steps/**`**,可以跑測試但不能改;不 push;共用檔不動,需求寫進自己 `FEATURE.md` 的「待協調」段 |
-| **審核 agent**(reviewer) | 負責**所有測試**:照 `.feature` 寫步驟檔與單元測試、跑變異測試(嚴格級看檔案級分數)、跑單獨執行、交叉比對真實呼叫路徑、UI 親自起 dev server。可與 dev 同時在同一 worktree 工作(檔案不重疊) | 不寫實作程式碼;每一輪的發現寫進 worktree 裡的 `REVIEW.md`(抓到什麼、退回理由、下一輪要重看什麼),**不要依賴 session 記憶**——多數 agent 平台無法可靠地把下一輪接回同一個 session |
+| **審核 agent**(reviewer) | 負責**所有測試**:照 `.feature` 寫步驟檔與單元測試、跑變異測試(嚴格級看檔案級分數)、跑單獨執行、交叉比對真實呼叫路徑、UI 親自起 dev server。可與 dev 同時在同一 worktree 工作(檔案不重疊) | 不寫實作程式碼;每一輪的發現寫進 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,不是根目錄的追蹤檔——PITFALLS P-78)(抓到什麼、退回理由、下一輪要重看什麼),**不要依賴 session 記憶**——多數 agent 平台無法可靠地把下一輪接回同一個 session |
 | **debug session**(debug) | 審核 agent 抓到問題時,在**同一個 worktree** 生成,只修實作;修完交回同一個審核 agent 續測 | 不碰測試檔(碰了一樣退回);不合併 |
 
 技術顧問對現況、對其他 repo、對「應該一樣」這類宣稱,一律標**【驗】**(親手重跑過、附得出原始
@@ -44,7 +44,7 @@
   4. UI phase 審核者**親自起 dev server 看一眼**
   5. **開發 agent 的每個自主判斷逐一手動破壞一次**,確認有測試會紅;開發交付時要列出自主判斷清單(P-29)
   6. 反向驗證的紅必須來自 committed、掛進 test 的檢查;掃描器掃到 0 個目標要 FAIL(P-28)
-  7. ADR / REVIEW 裡每個量化數字重跑一次產生它的指令(P-15);commit message 每句宣稱找一個會紅的測試(P-35);開發輪交付前自跑變異、分數貼 REVIEW.md——自動測試與審核都沒踩到的瀏覽器崩潰,開一次就看到
+  7. ADR / REVIEW 裡每個量化數字重跑一次產生它的指令(P-15);commit message 每句宣稱找一個會紅的測試(P-35);開發輪交付前自跑變異、分數貼 `.orca-brief/REVIEW.md`——自動測試與審核都沒踩到的瀏覽器崩潰,開一次就看到
 - **分叉前先做一次 scaffold commit**(見 `template/README.md` 的步驟 4):workspace 骨架、
   依賴一次裝齊並 commit lock、runner 的 loader 設定、邊界 / standalone 檢查腳本、
   通用步驟只定義一次、落點表——這些都在分叉之前釘好,worktree 只跑 `npm ci`。

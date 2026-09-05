@@ -81,7 +81,7 @@ git diff --name-only main...<branch> | grep <要改的檔案>
    **`npm run mutate` 是唯一入口**,審核與開發都只准用它——直接叫 Stryker CLI 會繞過鎖(有測試守著)。
    **分數要附完整指令與設定檔**(範圍、旗標、`stryker.config.json` 的路徑):同一份程式碼、不同設定檔跑出來的分數
    不能比較(TS 型別檢查開關就能造成 3 分以上的差距),不附指令與設定檔的分數不算數(P-58)。每張照角色規則:
-   測試 agent 先寫紅 commit → 開發 agent 做綠 → 審核 agent(REVIEW.md 交接)。
+   測試 agent 先寫紅 commit → 開發 agent 做綠 → 審核 agent(`.orca-brief/REVIEW.md` 交接)。
 4. **整合點**:某個 IN 需要的 phase 全 done → **先開「整合工作」工單**(P-20:roadmap 該段的整合工作欄 + 各 FEATURE.md「Wave 0 的重複」表),合併後 `/integrate IN`;`@e2e @llm` 在預算內自動跑,結果貼進 `docs/integration/IN-REVIEW.md`;`@manual` 進「等老闆」清單。IN 的人工確認未完成前,gate 是「IN 通過」的 phase 維持 todo——這是刻意的,不要繞。
 5. **沒有 ready 的 phase** → 做維護清單(§3),做完一項就回到 2。
 6. **回報**(§5 格式),睡。
@@ -91,7 +91,11 @@ git diff --name-only main...<branch> | grep <要改的檔案>
 1. `template/PITFALLS.md` 與 `docs/02-decision-map.md` 裡標「待覆核」「待辦」的項目(例如 `--deps-only` 入口)
 2. 標準級模組變異分數 < 80% 的檔案(`reports/mutation/` 最近一次),補測試
 3. `{{LINT_COMMAND}}` 的健檢結果,能自動修的修
-4. 文件漂移:roadmap 現況表、features/README.md 索引、各 FEATURE.md phase 表三者對不上的地方
+4. 文件漂移:roadmap 現況表、features/README.md 索引、各 FEATURE.md phase 表三者對不上的地方。
+   `npm run check:phase-status` 跑在 report 模式(S15,PITFALLS P-75),自動掃「疑似已完成但
+   狀態表沒更新」「done 但場景紅」「NEXT.md 過期」三種形狀——它的命中是**分診用的線索**,
+   不是停止條件:report 模式本來就不擋 exit code,協調者看到命中就當成本節的文件漂移項處理
+   (更新狀態表或開工單),不要因為它印了 FAIL 就當成 §4 的煞車
 5. `npm audit` 的高風險項
 6. **技術顧問側「有沒有工作」六判準**(來源 nightmare-assault,commit 9745bd87):協調者的維護清單(本節
    第 1–5、7、8 項)是**先跑**的一層,技術顧問是**最後一道**檢查——協調者清單全空之後,才輪到技術顧問
@@ -184,16 +188,21 @@ git diff --name-only main...<branch> | grep <要改的檔案>
 結果混進來,不要直接當成合併造成的迴歸去找原因——用 `rtk proxy <cmd>` 重跑一次未過濾的原始指令核對,
 數字對得上才繼續往「合併壞了什麼」的方向查。
 
+**相關但不同類(順手記在這裡方便查)**:P-77(宣告要做的事——例如「這個 ADR 我來寫」——
+沒有對應的 diff 也沒有工單)、P-78(同一個警告已經寫過兩次,第三個人還是照舊慣例踩雷,
+警告本身不是機制)是同一個「交接動作沒有回執」家族(P-76)的另外兩種形狀,不是分支/合併
+問題,但常常在同一輪回報裡一起出現。
+
 ## 4b. 平台操作備忘(Orca,實際踩過的)
 
 - `worker-start --worktree new-top-level` **一定要帶 `--name`**,不帶會 `invalid_argument`
 - `worker-start` 只用在一個 worktree 的**第一輪**。同一 worktree 的第二、三輪(debug / 再審):
   `terminal create` → `terminal send 'claude --dangerously-skip-permissions' --enter` → `terminal wait --for tui-idle` → `dispatch --inject`。
-  少中間兩步會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 worktree 裡的 REVIEW.md(P-17)
+  少中間兩步會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,不是根目錄的追蹤檔——P-17、P-78)
 - `check --wait` 可能回**已處理過的舊訊息**(`"replayed": true`),要 `--ack <deliveryId>` 再等下一則,不然空轉
 - `check` 回來的訊息 `type` 是 `question`(帶 thread/msg id)時,對方在等 `reply`,不是等一則新訊息——**先 `reply --id <該訊息 id>` 再 `ack`**,順序不能顛倒(`ack` 之後那個 id 就抓不到了);`send` 送得到終端機但不會解除對方的阻塞,沒有任何錯誤訊息(P-45)
 - **`send` 對已經死掉的終端機一樣回 `ok:true`**,發送端以為送到了,接收端什麼都沒收到(P-54,P-45 同族)——
-  `send` 前先 `terminal show` 確認終端機還活著;收到 `terminal_handle_stale` → 開新終端機,從 REVIEW.md 重新交接;
+  `send` 前先 `terminal show` 確認終端機還活著;收到 `terminal_handle_stale` → 開新終端機,從 `.orca-brief/REVIEW.md` 重新交接;
   送出去後對方沒反應,先懷疑終端機死了,不是先當對方在忙。對照:`SendMessage` 對過期的 session 名會明確失敗
   並附提示,那才是好的失敗
 - **找 worker 一律用 worktree 路徑尾段比對,永遠不用 title**(title 是 agent 自己會改的顯示文字;找不到會被誤判成死掉而重派,P-39);每個 worktree 兩個 terminal,挑 title 不是 `user@…` 開頭的

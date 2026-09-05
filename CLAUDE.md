@@ -85,7 +85,7 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 
 | 類別 | 誰定 | 怎麼留痕 |
 |---|---|---|
-| 派工順序、合併順序、worktree、審核回合 | 協調者 | commit / REVIEW.md |
+| 派工順序、合併順序、worktree、審核回合 | 協調者 | commit / `.orca-brief/REVIEW.md` |
 | 技術取捨:資料結構、介面、規格措辭、gate 例外、重跑與否、變異存活分類 | 技術顧問({{ADVISOR_SESSION}}) | `/decide` 記 ADR |
 | 觀感判定(`@manual`、`@e2e` 的人眼確認) | 技術顧問 | IN-REVIEW.md 寫依據與發現 |
 | 新功能、改「不在範圍」 | **使用者** | `DECISIONS_NEEDED.md` 一列 + Proposed ADR |

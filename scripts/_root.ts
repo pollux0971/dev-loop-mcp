@@ -228,6 +228,7 @@ export function requireConfigType(value: unknown, key: string, kind: ConfigValue
  *   skipDirs                    — 所有掃描器共用的略過目錄清單(S10,見 SKIP_DIRS)
  *   docRot                      — check-doc-rot.ts(S7)
  *   knownDefects                — check-known-defects.ts(S8)
+ *   phaseStatus                 — check-phase-status.ts(S15)
  */
 export const KNOWN_GATES_CONFIG_KEYS = [
   'cucumberCwd',
@@ -241,6 +242,7 @@ export const KNOWN_GATES_CONFIG_KEYS = [
   'skipDirs',
   'docRot',
   'knownDefects',
+  'phaseStatus',
 ] as const;
 
 /** `obj` 的頂層鍵裡,有沒有不在 `knownKeys` 的——通常是打錯字(`"chian"` 之類)。

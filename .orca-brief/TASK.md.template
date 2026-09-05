@@ -2,6 +2,17 @@
 # 工單:<一句話,動詞開頭,說做完長什麼樣>
 
 **第 0 件事**:確認你自己跑在哪個模型,把模型名寫在回報第一行。
+
+**worktree 起手**(clone/worktree 完不會自動有的東西,見 `CHECKLIST.md`「worktree 起手」節):
+- [ ] `.env` 已連結或複製——不會跟著 `git worktree add` 自動帶過來,沒有會讓需要外部服務的
+      指令直接炸掉,而不是報一個「缺 .env」的清楚錯誤
+- [ ] 花費檢查指令(`{{SPEND_CHECK_COMMAND}}`)跑一次,退出碼是 0 或 1(未達 / 已達上限)才
+      繼續往下做;**退出碼 2(算不出來)不准當 0 處理**——停下來回報,不要自己猜著往下做
+      (PITFALLS P-47 / P-81:「不知道」不是「零」)
+- [ ] 續用舊 worktree(不是剛開的新 worktree)時,在看任何紅燈之前先 `git merge main`
+      (**不 rebase**)——分支落後 main 太多,看到的紅可能是 main 早就修好、只是這個分支
+      還沒跟上,不是這次改壞的(`docs/07-practices.md` (ag))
+
 第 1 件事:`pwd && git branch --show-current`,然後 `{{INSTALL_COMMAND}}`。
 **只在這個目錄工作**,不要 cd 到主 checkout 或別人的 worktree。
 
@@ -55,6 +66,13 @@
 - 斷言對著**壞掉時會變的量**(分數、順序、內容、身分),存在性不算(「有結果」「長度>0」「沒拋錯」壞掉時仍然成立)。
 - 還原**不要用 `git checkout -- <file>`**(會清掉同檔裡其他未 commit 的合法編輯);用 `$WORKTREE/.mutate-tmp/`(worktree 專屬)或 `git show HEAD:<path> > <path>`,再 `sha256sum` 逐位元證明。**不要備份到 /tmp 共用目錄**(並行 session 會覆蓋)。
 - 四段輸出(突變 / 紅訊息原文 / sha256 前後 / 回綠)進 commit body。
+
+## 交接檔
+
+角色之間(測試/開發/審核)交接用 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,**不進
+版控**)——**不要**在 worktree 根目錄開一個追蹤的 `REVIEW.md`,那會在合併時覆蓋 main 上其他
+分支留下的紀錄(PITFALLS P-78:兩份文件警告過,第三人照舊慣例踩過一次)。每一輪開場先讀它、
+收工前更新它,不要依賴 session 記憶。
 
 ## 完成前必跑(貼原文,不要只說「通過」)
 

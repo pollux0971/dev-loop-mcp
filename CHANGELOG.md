@@ -4,6 +4,102 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.4.2 — 未發布(草稿,2026-09-05)
+
+**本版未打 tag,等 09-07 聯合回顧後併入**——內容已經 commit 進 `template/dev-paradigm` 分支,
+`template/VERSION` 仍寫 `1.4.1`,由技術顧問在聯合回顧後統一決定要不要升版與打 tag。
+來源:專案 A 協調者、專案 A 審核 agent(2026-09-05)。
+
+### `check-phase-status.ts`(S15,report 模式)
+
+- 新守門:對照 `features/<NN-x>/FEATURE.md` 的 Phase 表(唯一狀態來源)跟現實,抓三種形狀的
+  漂移——(1) 狀態表寫 `in-progress` 但那個 phase 自己的 tag 真跑全綠、且找得到一份已 commit、
+  帶 PASS 標記、提到 `<NN-x>/phase-N` 的審核判定檔(`features/<NN-x>/REVIEW.md` 或
+  `phaseStatus.reviewDirs` 底下的 `.md`)→「疑似已完成,狀態表未更新」;(2) 狀態表寫 `done`
+  但真跑有 failed/undefined/ambiguous →「done 但場景紅」,跟 `check-phase-coverage.ts --run`
+  是同一個不變量的兩份獨立判斷;(3) `features/<NN-x>/NEXT.md` 待辦區塊(標題含「下一輪」/
+  「要做」/「待做」/「TODO」)裡反引號包住的識別碼,已經有非樁實作卻還列在待辦 →「NEXT.md 過期」
+  (兩層判準:定義存在 + 定義後 15 行內沒有樁字樣,測試輪留樁的慣例不會誤報)。
+- PASS 標記的定義(單行 `判定:PASS` / 標題另起一行接 `**PASS**` / 字面「審核 PASS」三選一)寫在
+  腳本檔頭,務求機械可判。
+- `gates.config.json` 新鍵 `phaseStatus: { mode, reviewDirs }`,`mode` 預設 `"report"`(P-71:
+  新守門先報告不擋);`reviewDirs` 預設 `["docs/reviews"]`。cucumber 真跑沿用
+  `check-phase-coverage.ts` 已有的 `cucumberCwd` / `phaseCoverage.runTimeoutMs`,不重新發明
+  一套。測試用 `PHASE_STATUS_RUN_CMD` 注入假的 cucumber 輸出,同 `check-known-defects.ts` 的
+  `KNOWN_DEFECTS_ENUMERATE_CMD` 慣例。
+- `KNOWN_GATES_CONFIG_KEYS` 加 `phaseStatus`;`package.json` 加 `check:phase-status`。0 份
+  `FEATURE.md`,或掃到的 phase 表格列總數是 0,一律 exit 1,不受模式影響。
+- 對 `/data/python/llm_learning-cards`(專案 A)read-only dry run 的輸出貼在 REVIEW/回報裡。
+- 來源:專案 A 協調者,2026-09-05(PITFALLS P-75,`01-data-layer/phase-4` 兩輪覆核發現的真實案例)。
+
+### 交接檔改名:`.orca-brief/REVIEW.md`(PITFALLS P-78)
+
+- 交接檔從「worktree 根目錄的追蹤檔 `REVIEW.md`」改成 `.orca-brief/REVIEW.md`(gitignored,
+  worktree 專屬,不進版控)——`.orca-brief/TASK.md.template`、`docs/03-agile-workflow.md`、
+  `CLAUDE.md`、`.claude/skills/autopilot/SKILL.md`(§2、§4b)、`PITFALLS.md`(P-17)裡凡是
+  指這個「角色間交接寫的那份檔」的地方全部更新引用;`IN-REVIEW.md`(整合點)、
+  `docs/reviews/*.md`(事後留存的審核記錄)不受影響,那是不同的東西。
+- 動機:兩份文件已經各自警告過一次「不要寫根目錄的 REVIEW.md」,第三個人還是照舊慣例踩了一次,
+  覆蓋掉 main 上 263 行舊紀錄——警告寫在文件裡不是機制,拿掉那個會被覆蓋的路徑本身才是。
+
+### `.orca-brief/TASK.md.template`:worktree 起手三步 + 交接檔說明
+
+- 「第 0 件事」之後加「worktree 起手」checklist:`.env` 已連結或複製;花費檢查指令
+  (`{{SPEND_CHECK_COMMAND}}`)退出碼是 0 或 1 才繼續,**2(算不出來)不准當 0**(P-47/P-81);
+  續用舊 worktree 時先 `git merge main`(**不 rebase**)再看紅燈。
+- 新增「## 交接檔」一節,講清楚 `.orca-brief/REVIEW.md` 是 gitignored、worktree 專屬,不是
+  根目錄的追蹤檔(見上)。
+- `CHECKLIST.md` 補 `{{SPEND_CHECK_COMMAND}}` 這個 placeholder 在 `.orca-brief/TASK.md.template`
+  也用得到(跟 autopilot SKILL.md 那份同一個值),順手修正 brownfield 表格裡這一列多出的欄位。
+
+### CHECKLIST.md:三條流程提醒
+
+- 新節「worktree 起手 / 凍結期間 / 動測試檔」:clone 完不會自動有的三樣(`.env`、pre-commit
+  hook、`TEMPLATE_DIR`);凍結期間(花費上限、其他煞車條件)可以做的事——派工、開單、回訊、
+  worktree 內工作,凍結只擋「新的付費/main 工作」;協調者動測試檔(即使只是改註解)一律報備。
+- 「收工前 / push 前檢查」補一條:含子行程探針 + 逾時的測試跟 `npm run mutate` 共用同一把
+  跨 worktree 檔案鎖(見下),單檔 `vitest run` 不用搶鎖,不准放寬逾時當修法(P-82)。
+
+### `.claude/skills/autopilot/SKILL.md`
+
+- §4c(「分支上全綠、合併後紅」)結尾加一段一行提示:P-77(宣告的動作沒有 diff)、P-78
+  (警告寫第三次還被踩)是同一個「交接動作沒有回執」家族(P-76)的另外兩種形狀。
+- §3 維護清單第 4 項(文件漂移)補:`npm run check:phase-status` 跑在 report 模式,三種命中是
+  分診用的線索,不是停止條件。
+
+### `.claude/skills/mutation-testing/SKILL.md`
+
+- 新節「全套測試跟 Stryker 共用同一把鎖(P-82)」:子行程探針 + 逾時的測試在負載下(同機另一個
+  worktree 跑 Stryker)整類不可信,同一天三環境四次都各自紅過一次;修法是這類測試跟
+  `npm run mutate` 共用跨 worktree 檔案鎖,不是放寬逾時;單檔 `vitest run <單一檔案>` 不用搶鎖。
+
+### PITFALLS.md:P-75 – P-82,`P-49` 補充
+
+- **P-75** 狀態表漂移(`01-data-layer/phase-4` 兩輪覆核發現;fix = `check-phase-status.ts`
+  report 模式)。
+- **P-76** 家族標題「交接動作沒有回執」,列 P-45、P-54、P-75、P-77。
+- **P-77** 宣告的動作沒有 diff(「這個 ADR 我來寫」合併後 grep 不到)。
+- **P-78** 同一個警告寫第三次就該改結構(REVIEW.md 根目錄覆蓋事件)。
+- **P-79** 工單引用將來才存在的東西(`check:all` 在 1.4.1 前不存在的事故)。
+- **P-80** 驗收條件本身是代理指標(「三句話兩兩不同」用三句廢話就能滿足)。
+- **P-81** 錢煞車自我違反「不知道 ≠ 零」(整份 log 是 `"hello"` → exit 0「沒花」)。
+- **P-82** 子行程探針 + 逾時的守門在負載下整類不可信(三環境四次;修 = 全套測試與 Stryker
+  共用鎖,不放寬逾時)。
+- **P-49 補充**:基準值要自己量不抄;`file:line` 引用的行號會腐爛,修正時優先拿掉行號。
+
+### docs/07-practices.md:(aa) – (ag)
+
+- **(aa)** 見證器第四桶「刻意」登記表(`intended.json`,每條必須實際觸發否則 FAIL;不上調
+  基準、不做標記機制;專案 A 160/8/152/152;兩種反向驗證)。
+- **(ab)** A3 第三例:兩人推論一致比一人講錯更危險,判準是「這句話是怎麼來的」不是
+  「有幾個人同意」。
+- **(ac)** 新規則第一次執行選無害場合。
+- **(ad)** worker 主動舉報自己最弱的一條要被肯定,不是被退回。
+- **(ae)** 注入物若不是斷言前提,註解明說它守什麼(`localProber` 例子)。
+- **(af)** 日期用 `date` 取,不憑印象——ADR 日期寫錯,半年後才會被發現。
+- **(ag)** 派工 checklist 補三條:不引用將來才存在的東西;merge main(不 rebase)先於看紅;
+  驗收條件要問「用廢話能不能滿足」。
+
 ## 1.4.1 — 2026-09-05
 
 **Patch**:1.4.0 三支新守門的修補版——`check-doc-rot.ts` 加 report 模式、`--self-test`、
