@@ -95,6 +95,7 @@ import {
   readConfigJson,
   requireConfigType,
   requireKnownTopLevelKeys,
+  requireRootDir,
   splitSkipDirs,
 } from './_root.js';
 
@@ -119,6 +120,7 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
+requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 const SELF_TEST = process.argv.includes('--self-test');
 
 /** 印一則設定錯誤、印 gate 標記(0 目標)、exit 1——跟其餘掃描器同一套(見

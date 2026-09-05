@@ -99,6 +99,7 @@ import {
   loadGatesConfig,
   lookupConfig,
   requireConfigType,
+  requireRootDir,
   resolveSkipDirs,
 } from './_root.js';
 
@@ -112,6 +113,7 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
+requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 
 function findConfigFile(name: string): { path: string | undefined; hardErrorMessage: string | undefined } {
   const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });

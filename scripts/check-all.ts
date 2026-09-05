@@ -34,7 +34,14 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig, readConfigJson, requireConfigType } from './_root.js';
+import {
+  ROOT as GIT_ROOT,
+  loadGatesConfig,
+  lookupConfig,
+  readConfigJson,
+  requireConfigType,
+  requireRootDir,
+} from './_root.js';
 
 /** 所有掃描器共用的那句話。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -56,6 +63,7 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
+requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 const MARKDOWN = process.argv.includes('--markdown');
 const FAIL_FAST = process.argv.includes('--fail-fast');
 

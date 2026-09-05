@@ -52,7 +52,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig } from './_root.js';
+import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig, requireRootDir } from './_root.js';
 
 /** 三支掃描器共用的那句話(這支也共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -67,6 +67,7 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
+requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 
 // ---------------------------------------------------------------------------
 // gates.config.json:nextGates.mode——委派給 `_root.ts` 的 `lookupConfig`(S14,

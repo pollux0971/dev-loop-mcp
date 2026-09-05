@@ -47,7 +47,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ROOT as GIT_ROOT, readConfigJson } from './_root.js';
+import { ROOT as GIT_ROOT, readConfigJson, requireRootDir } from './_root.js';
 
 /** 三支掃描器共用的那句話。0 個東西的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
@@ -73,7 +73,9 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+const ROOT_EXPLICIT = arg('--root') !== undefined;
 const ROOT = resolve(arg('--root') ?? GIT_ROOT);
+requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 const only = arg('--only');
 const timeout = Number(arg('--timeout') ?? 120_000);
 const listOnly = process.argv.includes('--list');

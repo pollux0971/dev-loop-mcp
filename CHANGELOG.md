@@ -4,6 +4,33 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.4.3 — 2026-09-05
+
+來源:專案 A 協調者(2026-09-05,PITFALLS P-84)。**patch:只有守門的錯誤訊息與新增的自我測試,
+沒有任何檔案結構、CLI 介面或 `gates.config.json` 鍵改變——升版只需要重新 sync,不用改設定。**
+
+- **修 bug**:`check-next-gates.ts`、`check-phase-status.ts` 過去 `--root` 明講一個不存在的
+  目錄時,exit 1 但輸出完全沒提那個路徑不存在,跟其餘會先摸設定檔的 gate(經 `_root.ts` 的
+  `lookupConfig` S14 hard-error)少講了最關鍵的一句話。`_root.ts` 新增
+  `requireRootDir()` / `rootDirError()`:`--root` 明講時,搶在任何設定檔查找之前確認那個
+  目錄真的存在、真的是目錄,不是就印 `✗ --root 指到不存在的目錄:<絕對路徑>` + `gate=<name>
+  result=FAIL scanned=0` + exit 1。全部支援 `--root` 的 gate 都接上了這個檢查:
+  `check-all.ts`、`check-boundaries.ts`、`check-doc-links.ts`、`check-doc-rot.ts`、
+  `check-known-defects.ts`、`check-next-gates.ts`、`check-phase-status.ts`、
+  `check-standalone.ts`(`check-doc-links.ts` 的 `main()` 是純函式,不自己 `process.exit`,
+  用 `rootDirError()` 只拿訊息字串,呼叫端自己組回傳值)。`check-gherkin-dup.ts` /
+  `check-phase-coverage.ts` / `check-step-dup.ts` 沒有 `--root` 旗標,不受影響。
+- **新增 `zero-input.gates.test.ts`**:模板自己的零輸入守門測試,用目錄列舉(不是手抄清單)
+  找出 `scripts/` 底下所有 `check-*.ts`,對每一支支援 `--root` 的 gate 跑三個探針——
+  (a) `--root` 指到不存在的目錄、(b) `--root` 指到空目錄、(c) `--root` 底下的設定檔壞掉
+  (malformed JSON)——各自要求 exit 1、機器可讀標記在、沒有裸露的堆疊;每個探針的具體訊息
+  片段記在測試檔頭的探針表。沒有 `--root` 旗標的 gate 要明講在 `NO_ROOT_FLAG` 並附理由,
+  兩邊都沒有 → 測試紅,訊息是「新守門沒進零輸入清單」——新增一支 gate 之後結構上不可能漏掉
+  這一項檢查。做過反向驗證(拔掉一支 gate 的 `requireRootDir` 呼叫,測試準確地紅在那一支,
+  沒有連坐到別支;驗完照原樣復原)。
+- PITFALLS 新增 P-84(模板違反自己訂的規則,第二次;第一次是 P-83);
+  `docs/07-practices.md` 新增 (ah) 改斷言的五欄表、(ai) 掃描器抓到自己人三次。
+
 ## 1.4.2 — 2026-09-05
 
 來源:專案 A 協調者、專案 A 審核 agent(2026-09-05)。

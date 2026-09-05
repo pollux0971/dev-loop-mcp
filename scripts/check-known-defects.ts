@@ -81,6 +81,7 @@ import {
   lookupConfig,
   readConfigJson,
   requireConfigType,
+  requireRootDir,
 } from './_root.js';
 
 /** 這支腳本在 gate 機器可讀標記裡的名字。 */
@@ -96,6 +97,7 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
+requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 
 function configError(msg: string): never {
   console.error(`✗ ${msg}`);

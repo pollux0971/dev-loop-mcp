@@ -64,6 +64,7 @@ import {
   ROOT as GIT_ROOT,
   loadGatesConfig as loadSharedGatesConfig,
   requireConfigType,
+  rootDirError,
   splitSkipDirs,
 } from './_root.js';
 
@@ -507,6 +508,19 @@ export function main(argv: string[]): { code: number; output: string } {
   const i = argv.indexOf('--root');
   const rootArg = i >= 0 ? argv[i + 1] : undefined;
   const root = resolve(rootArg ?? GIT_ROOT);
+
+  // P-84:`--root` 明講時,搶在任何設定檔查找(`resolveSkipConfig` 底下的
+  // `resolveConfig`)之前先確認那個目錄真的存在。這支腳本的 `main()` 是純函式
+  // (不自己 `process.exit`,見檔頭說明),所以用 `rootDirError` 只拿訊息字串,
+  // 自己組 `{ code, output }`——跟其餘直接 `process.exit` 的 gate 用
+  // `requireRootDir` 不同,道理一樣。
+  if (rootArg !== undefined) {
+    const message = rootDirError(root);
+    if (message !== undefined) {
+      return { code: 1, output: `${message}\ngate=${GATE_NAME} result=FAIL scanned=0` };
+    }
+  }
+
   const skip = resolveSkipConfig(root);
 
   const { files, links, broken } = checkDocLinks(root, skip);
