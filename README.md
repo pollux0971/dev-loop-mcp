@@ -1,5 +1,10 @@
 # 開發範式模板
 
+> **這個 repo 的家:`/data/python/dev-paradigm`(2026-09-06 起)。** 之前它住在 `llm_learning-cards` 的
+> `template/` 子目錄(分支 `template/dev-paradigm`),用 `git subtree split` 連歷史搬出來;
+> 版本 tag 改叫 `vX.Y.Z`(原 `template/vX.Y.Z`)。CHANGELOG 裡 1.5.0 以前提到的 commit sha 是**原 repo** 的,
+> 在這裡查不到,以 tag 為準。consumer 的 `TEMPLATE_DIR` 改指這裡;守門的 `--check` 是自包含的,已裝的檔不用重 sync。
+
 一套「契約先凍結、gherkin 即測試、Wave 0 平行開發、整合點永遠是完整系統」的
 專案骨架。抽自一個實際跑過一輪 Wave 0 平行開發的專案(桌面應用 + LLM 內容生成,
 細節見 `CHECKLIST.md` 的例子欄),把**流程與結構**留下,把**產品細節**換成 `{{PLACEHOLDER}}`。

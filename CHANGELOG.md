@@ -4,6 +4,12 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 未出版
+
+- 2026-09-06 搬家:從 `llm_learning-cards/template/` 以 `git subtree split` 搬到獨立 repo `/data/python/dev-paradigm`,
+  歷史 74 個 commit 保留,tag 改名 `vX.Y.Z`。內容與 v1.5.0 完全相同(只多 `.gitignore` 與本說明),不升版。
+  舊位置(`llm_learning-cards` 的 agent worktree)凍結在 v1.5.0,之後只在這裡改。
+
 ## 1.5.0 — 2026-09-05
 
 來源:專案 A 協調者(REVIEW.md §二.1,PITFALLS P-85);AI_KM 顧問、nightmare 顧問 2026-09-05 同意修法。

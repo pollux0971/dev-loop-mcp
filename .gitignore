@@ -1,0 +1,5 @@
+node_modules/
+.stryker-tmp/
+reports/
+*.log
+.env
