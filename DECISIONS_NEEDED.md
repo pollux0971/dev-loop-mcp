@@ -20,7 +20,8 @@
 
 | # | 日期 | 事項(一句話) | 選項與建議 | 影響(擋什麼) | 提出者 |
 |---|---|---|---|---|---|
-| — | — | (目前無待批示事項) | — | — | — |
+| 6 | 2026-09-10 | npx init A/B/C 三階段全部完成並 push,`npx-init-a` 要不要合併進 `main`? | A(建議)合併——順便解決一個實際問題:worker worktree 從 `main` 開,而 `main` 還沒有 `.claude/skills/dev-worker/SKILL.md`(它在 `bmad-integration-and-npx` 分支),C 階段 worker 回報「dev-worker/SKILL.md 不存在,已記錄」,等於 worker 讀不到自己的行為準則。兩條分支都併進 main 才會消失 / B 先不合併,繼續在分支上做 | 擋後續 worker 讀不到 dev-worker skill;不擋現有分支上的工作 | 協調者 ARIA |
+| 7 | 2026-09-10 | npm 套件的**最終名稱**要叫什麼?目前是佔位名 `dev-paradigm-init-placeholder` | 需要使用者指定。已知約束:PM 那輪已定 **先 private 不發公開 registry**,所以名稱不必搶註冊,但一旦寫進 `package/package.json` 與 `bin` key,改名要同步改兩處與測試 fixture | 擋 npm 發布(不擋開發與測試) | 協調者 ARIA |
 
 ## 已批示
 
