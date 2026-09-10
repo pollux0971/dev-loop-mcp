@@ -1,0 +1,15 @@
+{
+  "name": "dev-paradigm-init-placeholder",
+  "version": "1.5.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "dev-paradigm-init-placeholder": "src/cli.mjs"
+  },
+  "files": [
+    "README.md",
+    "payload-manifest.json",
+    "src/cli.mjs",
+    "dist/"
+  ]
+}
