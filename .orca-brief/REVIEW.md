@@ -118,6 +118,182 @@ Error: Cannot find module 'minimatch'
 
 ---
 
+# 【驗】TASK-C / NPX-C-001 / region-development
+
+## 【驗】結果
+
+【驗】結果：`worker_done`。C 階段已把 B 階段手動證據變成 `package/test/blackbox-gates.mjs`；從 `package/` 執行 `npm test` 是單一入口，並支援 `--gate=tarball|clean-init|conflict|rollback` 逐 gate 重跑。
+
+【驗】四個 gate 都以實際 npm tarball 解出來的 `src/cli.mjs` 做黑箱測試；判定只使用子程序退出碼、bytes／mtime snapshot、tar multiset／bytes hash 與明確成功行，沒有以 `grep`／`tail` 的空輸出當通過。
+
+## 【驗】實作摘要
+
+- 【驗】tarball gate 由 `npm pack` 產生實際 tgz，逐項比較 wrapper 加 manifest 展開 payload 的檔案 multiset、排除規則與 payload bytes。
+- 【驗】npm 保留 `.gitignore`、`.npmrc` 不進 archive；`build-template.mjs` 以 `gitignore`／`npmrc` 作明確 transport alias，`cli.mjs` 解包安裝時還原成 canonical `.gitignore`／`.npmrc`，測試也只對這兩個明示映射比對。
+- 【驗】clean-init gate 在從 tgz 解出的 CLI 上於全新臨時目錄執行 init，檢查 exit=0、manifest path set、守門檔 SOURCE header、`sync-gates.sh --check` exit=0 與明確成功行，以及只允許 CHECKLIST 所列／README、CHECKLIST 白名單的 placeholder。
+- 【驗】conflict gate 建立既有無 SOURCE 的 `README.md` 與撞名 `package.json` script，記錄所有既有檔 bytes 與 mtimeNs；init 必須非 0 且 snapshot 完全相同。
+- 【驗】rollback gate 在同一 fixture 以 `NPX_INIT_FAIL_AFTER=1` 與後期點 `n=77` 各執行一次，兩次都必須非 0、回復完整檔案 bytes／mtimeNs，且 journal 被清掉。
+- 【驗】四個 `--probe` 會在臨時副本／臨時輸出中故意破壞被測物並讓 gate 真的 exit=1；以下為原始輸出。
+
+## 【驗】故意弄壞 → 紅燈原始輸出
+
+【驗】tarball probe 命令 exit=1：
+
+```text
+> dev-paradigm-init-placeholder@1.5.0 test
+> node test/blackbox-gates.mjs --probe=tarball
+
+✗ blackbox gates FAIL: tarball path multiset differs (expected 82, actual 83)
++ actual - expected
+... Skipped lines
+
+  [
+    'README.md',
+    'dist/template/.claude/skills/autopilot/SKILL.md',
+    'dist/template/.claude/skills/decision-record/SKILL.md',
+    'dist/template/.claude/skills/feature-triage/SKILL.md',
+...
+    'dist/template/package.json',
++   'dist/template/probe-extra.txt',
+    'dist/template/scripts/README.md',
+    'dist/template/scripts/_root.ts',
+    'dist/template/scripts/boundaries.allow.json',
+    'dist/template/scripts/boundaries.owners.json',
+    'dist/template/scripts/check-all.test.ts',
+```
+
+【驗】clean-init probe 命令 exit=1：
+
+```text
+> dev-paradigm-init-placeholder@1.5.0 test
+> node test/blackbox-gates.mjs --probe=clean-init
+
+✗ blackbox gates FAIL: sync-gates --check failed:
+✓ _root.ts
+✓ check-all.test.ts
+✓ check-all.ts
+✓ check-boundaries.test.ts
+✗ check-boundaries.ts 內容被改過(sha256 不符;急修請在第 2 行加 HOTFIX 註解:<日期> <理由>)
+✓ check-doc-links.test.ts
+✓ check-doc-links.ts
+✓ check-doc-rot.test.ts
+✓ check-doc-rot.ts
+✓ check-gherkin-dup.ts
+✓ check-known-defects.test.ts
+✓ check-known-defects.ts
+✓ check-next-gates.test.ts
+✓ check-next-gates.ts
+✓ check-phase-coverage.ts
+✓ check-phase-status.test.ts
+✓ check-phase-status.ts
+✓ check-standalone.test.ts
+✓ check-standalone.ts
+✓ check-step-dup.ts
+✓ mutate.py
+✓ test_mutate.py
+○ boundaries.allow.json(你的設定檔,不比對)
+○ boundaries.owners.json(你的設定檔,不比對)
+○ gates.config.json(你的設定檔,不比對)
+○ doc-rot.blacklist.json(你的設定檔,不比對)
+○ known-defects.json(你的設定檔,不比對)
+○ pre-commit hook 未安裝(選用;見 scripts/hooks/pre-commit,裝法:cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit)
+○ _root.ts(不需接線:helper 或測試檔)
+○ check-all.test.ts(不需接線:helper 或測試檔)
+✓ check-all.ts 已接線
+○ check-boundaries.test.ts(不需接線:helper 或測試檔)
+✓ check-boundaries.ts 已接線
+○ check-doc-links.test.ts(不需接線:helper 或測試檔)
+✓ check-doc-links.ts 已接線
+○ check-doc-rot.test.ts(不需接線:helper 或測試檔)
+✓ check-doc-rot.ts 已接線
+✓ check-gherkin-dup.ts 已接線
+○ check-known-defects.test.ts(不需接線:helper 或測試檔)
+✓ check-known-defects.ts 已接線
+○ check-next-gates.test.ts(不需接線:helper 或測試檔)
+✓ check-next-gates.ts 已接線
+✓ check-phase-coverage.ts 已接線
+○ check-phase-status.test.ts(不需接線:helper 或測試檔)
+✓ check-phase-status.ts 已接線
+○ check-standalone.test.ts(不需接線:helper 或測試檔)
+✓ check-standalone.ts 已接線
+✓ check-step-dup.ts 已接線
+
+
+1 !== 0
+```
+
+【驗】conflict probe 命令 exit=1：
+
+```text
+> dev-paradigm-init-placeholder@1.5.0 test
+> node test/blackbox-gates.mjs --probe=conflict
+
+✗ blackbox gates FAIL: conflicting init unexpectedly succeeded
+```
+
+【驗】rollback probe 命令 exit=1：
+
+```text
+> dev-paradigm-init-placeholder@1.5.0 test
+> node test/blackbox-gates.mjs --probe=rollback
+
+✗ blackbox gates FAIL: rollback: file set changed
++ actual - expected
+
++ [
++   'probe-corruption.txt'
++ ]
+- []
+```
+
+## 【驗】綠燈驗證與原始輸出
+
+【驗】`node --check package/src/cli.mjs`、`node --check package/src/build-template.mjs`、`node --check package/test/blackbox-gates.mjs` 均 exit=0。
+
+【驗】`npm test --prefix package` exit=0：
+
+```text
+> dev-paradigm-init-placeholder@1.5.0 test
+> node test/blackbox-gates.mjs
+
+✓ gate tarball-multiset PASS
+✓ gate clean-init PASS
+✓ gate conflict-zero-write PASS
+✓ gate rollback-two-failures PASS (n=1, late)
+✓ blackbox gates PASS (4/4)
+```
+
+【驗】四個獨立 gate 命令均 exit=0：
+
+```text
+gate=tarball exit=0
+✓ gate tarball-multiset PASS
+gate=clean-init exit=0
+✓ gate clean-init PASS
+gate=conflict exit=0
+✓ gate conflict-zero-write PASS
+gate=rollback exit=0
+✓ gate rollback-two-failures PASS (n=1, late)
+```
+
+【驗】`git diff --check` exit=0，無輸出；`rg` 檢查測試檔沒有 `grep`／`tail`。
+
+## 【驗】changed_paths 與狀態
+
+- 【驗】`package/src/cli.mjs`
+- 【驗】`package/src/build-template.mjs`
+- 【驗】`package/package.json`
+- 【驗】`package/test/blackbox-gates.mjs`
+- 【驗】`.orca-brief/REVIEW.md`
+
+【驗】本 dispatch 的新增／修改只在 allowed paths：`package/**` 與 `.orca-brief/REVIEW.md`；根目錄工單檔是既有未納入本 dispatch 的檔案，未修改。
+
+【未驗】未執行 publish、push 或 merge；未建立 package tarball 留在 worktree。
+
+【驗】報告位置：`.orca-brief/REVIEW.md`。
+
+---
+
 # 【驗】TASK-B / NPX-B / region-development
 
 ## 【驗】結果

@@ -3,6 +3,10 @@
   "version": "1.5.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "prepack": "node src/build-template.mjs",
+    "test": "node test/blackbox-gates.mjs"
+  },
   "bin": {
     "dev-paradigm-init-placeholder": "src/cli.mjs"
   },

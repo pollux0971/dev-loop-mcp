@@ -7,6 +7,7 @@ import path from "node:path";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL_MANIFEST = ".npx-init-manifest.json";
+const TRANSPORT_ALIASES = new Map([[".gitignore", "gitignore"], [".npmrc", "npmrc"]]);
 const SOURCE_RE = /^(\/\/|#) SOURCE: template v/;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => JSON.stringify(value, null, 2) + "\n";
@@ -44,7 +45,11 @@ function globToRegExp(glob) {
 }
 
 async function expandEntry(sourceRoot, entry) {
-  const root = path.resolve(sourceRoot, entry.root);
+  let root = path.resolve(sourceRoot, entry.root);
+  if (TRANSPORT_ALIASES.has(entry.root) && !await isFile(root)) {
+    const transportAlias = path.resolve(sourceRoot, TRANSPORT_ALIASES.get(entry.root));
+    if (await isFile(transportAlias)) root = transportAlias;
+  }
   const includes = entry.include ?? ["**/*"];
   const files = [];
   if (await isFile(root)) return [root];
@@ -130,7 +135,8 @@ async function buildPlan(context, target) {
   for (const entry of manifest.payload ?? []) {
     if (entry.root === "package.json") continue;
     for (const source of await expandEntry(sourceRoot, entry)) {
-      const relative = path.relative(sourceRoot, source).split(path.sep).join("/");
+      const sourceRelative = path.relative(sourceRoot, source).split(path.sep).join("/");
+      const relative = TRANSPORT_ALIASES.get(entry.root) === sourceRelative ? entry.root : sourceRelative;
       let body = render((await fs.readFile(source)).toString("utf8"), target);
       if (relative.startsWith("scripts/") && (relative.endsWith(".ts") || relative.endsWith(".py"))) body = sourceHeader(version, commit, body, path.extname(relative));
       add(relative, body);
