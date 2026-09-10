@@ -115,3 +115,96 @@ Error: Cannot find module 'minimatch'
 【驗】A 階段沒有越界需求；B 階段的 `package/src/cli.mjs` 實作與 C 階段 artifact／black-box gate 仍是後續派工範圍。本 worker 依工單要求在此停止。
 
 【驗】報告位置：`.orca-brief/REVIEW.md`。
+
+---
+
+# 【驗】TASK-B / NPX-B / region-development
+
+## 【驗】結果
+
+【驗】結果：`worker_done`。`package/src/cli.mjs` 已完成 greenfield `init`、完整 plan-first 衝突掃描、SOURCE 標頭／hash 產生、保守 package merge、atomic staging、rollback journal 與安裝 manifest。
+
+## 【驗】changed_paths
+
+- 【驗】`package/src/cli.mjs`
+- 【驗】`package/src/build-template.mjs`
+- 【驗】`package/package.json`（新增 `prepack` staging hook）
+- 【驗】`package/README.md`（更新 B 階段已交付說明）
+- 【驗】本報告 `.orca-brief/REVIEW.md`
+
+## 【驗】實作要點
+
+- 【驗】從 `payload-manifest.json` 展開所有輸出，先 render `{{PROJECT_NAME}}`／`{{TODAY}}`，再計算輸出 hash 與掃描所有衝突；衝突一次列完，未建立 staging、journal 或任何 consumer 檔案。
+- 【驗】`scripts/` 下 `.ts` 使用 `// SOURCE: template v<根 VERSION> (<commit>) sha256=<rendered body hash>`；`.py` 使用相同版本/hash 規則的 `#` 標頭；hook 保留 shebang 第一行。
+- 【驗】`package.json` 只 merge 缺少的 `scripts`／`devDependencies`；同 key 不同值列為衝突，不覆蓋 consumer 的其他欄位。
+- 【驗】staging 目錄位於 target 同一 filesystem；commit 前以 `.npx-init-journal.json` 記錄每個移動／安裝操作，失敗時反向恢復並清理暫存物。
+- 【驗】留下 `.npx-init-manifest.json`，包含 package/template version、每個輸出路徑與 hash；rerun 透過 manifest ownership 接受既有 init 產物。
+- 【驗】每次 init 先讀根 `VERSION`，並與 `package/package.json` version 比較；不一致直接失敗。
+- 【驗】明確拒絕 `--force`；程式沒有 npm install 或 git init 呼叫。
+
+## 【驗】指定驗證命令與原始關鍵輸出
+
+```text
+node --check package/src/cli.mjs
+exit=0
+
+node package/src/cli.mjs init <empty-temp-consumer>
+✓ init 完成: 79 paths, template v1.5.0
+未執行 npm install 或 git init;請依 README 五步驟繼續。
+
+head -n 1 <consumer>/scripts/check-boundaries.ts
+// SOURCE: template v1.5.0 (unknown) sha256=... — 勿手改;升版用 sync-gates.sh
+
+bash <consumer>/scripts/sync-gates.sh <consumer> scripts --check
+✓ check-boundaries.ts
+✓ mutate.py
+✓ test_mutate.py
+✓ 守門內容自同步以來未被更動
+exit=0
+
+node package/src/cli.mjs init <same-consumer> --dry-run
+✓ plan 79 paths, template v1.5.0
+exit=0
+
+NPX_INIT_FAIL_AFTER=3 node package/src/cli.mjs init <same-consumer>
+exit=1
+rollback-same=true
+
+node package/src/cli.mjs init <conflict-consumer>
+✗ init 先掃後寫發現衝突(零寫入):
+✗ README.md 已存在且沒有 SOURCE 標頭(是 consumer 自有檔)
+package.json scripts.boundaries: existing="consumer-boundaries" proposed="tsx scripts/check-boundaries.ts"
+package.json devDependencies.tsx: existing="0.0.0" proposed="^4.0.0"
+conflict-zero-write=true
+
+merge-preserves-custom=true
+merge-adds-scripts=true
+merge-adds-devDependencies=true
+git diff --check: exit=0
+
+cd package && npm pack --dry-run --json
+pack-name=dev-paradigm-init-placeholder
+pack-version=1.5.0
+pack-entryCount=80
+pack-has-dist-template=true
+exit=0
+```
+
+## 【驗】未通過項目
+
+【驗】無本 dispatch acceptance 未通過項目。C 階段 black-box 測試與 tarball gate 依工單明列未執行。
+
+## 【推】自主判斷清單
+
+- 【推】安裝 manifest 名稱採 `.npx-init-manifest.json`；reviewer 可藉由刪除／改寫它反向驗證 ownership 保護。
+- 【推】SOURCE commit 在發布 tarball 無 git metadata 時採 `unknown`；現行 `sync-gates.sh --check` 只要求版本格式與 body hash，已由共用生成 fixture 驗證接受。
+- 【推】只渲染專案名稱與日期 placeholder，其餘產品 placeholder 保留給 README 步驟 1，由此不替使用者決定最終套件名或產品資料。
+- 【推】`--yes` 作為相容 CLI 旗標接受但不引入互動副作用；v1 預設直接執行 plan／commit。
+
+## 【驗】越界與下一個 owner
+
+【驗】沒有寫入 `VERSION`、根 `package.json`、`scripts/`、測試、contracts、docs、features 或 `.claude/`。CodeGraph 回報 worktree 未初始化，故未執行 `codegraph init`，也未因此新增任何檔案。
+
+【驗】下一個 owner：C 階段 reviewer／integration，負責 tarball multiset、乾淨 repo black-box、衝突零寫入與中途失敗的正式測試 gate。
+
+【驗】報告位置：`.orca-brief/REVIEW.md`。
