@@ -20,9 +20,14 @@
 
 | # | 日期 | 事項(一句話) | 選項與建議 | 影響(擋什麼) | 提出者 |
 |---|---|---|---|---|---|
-| 1 | YYYY-MM-DD | … | A(建議)/ B | 擋 NN/phase-N | 協調者 |
+| — | — | (目前無待批示事項) | — | — | — |
 
 ## 已批示
 
 | # | 批示 | 日期 | 落地(ADR / commit) |
 |---|---|---|---|
+| 1 | **A** — 先產「BMAD 29 支 skill 逐一分類」對照表 ADR,使用者看過分類再決定動哪些規則層檔案 | 2026-09-10 | ADR-015 (proposed) |
+| 2 | **A** — 批准四條組織架構條件:(1) PM 是使用者的產品入口,新功能仍由使用者批准;(2) ARIA 是唯一 session/worktree 排程者,PM 只能發起探索請求;(3) 分區開發/分區整合/全局整合是 dispatch mode 不是角色,分區整合不可改分區內部,全局整合預設只驗證;(4) `/feature` 確認 gate 是探索素材變成權威規格的唯一界線 | 2026-09-10 | ADR-016(待寫) + ADR-015 修訂 |
+| 3 | **B** — 批准規則層檔案層級變更五個檔全做:新增 `.claude/skills/product-pm/SKILL.md` 與 `.claude/skills/dev-worker/SKILL.md`;修改 `.claude/skills/feature-triage/SKILL.md`(加 L0~L3 權威階梯、主持人改 PM、收成 PM 的內部 workflow)、`CLAUDE.md`(角色表加產品 PM、可用指令加新 skill)、`.claude/skills/autopilot/SKILL.md`(協調者迴圈認得三種 dispatch mode)。執行者依 CLAUDE.md 為技術顧問 NOVA,不經協調者轉手 | 2026-09-10 | 依 ADR-016;ADR-015 相關列可由 proposed 轉 accepted 的範圍僅限本列五檔 |
+| 4 | **A** — `@manual`/`@e2e` 人眼確認**拆成兩列**:觀感/品質判定→技術顧問(寫 `IN-REVIEW.md`);`@e2e` 端到端「你做得到嗎」→**使用者**。四處表述統一:`CLAUDE.md`、`.claude/skills/autopilot/SKILL.md`、`phase-acceptance`、`integration-check`。執行者為技術顧問 NOVA | 2026-09-10 | 待 ADR |
+| 5 | **B** — 新功能:把本模板做成 **npm 套件**,支援 `npx <pkg> init` 一行部署(skill + `contracts/` + `features/` 骨架 + `scripts/` 守門腳本 + `package.json`),不是只做 plugin marketplace,也不是只靠第三方 `npx skills add`(那只裝 skill 裝不了骨架)。已知前置:`package.json` 現為 `name: {{PROJECT_NAME}}` / `private: true`,需先解決模板檔與套件檔分家 | 2026-09-10 | `/feature` L2 已確認(2026-09-10,PM):v1 只支援 greenfield、init 不自動 npm install/git init、套件先 private、payload 以 README 五步驟為準、CLI flag + 互動問(有 --yes)、npm version 綁根目錄 VERSION;三階段(A 打包計畫/B init 主程式/C 黑箱測試),不建 `features/NN`(本專案自身不用該機制,比照 sync-gates.sh/P-85 先例走 `scripts/`+ADR)。詳見 MAILBOX.md「PM → ARIA」。ADR 待 A 階段完成後補記；**A 階段已完成(2026-09-10,worker NPX-A@gpt-5.6-luna high,分支 `npx-init-a`)**:`package/` 發布殼骨架 + `payload-manifest.json`(glob 不寫死數量) + `cli.mjs` stub;硬指標 `npm pack --dry-run` 通過。**已知待辦**:`package/package.json` 的 version 目前是寫死複本,使用者裁決(2026-09-10)由 **B 階段的建置流程從根 `VERSION` 讀出並加一致性 gate**,不另開工單。 |

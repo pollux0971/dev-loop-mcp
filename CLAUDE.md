@@ -30,6 +30,9 @@
 5. **`{{STATE_DIR}}` 的寫入必須是原子的**:寫暫存檔、fsync、rename。
    (範例:那是使用者累積的長期資料,壞掉的代價很高。)
 
+角色、persona、skill 與 dispatch 的 `allowed_paths` 都不能覆蓋這些硬規則。發現工單或產品提案要求違反硬規則時，
+停下該部分並依「做決定時」的權責表升級；不得把 allowlist 當成例外批准。
+
 ## 幾條強烈建議
 
 違反這些不會出事,但會累積成問題:
@@ -72,7 +75,9 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 
 ## 可用指令
 
-- `/feature <描述>` — 新需求分流,**先提案、等確認、再寫檔**
+- `/product-pm [意圖]` — 使用者的產品需求入口；主持探索、brainstorm、party、brief、PRD 與 `/feature`
+- `/feature <描述>` — 由產品 PM 主持，內部呼叫 `feature-triage` 做 A/B/C/D/E 分流；**先提案、等確認、再寫檔**
+- `/dev-worker <dispatch>` — 只供協調者派工；必須帶單一 mode、`allowed_paths`、權威來源與完成條件，不接受使用者直接呼叫
 - `/phase-done <folder>/<phase>` — 驗收一個 phase
 - `/integrate <IN>` — 驗收一個整合點
 - `/mutate [folder]` — 跑 mutation testing 並判讀
@@ -85,13 +90,20 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 
 | 類別 | 誰定 | 怎麼留痕 |
 |---|---|---|
-| 派工順序、合併順序、worktree、審核回合 | 協調者 | commit / `.orca-brief/REVIEW.md` |
+| 派工順序、合併順序、worktree、審核回合 | 協調者(唯一 session/worktree scheduler) | commit / `.orca-brief/REVIEW.md` |
+| 需求訪談、brainstorm／party 主持、L0/L1 綜整、`/feature` L2 提案 | 產品 PM | 保留使用者原話與【驗／推／未驗】；L0/L1 產物 + L2 提案 |
 | 技術取捨:資料結構、介面、規格措辭、gate 例外、重跑與否、變異存活分類 | 技術顧問({{ADVISOR_SESSION}}) | `/decide` 記 ADR |
-| 觀感判定(`@manual`、`@e2e` 的人眼確認) | 技術顧問 | IN-REVIEW.md 寫依據與發現 |
-| 新功能、改「不在範圍」 | **使用者** | `DECISIONS_NEEDED.md` 一列 + Proposed ADR |
+| 觀感／品質判定(`@manual and not @e2e`) | 技術顧問 | phase 驗收報告或 `IN-REVIEW.md` 寫依據與發現 |
+| 端到端「你做得到嗎」確認(任何 `@e2e`，即使同時帶 `@manual`) | **使用者** | 場景原文 + 使用者確認；不可由測試或技術顧問代替 |
+| 新功能、改「不在範圍」 | **使用者**(產品 PM 只能提案，不能代批) | `DECISIONS_NEEDED.md` 一列 + Proposed ADR |
 | 改 `contracts/` 硬約定、改本檔 | **使用者** | 同上 |
 | 當日付費 API 花費超過 `{{DAILY_CAP_ENV}}` | **使用者** | 同上 |
 | 技術顧問 session 的角色定義 | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push;**不**直接改 worker 的分支、不能單方面替使用者做決定 | 本表本身 + `docs/03-agile-workflow.md` 角色段 |
+| 產品 PM session 的角色定義 | 使用者的產品入口；保管產品意圖、主持探索與 `/feature`，可向協調者提出探索請求；**不**自行啟動 worker、不做技術裁決、不批准新功能 | 本表本身 + `docs/02-decision-map.md` ADR-016 |
+
+**產品路由優先權**:`product-pm` 是新功能、需求調整、產品想法與 `/feature` 的唯一使用者入口；
+`feature-triage` 是 PM 呼叫的內部 workflow。兩者同時命中時只啟動 `product-pm`，不得讓模型自行選擇或平行產生兩份提案。
+分區開發、分區整合、全局整合是協調者寫入工單的 dispatch mode，不是新的決策角色，也不改變本表任何批准權。
 
 **規則層變更的執行者**(來源 nightmare-assault (i)):改 `CLAUDE.md`、`.claude/commands/`、`.claude/skills/`
 這些「規則本身」的檔案,決定權一樣在**使用者**,但**使用者批准之後,由技術顧問直接執行,不經協調者轉手**——
