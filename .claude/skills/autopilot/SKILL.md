@@ -25,13 +25,15 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 | 情況 | 誰決定 | 怎麼做 |
 |---|---|---|
 | 派工順序、合併順序、worktree、審核回合 | **協調者自己** | 直接做 |
+| 需求訪談、brainstorm／party 主持、L0/L1 綜整、`/feature` L2 提案 | **產品 PM** | 所有使用者產品需求先交 `product-pm`;PM 可提交探索請求,但 session/worktree 仍由協調者建立與監督 |
 | 技術取捨:資料結構、介面形狀、規格措辭、gate 例外、要不要重跑、變異存活怎麼分類 | **技術顧問**(session `{{ADVISOR_SESSION}}`) | SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。**保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57) |
-| 新功能、新需求、改「不在範圍」 | **使用者** | `/feature` 分流出提案,放進「等老闆」清單,**不擋其他工作** |
+| 新功能、新需求、改「不在範圍」 | **使用者** | 由產品 PM 主持 `/feature` 分流出 L2 提案,放進「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批 |
 | 改 `contracts/` 硬約定、改 `CLAUDE.md` | **使用者** | 同上,附 ADR 草稿 |
 | 花錢超過當日上限(`{{DAILY_CAP_ENV}}`) | **使用者** | 不跑;@llm 場景延到明天或等他加碼 |
-| 人眼確認(`@manual`、`@e2e`) | **使用者** | 列清單(場景原文 + 檔案路徑),放「等老闆」清單 |
+| 觀感／品質確認(`@manual and not @e2e`) | **技術顧問** | 由技術顧問判定，將依據與發現寫進 phase 驗收報告或 `IN-REVIEW.md` |
+| 端到端「你做得到嗎」確認(任何 `@e2e`，即使同時帶 `@manual`) | **使用者** | 列清單(場景原文 + 檔案路徑)，放「等老闆」清單；不可由測試或技術顧問代替 |
 
-判斷「新功能」的標準用 feature-triage 的 E / C / B 三種 → 使用者;A / D → 技術顧問。
+判斷「新功能」由產品 PM 呼叫內部 `feature-triage`:E / C / B → 使用者;A → 技術顧問;D 先拆分後逐項重新判定。`product-pm` 是使用者入口,`feature-triage` 不直接與它競爭觸發。
 
 ## 2. 每輪流程
 
@@ -41,6 +43,24 @@ git diff --name-only main...<branch> | grep <要改的檔案>
 ```
 每個 in-progress branch 都要為空才動手——這條在合併(步驟 1)、先修 main(§4)、技術顧問直接改規則層
 (§1 權責表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
+
+### 2a. 三種 dispatch mode（每次派工必填）
+
+每張實作或整合 dispatch 都要明列唯一 `mode`，不得只寫「做開發」或讓 worker 自選：
+
+| mode | 何時用 | 可寫邊界 | 發現越界時 |
+|---|---|---|---|
+| `region-development` | 單一 capability 的單一 phase 實作；不限 Wave 0，Wave 0 額外禁止跨資料夾 import | 工單逐條列出的該分區實作檔與自有 stub | 交回協調者；需要跨區、共用檔、測試、規則層或 contract 時另派工 |
+| `region-integration` | 在指定 integration point 接通一條已批准的跨區流程 | 只寫預先指定的 composition／adapter／integration seam；可讀所涉分區公開介面 | 不改來源分區內部；帶原始證據派回該分區的 debug／development task |
+| `global-integration` | 合併後在完整系統跑 `@e2e`、`@regression`、standalone 與完整 gate | 預設 report-only；只有工單明列唯一全局 composition 落點時可寫該路徑 | 拆成分區修復或分區整合 task；不順手修內部、不改測試讓結果變綠 |
+
+Mode 與既有 dev／test／reviewer／debug 角色是兩個維度。Dev、debug 與整合實作 session 使用 `dev-worker`；
+test／reviewer 仍依原角色規則寫測試與審核，不因 mode 取得實作權。`global-integration` 預設是 verifier 工作。
+
+派工 envelope 至少包含：`task_id`、`dispatch_id`、`mode`、單一 objective、權威來源與可解析 ID、`base_ref`、
+worktree、inputs、`allowed_paths`、`forbidden_paths`、acceptance commands、`done_when`、回報位置。
+`allowed_paths` 未列出的路徑一律不可寫，且永遠不能覆蓋 `CLAUDE.md` 五條硬規則、決策權表或 worker 永久禁區。
+Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist 追認。
 
 1. **收割**:哪些 worktree 的審核回來了 → PASS 的合併(一次一個,`git checkout main && git merge --no-ff <branch>`,**不 rebase**,每個 phase 三輪 commit 的軌跡是刻意留的),合併後跑完整檢查,**單一入口**:
    ```bash
@@ -69,7 +89,7 @@ git diff --name-only main...<branch> | grep <要改的檔案>
    合併與通知之間有 commit 插進來,連那個還沒驗過的合併都會被一起推上去(P-56)。
    FAIL 的照 test→dev→review 循環派 debug session。
 2. **算 ready**:照 sprint-planning 的規則讀所有 NEXT.md。三種 gate 全滿足 → ready。
-3. **派工**:**同開上限 = 目前 ready 集合的大小**——ready 多少個就可以開多少個,不再固定卡在某個數字
+3. **派工**:先依 §2a 為每張實作／整合工單選定唯一 mode、填完整 envelope，再啟動 `dev-worker`。**同開上限 = 目前 ready 集合的大小**——ready 多少個就可以開多少個,不再固定卡在某個數字
    (`docs/07-practices.md`「三個專案都刻意不遵守的範式條文」)。這個上限不是沒代價,代價由另外兩條規則吸收,
    不是靠「少開」:**一次合一條**(合併回 main 一次只處理一個 phase 的分支,不批次合併)、**rebase 由協調者吸收**
    (worker 的分支落後 main 時,rebase 這件事由協調者做,不要求每個 worker 自己處理)。滿載(所有 ready 都已派出)
@@ -82,7 +102,7 @@ git diff --name-only main...<branch> | grep <要改的檔案>
    **分數要附完整指令與設定檔**(範圍、旗標、`stryker.config.json` 的路徑):同一份程式碼、不同設定檔跑出來的分數
    不能比較(TS 型別檢查開關就能造成 3 分以上的差距),不附指令與設定檔的分數不算數(P-58)。每張照角色規則:
    測試 agent 先寫紅 commit → 開發 agent 做綠 → 審核 agent(`.orca-brief/REVIEW.md` 交接)。
-4. **整合點**:某個 IN 需要的 phase 全 done → **先開「整合工作」工單**(P-20:roadmap 該段的整合工作欄 + 各 FEATURE.md「Wave 0 的重複」表),合併後 `/integrate IN`;`@e2e @llm` 在預算內自動跑,結果貼進 `docs/integration/IN-REVIEW.md`;`@manual` 進「等老闆」清單。IN 的人工確認未完成前,gate 是「IN 通過」的 phase 維持 todo——這是刻意的,不要繞。
+4. **整合點**:某個 IN 需要的 phase 全 done → **先開 `region-integration`「整合工作」工單**(P-20:roadmap 該段的整合工作欄 + 各 FEATURE.md「Wave 0 的重複」表),只把 composition／adapter／integration seam 列入 allowlist；來源分區缺陷另派回原分區。合併後開 `global-integration` 驗證工單：worker 跑可自動執行的 `@e2e`／`@regression`、所有 standalone 與完整 gate，只寫 worktree-local 報告並原文列出人工場景。worker PASS 後由協調者核對原始結果、主持 `/integrate IN`、寫入 `docs/integration/IN-REVIEW.md` 與狀態檔；`@llm` 只在預算內跑。任何 `@e2e`(即使同時帶 `@manual`)由使用者做最終「你做得到嗎」確認；其餘 `@manual and not @e2e` 的觀感／品質由技術顧問確認並在 `IN-REVIEW.md` 留下依據與發現。IN 的人工確認未完成前,gate 是「IN 通過」的 phase 維持 todo——這是刻意的,不要繞。
 5. **沒有 ready 的 phase** → 做維護清單(§3),做完一項就回到 2。
 6. **回報**(§5 格式),睡。
 
@@ -150,8 +170,8 @@ git diff --name-only main...<branch> | grep <要改的檔案>
 
 - worker 問問題——回答問題,或者權責表判給技術顧問 / 使用者,問完之前先去做別的 ready 工作
 - 缺素材(某個 fixture、某份文件還沒交)——先做不依賴那份素材的其他工作
-- 在等 `@e2e` / `@manual` 的人工確認——那件事放進「等老闆」清單,不擋其他工作(§6 已經寫過
-  「不因為等老闆而停下其他能做的事」,這裡把它跟「停止」明確分開,避免兩者被混為一談)
+- 在等人工確認——任何 `@e2e` 放進「等老闆」清單；`@manual and not @e2e` 交技術顧問並留證據，兩者都不擋其他工作(§6 已經寫過
+  「不因為等待確認而停下其他能做的事」,這裡把它跟「停止」明確分開,避免兩者被混為一談)
 - 契約收緊(硬約定要走 ADR,軟約定改了跑測試)——那是一次性的工作量,做完就繼續,不是理由停下整個迴圈
 - 發現缺陷——開工單修,不是停下來等人拍板要不要修(除非缺陷本身牽涉硬約定或範圍,那走 §1 的權責表)
 - 模板升版——`git diff template/v<採用版>..v<新版> -- template/` 看完決定要不要跟,跟不跟都不是停止理由
@@ -197,8 +217,8 @@ git diff --name-only main...<branch> | grep <要改的檔案>
 
 - `worker-start --worktree new-top-level` **一定要帶 `--name`**,不帶會 `invalid_argument`
 - `worker-start` 只用在一個 worktree 的**第一輪**。同一 worktree 的第二、三輪(debug / 再審):
-  `terminal create` → `terminal send 'claude --dangerously-skip-permissions' --enter` → `terminal wait --for tui-idle` → `dispatch --inject`。
-  少中間兩步會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,不是根目錄的追蹤檔——P-17、P-78)
+  `terminal create` → `terminal send 'claude --dangerously-skip-permissions' --enter` → 用非阻塞 `terminal read` 確認 agent prompt 已出現 → `dispatch --inject`。
+  **禁止 `terminal wait`**；尚未 ready 就記下 terminal handle，自己短暫 sleep 後再 read，或留到下一輪，不阻塞在對方終端。少了啟動或就緒檢查會 `no recognized agent detected`;重用舊終端機常 `agent_unconfigured`。**永遠開新終端機**,交接靠 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,不是根目錄的追蹤檔——P-17、P-78)
 - `check --wait` 可能回**已處理過的舊訊息**(`"replayed": true`),要 `--ack <deliveryId>` 再等下一則,不然空轉
 - `check` 回來的訊息 `type` 是 `question`(帶 thread/msg id)時,對方在等 `reply`,不是等一則新訊息——**先 `reply --id <該訊息 id>` 再 `ack`**,順序不能顛倒(`ack` 之後那個 id 就抓不到了);`send` 送得到終端機但不會解除對方的阻塞,沒有任何錯誤訊息(P-45)
 - **`send` 對已經死掉的終端機一樣回 `ok:true`**,發送端以為送到了,接收端什麼都沒收到(P-54,P-45 同族)——
@@ -216,7 +236,8 @@ git diff --name-only main...<branch> | grep <要改的檔案>
 [autopilot 第 N 輪 · 今日花費 $x.xx / 1.00]
 合併:{{NN}}/phase-N ✓
 進行中:{{NN}}/phase-N(審核)
-等老闆:I1 @manual 兩條(檔案路徑)
+等老闆:I1 @e2e 兩條(檔案路徑)
+等顧問:I1 @manual and not @e2e 一條(檔案路徑)
 決定了(ADR):NNN … — 待覆核 0
 卡住:無
 ```

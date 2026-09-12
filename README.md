@@ -13,7 +13,7 @@
 
 ## 這是什麼、不是什麼
 
-**是**:一套文件骨架 + 兩個 TypeScript 腳本(邊界檢查、單獨執行檢查)+ 六個 Claude Code skill。
+**是**:一套文件骨架 + 一組可同步的 TypeScript 守門腳本(包含邊界、單獨執行與一致性檢查)+ Claude Code skill。
 落地後你會有 `contracts/`、`features/`、`docs/`、`.claude/skills/` 這些東西,馬上可以開始寫
 第一份契約與第一個 `.feature`。
 
