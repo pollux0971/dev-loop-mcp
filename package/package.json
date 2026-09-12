@@ -1,6 +1,6 @@
 {
-  "name": "dev-paradigm-init-placeholder",
-  "version": "1.5.0",
+  "name": "pollux-dev-paradigm",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "test": "node test/blackbox-gates.mjs"
   },
   "bin": {
-    "dev-paradigm-init-placeholder": "src/cli.mjs"
+    "pollux-dev-paradigm": "src/cli.mjs"
   },
   "files": [
     "README.md",

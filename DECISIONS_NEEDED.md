@@ -20,8 +20,7 @@
 
 | # | 日期 | 事項(一句話) | 選項與建議 | 影響(擋什麼) | 提出者 |
 |---|---|---|---|---|---|
-| 6 | 2026-09-10 | npx init A/B/C 三階段全部完成並 push,`npx-init-a` 要不要合併進 `main`? | A(建議)合併——順便解決一個實際問題:worker worktree 從 `main` 開,而 `main` 還沒有 `.claude/skills/dev-worker/SKILL.md`(它在 `bmad-integration-and-npx` 分支),C 階段 worker 回報「dev-worker/SKILL.md 不存在,已記錄」,等於 worker 讀不到自己的行為準則。兩條分支都併進 main 才會消失 / B 先不合併,繼續在分支上做 | 擋後續 worker 讀不到 dev-worker skill;不擋現有分支上的工作 | 協調者 ARIA |
-| 7 | 2026-09-10 | npm 套件的**最終名稱**要叫什麼?目前是佔位名 `dev-paradigm-init-placeholder` | 需要使用者指定。已知約束:PM 那輪已定 **先 private 不發公開 registry**,所以名稱不必搶註冊,但一旦寫進 `package/package.json` 與 `bin` key,改名要同步改兩處與測試 fixture | 擋 npm 發布(不擋開發與測試) | 協調者 ARIA |
+| — | — | (目前無待批示事項) | — | — | — |
 
 ## 已批示
 
@@ -32,3 +31,5 @@
 | 3 | **B** — 批准規則層檔案層級變更五個檔全做:新增 `.claude/skills/product-pm/SKILL.md` 與 `.claude/skills/dev-worker/SKILL.md`;修改 `.claude/skills/feature-triage/SKILL.md`(加 L0~L3 權威階梯、主持人改 PM、收成 PM 的內部 workflow)、`CLAUDE.md`(角色表加產品 PM、可用指令加新 skill)、`.claude/skills/autopilot/SKILL.md`(協調者迴圈認得三種 dispatch mode)。執行者依 CLAUDE.md 為技術顧問 NOVA,不經協調者轉手 | 2026-09-10 | 依 ADR-016;ADR-015 相關列可由 proposed 轉 accepted 的範圍僅限本列五檔 |
 | 4 | **A** — `@manual`/`@e2e` 人眼確認**拆成兩列**:觀感/品質判定→技術顧問(寫 `IN-REVIEW.md`);`@e2e` 端到端「你做得到嗎」→**使用者**。四處表述統一:`CLAUDE.md`、`.claude/skills/autopilot/SKILL.md`、`phase-acceptance`、`integration-check`。執行者為技術顧問 NOVA | 2026-09-10 | 待 ADR |
 | 5 | **B** — 新功能:把本模板做成 **npm 套件**,支援 `npx <pkg> init` 一行部署(skill + `contracts/` + `features/` 骨架 + `scripts/` 守門腳本 + `package.json`),不是只做 plugin marketplace,也不是只靠第三方 `npx skills add`(那只裝 skill 裝不了骨架)。已知前置:`package.json` 現為 `name: {{PROJECT_NAME}}` / `private: true`,需先解決模板檔與套件檔分家 | 2026-09-10 | `/feature` L2 已確認(2026-09-10,PM):v1 只支援 greenfield、init 不自動 npm install/git init、套件先 private、payload 以 README 五步驟為準、CLI flag + 互動問(有 --yes)、npm version 綁根目錄 VERSION;三階段(A 打包計畫/B init 主程式/C 黑箱測試),不建 `features/NN`(本專案自身不用該機制,比照 sync-gates.sh/P-85 先例走 `scripts/`+ADR)。詳見 MAILBOX.md「PM → ARIA」。ADR 待 A 階段完成後補記；**A 階段已完成(2026-09-10,worker NPX-A@gpt-5.6-luna high,分支 `npx-init-a`)**:`package/` 發布殼骨架 + `payload-manifest.json`(glob 不寫死數量) + `cli.mjs` stub;硬指標 `npm pack --dry-run` 通過。**已知待辦**:`package/package.json` 的 version 目前是寫死複本,使用者裁決(2026-09-10)由 **B 階段的建置流程從根 `VERSION` 讀出並加一致性 gate**,不另開工單。 |
+| 6 | **合併** — `bmad-integration-and-npx` 與 `npx-init-a` 兩條分支都併進 `main` | 2026-09-12 | merge commits 4cbac58(規則層)、6441520(npx 三階段) |
+| 7 | **`pollux-dev-paradigm`** — npm 套件最終名稱 | 2026-09-12 | `package/package.json` 的 `name` 與 `bin` key 兩處已改;黑箱測試 4/4 綠 |
