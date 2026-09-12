@@ -4,6 +4,25 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.1 — 2026-09-12
+
+**patch:只加測試與文件,沒有行為變更。已採用 1.6.0 的專案不需要重 sync 才能用;
+但下次 sync 會帶進新的 `check-dry-run.test.ts`。**
+
+來源:專案 A 技術顧問 2026-09-12 第二輪回報。
+
+- **`check-dry-run.ts` 的反向驗證補一個關鍵案例 (a2):參數化定義蓋住字面定義。**
+  1.6.0 的反向驗證 (a) 用的是「跨檔**逐字相同**」的定義——那種 `check-step-dup.ts` 本來就接得住,
+  等於沒驗到這支新 gate 真正要補的那一塊。真正補的是:兩個定義的**字串不相同**、但都匹配同一句
+  (`'…the {word} fixture set'` 蓋住 `'…the rich fixture set'`),`check-step-dup.ts` 比的是正規化後的
+  字面形狀,`{word}` 與 `rich` 是不同形狀,它看不見;cucumber 看得見(印 ambiguous)但不用退出碼講。
+  【驗】協調者獨立做 fixture 實測:cucumber `--dry-run` 印 `1 scenario (1 ambiguous)` 但 **exit 0**;
+  `check-dry-run.ts` 對同一份 fixture **exit 1、`ambiguous=1`**——**1.6.0 的 gate 本身就擋得住,
+  缺的只是證明它擋得住的測試**。補上後該檔 16 → 17 測試;把 `ambiguous` 桶弄瞎,新測試會紅(連同 (a)(b) 共 3 條)。
+- **P-89 抽成通則**:不再寫成 `verify-against` 專屬。凡是對原始碼或文件做字面掃描的守門,
+  設計時要先把四個位置想過一遍會不會假命中:註解、log 與錯誤訊息字串、測試資料與 fixture、文件裡的舉例。
+  這跟 P-78 附帶的「連結掃描器不分引用與說明」是同一個坑的兩個實例。
+
 ## 1.6.0 — 2026-09-12
 
 **出版檢查(2026-09-12,協調者)**——模板自測三步全過:

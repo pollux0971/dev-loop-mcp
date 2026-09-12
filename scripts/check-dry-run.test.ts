@@ -90,6 +90,49 @@ function injectAmbiguous(root: string): void {
   );
 }
 
+/**
+ * 反向驗證 (a2):**參數化定義蓋住字面定義**——兩個定義的字串**不相同**,但都匹配同一句。
+ * 這是本 gate 存在的主要理由:`check-step-dup.ts` 比的是正規化後的字面形狀,
+ * `{word}` 與 `rich` 是不同形狀,它看不出這兩個定義會撞在一起;cucumber 看得出來
+ * (印 ambiguous)但不用退出碼講。只測 (a) 逐字相同的話,`check-step-dup.ts` 本來就
+ * 接得住,等於沒驗到這支新 gate 真正要補的那一塊。
+ * 來源:專案 A 技術顧問 2026-09-12 實測回報(參數化重疊時 accept:dry 與 check-step-dup 兩道全綠)。
+ */
+function injectParamOverlap(root: string): void {
+  writeRaw(
+    root,
+    'features/steps/alpha.steps.js',
+    [
+      "const { Given, Then } = require('@cucumber/cucumber');",
+      "Given('the store has {int} items', function () {});",
+      "Given('the store loads the rich fixture set', function () {});",
+      "Then('it exits with status {int}', function () {});",
+      '',
+    ].join('\n'),
+  );
+  writeRaw(
+    root,
+    'features/steps/beta.steps.js',
+    [
+      "const { Given, Then } = require('@cucumber/cucumber');",
+      "Given('the store loads the {word} fixture set', function () {});",
+      "Then('the output mentions {string}', function () {});",
+      '',
+    ].join('\n'),
+  );
+  writeRaw(
+    root,
+    'features/02-beta/phase-1.feature',
+    [
+      '@beta @phase-1',
+      'Feature: beta',
+      '  Scenario: two',
+      '    Given the store loads the rich fixture set',
+      '',
+    ].join('\n'),
+  );
+}
+
 /** 反向驗證 (c):feature 檔多一句沒有任何定義的步驟 → undefined。 */
 function injectUndefined(root: string): void {
   writeRaw(
@@ -165,6 +208,17 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
     expect(output).toContain('gate=dry-run result=FAIL scanned=2');
     expect(output).toContain('check:steps');
     expect(output).not.toContain('段 B'); // 沒帶 tag,段 B 略過
+  }, SPAWN_TIMEOUT_MS);
+
+  it('反向驗證 (a2):參數化定義蓋住字面定義(兩個字串不同)→ exit 1、摘要行 ambiguous', () => {
+    const root = makeCleanRoot();
+    injectParamOverlap(root);
+    const { code, output } = run(root);
+    expect(code).toBe(1);
+    expect(output).toContain('ambiguous=');
+    expect(output).toContain('alpha.steps.js');
+    expect(output).toContain('beta.steps.js');
+    expect(output).toContain('gate=dry-run result=FAIL');
   }, SPAWN_TIMEOUT_MS);
 
   it('反向驗證 (b):拿掉重複的定義 → 回綠', () => {
