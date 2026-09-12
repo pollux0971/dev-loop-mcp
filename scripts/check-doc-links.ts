@@ -61,6 +61,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import {
   DEFAULT_SKIP_DIRS,
+  resolveSkipDirs,
   ROOT as GIT_ROOT,
   loadGatesConfig as loadSharedGatesConfig,
   requireConfigType,
@@ -149,7 +150,9 @@ export function resolveSkipConfig(root: string): SkipConfig {
 
   let sharedExtra: string[] = [];
   if (config.skipDirs !== undefined) {
-    requireConfigType(config.skipDirs, 'skipDirs', 'array', GATE_NAME);
+    // 1.6.5(P-91 第三個實例):型別檢查與 glob 硬錯統一交給 `_root.ts` 的 `resolveSkipDirs()`,
+    // 這裡不再自己重寫一份——否則共用層新加的檢查對這支不生效(1.6.3 修 doc-rot 時同一個病)。
+    resolveSkipDirs(config as Record<string, unknown>, GATE_NAME);
     sharedExtra = stringArray(config.skipDirs);
   }
   const shared = splitSkipDirs(new Set(sharedExtra));

@@ -4,6 +4,25 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.5 — 2026-09-12
+
+**patch,兩個 bug 修復。** 升版動作:重 sync 一次。
+
+- **`sync-gates.sh --check` 的摘要行在有 HOTFIX 時不再說謊(P-93)。** 原本第 29 行印
+  `⚠ … 有本地 HOTFIX`、第 61 行卻印 `✓ 守門內容自同步以來未被更動`,兩行直接矛盾。
+  【驗】consumer 協調者用 `tail -8` 只看到 `✓`,據此下了「`check:gates` 沒有比對 `_root.ts`」
+  的錯誤結論,還從那個結論反推了一個不存在的機制。現在改印
+  `⚠ 守門內容有 N 處本地 HOTFIX(見上),其餘…`。
+  **通則(P-93):任何「總結上面」的輸出,都要把上面每一種非乾淨狀態納入自己的判斷**——
+  摘要行漏掉一種狀態,比沒有摘要行更糟,因為它讓人**停止往上看**。
+- **`check-doc-links.ts` 改為委派共用的 `resolveSkipDirs()`(P-91 第三個實例)。**
+  它跟 1.6.3 修掉的 `check-doc-rot.ts` 完全同型——自己重寫了 `skipDirs` 的型別檢查與合併,
+  於是 1.6.3 加的 **glob 硬錯對它不生效**。
+  【驗】協調者在 1.6.4 之後逐支盤點 13 支 `check-*.ts` 才發現;`check-dry-run.ts` 與
+  `check-phase-coverage.ts` 也直接用 `DEFAULT_SKIP_DIRS`,但那是**找 cucumber 設定檔目錄**用的
+  `CWD_SCAN_SKIP`,母體不同,**不是同一個病**(P-92 的「先問母體」)。
+  **兩次都是 grep 漏掉、撞上才發現——結構解是 #13 的名冊,不是更仔細的 grep。**
+
 ## 1.6.4 — 2026-09-12
 
 **patch,bug 修復。停在 1.6.1/1.6.2 的 consumer 建議直接升到這版。**

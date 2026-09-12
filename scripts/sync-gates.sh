@@ -154,7 +154,7 @@ DEST="$TARGET/$SUBDIR"
 PY_DEST="$DEST/py"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
 CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json doc-rot.blacklist.json known-defects.json)
-fail=0; n=0
+fail=0; n=0; hotfix_n=0
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -203,7 +203,7 @@ check_one() {
   fi
   if [ -n "$hotfix_date" ]; then
     age=$(( ( $(date +%s) - $(date -d "$hotfix_date" +%s) ) / 3600 ))
-    if [ "$age" -le 24 ]; then echo "⚠ $name 有本地 HOTFIX($hotfix_date,${age}h),24 小時內要回流模板"
+    if [ "$age" -le 24 ]; then echo "⚠ $name 有本地 HOTFIX($hotfix_date,${age}h),24 小時內要回流模板"; hotfix_n=$(( hotfix_n + 1 ))
     else echo "✗ $name 的 HOTFIX($hotfix_date)已超過 24 小時未回流模板"; fail=1; fi
   else
     echo "✗ $name 內容被改過(sha256 不符;急修請在第 2 行加 HOTFIX 註解:<日期> <理由>)"; fail=1
@@ -574,7 +574,13 @@ fi
 
 [ "$n" -gt 0 ] || { echo "掃到 0 支守門,這不是很乾淨,是腳本壞了"; exit 1; }
 if [ "$MODE" = "--check" ]; then
-  [ "$fail" = 0 ] && echo "✓ 守門內容自同步以來未被更動" || exit 1
+  # 1.6.5(P-93):有 HOTFIX 時不准印「未被更動」——那句會跟上面的 ⚠ 行直接矛盾,
+  # 而摘要行的功能就是「讓人不必讀全部」,所以它必須自己就是對的。
+  # 【驗】consumer 用 `tail -8` 只看到這行的 ✓,據此下了「check:gates 沒有比對 _root.ts」
+  # 的錯誤結論,還從那個結論反推了一個不存在的機制。
+  if [ "$fail" != 0 ]; then exit 1
+  elif [ "${hotfix_n:-0}" -gt 0 ]; then echo "⚠ 守門內容有 ${hotfix_n} 處本地 HOTFIX(見上),其餘自同步以來未被更動"
+  else echo "✓ 守門內容自同步以來未被更動"; fi
 else
   if is_lang_selected py; then py_note="含 $PY_DEST 底下的 Python 版工具;"; else py_note=""; fi
   echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"
