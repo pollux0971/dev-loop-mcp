@@ -4,6 +4,21 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.7 — 2026-09-12
+
+**patch。** 升版動作:重 sync 一次(只有文件與 `.gitignore` 變更,守門腳本沒動)。
+
+- **模板自己把 `.orca-brief/REVIEW.md` 追蹤了 386 行,已 `git rm --cached` 並加進 `.gitignore`。**
+  `PITFALLS.md` 的 P-17 與 P-78 兩處都明寫它是「gitignored,worktree 專屬」——
+  **模板違反自己訂的規則,第六次**(前五次:P-83、P-84、P-93、P-94、`gates.config.json` 不能寫註解)。
+  它是 npx 階段 C 合併時帶進來的。⚠️ **`.gitignore` 對已追蹤的檔無效**,所以這類錯誤不會自己消失。
+- **新增 P-95:出貨的落點必須是 consumer 會追蹤的路徑。** 【驗】上游把 `.orca-brief/` 當**文件**、
+  consumer 當**工作區**(整個目錄 gitignored)——**同一個目錄名,兩邊語意相反**。
+  所以「把樣板加進 `sync` 複製集合」這個修法會在**出貨端看起來成功**(檔案出現、測試通過)、
+  而**永遠不會進 consumer 的版控**。**落在 gitignored 的目錄等於沒出貨。**
+  相關的出貨缺口(`.orca-brief/TASK.md.template`、`.claude/skills/` 都不在 `sync` 集合裡)
+  在 `DECISIONS_NEEDED.md` #21,待裁決。
+
 ## 1.6.6 — 2026-09-12
 
 **patch。** 升版動作:重 sync 一次(`_root.ts` 有變更)。
