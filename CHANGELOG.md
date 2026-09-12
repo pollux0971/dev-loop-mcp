@@ -4,6 +4,24 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.2 — 2026-09-12
+
+**patch,但這是 bug 修復,任何跑 Stryker 的 consumer 都會中,建議直接升。**
+升版動作:重 sync 一次(`_root.ts` 與 `check-doc-links.ts` 都有變更)。
+
+- **`.stryker-tmp` 升進 `_root.ts` 的 `DEFAULT_SKIP_DIRS`(P-90)。**
+  變異測試沙盒是**整個 repo 的複本**,任何走訪檔案樹的掃描器踩進去都會把守門自己的
+  fixture 與舊 worktree 的整份模板當成真命中。【驗】專案 A 量到:同一個 commit、同一支守門,
+  沒沙盒時掃 717 檔 0 命中 PASS,有沙盒時掃 1870 檔 35 處命中 FAIL。
+  【驗】dev-paradigm 獨立重現:只丟兩個檔進假沙盒,`check-doc-rot` 的 `scanned` 從 791 跳到 792;
+  修完後有無沙盒都是 791。
+  根因是**共用清單存在,卻有一支繞過它自己列一份**——9 支掃描器用 `DEFAULT_SKIP_DIRS`,
+  只有 `check-doc-links.ts` 自帶清單排除 `.stryker-tmp`,另外 8 支全踩。
+- `check-doc-links.ts` 不再自帶 `.stryker-tmp`,改用共用清單(它專屬的只剩 `archive`)。
+- **第二層影響(比假紅重要):這個 bug 讓 `scanned=N` 不能用了。** N 會隨「那一刻磁碟上有沒有
+  別人的沙盒」跳動,於是分不出「掃描器壞了」與「剛好沒有沙盒」。修這個 bug 救回來的不只是假紅,
+  **是量尺本身**。通則與四種狀態的驗收寫法記在 P-90。
+
 ## 1.6.1 — 2026-09-12
 
 **patch:只加測試與文件,沒有行為變更。已採用 1.6.0 的專案不需要重 sync 才能用;

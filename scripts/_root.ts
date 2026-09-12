@@ -357,6 +357,9 @@ export const DEFAULT_SKIP_DIRS: readonly string[] = [
   '.turbo',
   '.cache',
   'target',
+  '.stryker-tmp',   // 變異測試沙盒是**整個 repo 的複本**;任何走訪檔案樹的掃描器踩進去都會
+                    // 把自己的 fixture 與舊 worktree 的整份模板當成真命中,而且 `scanned=N`
+                    // 會隨「那一刻磁碟上剛好有沒有沙盒」跳動,連量尺一起壞掉(1.6.2,P-90)
   '__pycache__',
   '.venv',
   'venv',
