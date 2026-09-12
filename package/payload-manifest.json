@@ -1,0 +1,199 @@
+{
+  "manifestVersion": 1,
+  "source": {
+    "canonicalRoot": "..",
+    "versionFile": "VERSION",
+    "versionPolicy": "【驗】package.version must equal VERSION"
+  },
+  "payload": [
+    {
+      "root": "README.md",
+      "include": ["README.md"],
+      "purpose": "【驗】consumer 的五步驟落地入口與範式說明。"
+    },
+    {
+      "root": "CLAUDE.md",
+      "include": ["CLAUDE.md"],
+      "purpose": "【驗】consumer 的規則層與決策權表骨架。"
+    },
+    {
+      "root": "CHECKLIST.md",
+      "include": ["CHECKLIST.md"],
+      "purpose": "【驗】步驟 1 的 placeholder 填寫清單。"
+    },
+    {
+      "root": "DECISIONS_NEEDED.md",
+      "include": ["DECISIONS_NEEDED.md"],
+      "purpose": "【驗】步驟 1 的待使用者裁示清單。"
+    },
+    {
+      "root": "PITFALLS.md",
+      "include": ["PITFALLS.md"],
+      "purpose": "【驗】落地前必讀的實戰陷阱與防線索引。"
+    },
+    {
+      "root": "CHANGELOG.md",
+      "include": ["CHANGELOG.md"],
+      "purpose": "【驗】版本變更與 consumer 升版依據。"
+    },
+    {
+      "root": "VERSION",
+      "include": ["VERSION"],
+      "purpose": "【驗】模板 canonical 版本來源，與 package.version 綁 1:1。"
+    },
+    {
+      "root": ".gitignore",
+      "include": [".gitignore"],
+      "purpose": "【驗】consumer 的版本控制忽略規則。"
+    },
+    {
+      "root": ".npmrc",
+      "include": [".npmrc"],
+      "purpose": "【驗】README 五步驟所需的 npm 安裝設定。"
+    },
+    {
+      "root": ".env.example",
+      "include": [".env.example"],
+      "purpose": "【驗】consumer 的環境變數 placeholder 素材。"
+    },
+    {
+      "root": ".claude/skills/",
+      "include": ["**/*"],
+      "purpose": "【驗】可供 consumer 使用的 Claude Code skill 集合；以 glob 隨現況增減。"
+    },
+    {
+      "root": "contracts/",
+      "include": ["**/*"],
+      "purpose": "【驗】步驟 2 的契約與 fixtures 骨架。"
+    },
+    {
+      "root": "features/README.md",
+      "include": ["features/README.md"],
+      "purpose": "【驗】feature 資料夾與 phase 規則說明。"
+    },
+    {
+      "root": "features/_template/",
+      "include": ["**/*"],
+      "purpose": "【驗】步驟 3 建立 FEATURE、NEXT 與 Gherkin phase 的骨架。"
+    },
+    {
+      "root": "features/steps/",
+      "include": ["**/*"],
+      "purpose": "【驗】feature 執行環境與通用步驟骨架。"
+    },
+    {
+      "root": "docs/00-design.md",
+      "include": ["docs/00-design.md"],
+      "purpose": "【驗】範式定位、原則與設計背景素材。"
+    },
+    {
+      "root": "docs/01-roadmap.md",
+      "include": ["docs/01-roadmap.md"],
+      "purpose": "【驗】Wave／integration 現況與規劃骨架。"
+    },
+    {
+      "root": "docs/02-decision-map.md",
+      "include": ["docs/02-decision-map.md"],
+      "purpose": "【驗】範式 ADR 與待決事項的權威索引。"
+    },
+    {
+      "root": "docs/03-agile-workflow.md",
+      "include": ["docs/03-agile-workflow.md"],
+      "purpose": "【驗】核心流程、最小模式與驗收清單。"
+    },
+    {
+      "root": "docs/04-glossary.md",
+      "include": ["docs/04-glossary.md"],
+      "purpose": "【驗】範式術語索引。"
+    },
+    {
+      "root": "docs/05-parallel-and-integration.md",
+      "include": ["docs/05-parallel-and-integration.md"],
+      "purpose": "【驗】README 與 roadmap 引用的平行／整合流程。"
+    },
+    {
+      "root": "docs/06-brownfield.md",
+      "include": ["docs/06-brownfield.md"],
+      "purpose": "【驗】README 引用的既有專案轉換參考；【驗】v1 init 仍只接受 greenfield。"
+    },
+    {
+      "root": "docs/07-practices.md",
+      "include": ["docs/07-practices.md"],
+      "purpose": "【驗】README 引用的可重用實戰做法。"
+    },
+    {
+      "root": "docs/integration/",
+      "include": ["**/*"],
+      "purpose": "【驗】integration 驗收規格與 feature template 骨架。"
+    },
+    {
+      "root": "docs/sprints/",
+      "include": ["README.md"],
+      "purpose": "【驗】sprint 文件骨架。"
+    },
+    {
+      "root": "scripts/",
+      "include": [
+        "README.md",
+        "_root.ts",
+        "check-*.ts",
+        "*.sh",
+        "*.json",
+        "py/README.md",
+        "py/*.py",
+        "hooks/pre-commit"
+      ],
+      "purpose": "【驗】守門程式、設定、sync／verify 腳本與 Python 反向驗證工具；以 glob 隨集合增減。"
+    },
+    {
+      "root": "package.json",
+      "include": ["package.json"],
+      "purpose": "【驗】consumer package.json 的 scripts、dependencies 與 workspace 素材；不是發布 manifest。"
+    },
+    {
+      "root": "cucumber.js",
+      "include": ["cucumber.js"],
+      "purpose": "【驗】步驟 4 的 cucumber paths 設定素材。"
+    },
+    {
+      "root": "standalone.json",
+      "include": ["standalone.json"],
+      "purpose": "【驗】consumer 的 standalone 執行入口清單骨架。"
+    },
+    {
+      "root": "stryker.config.json",
+      "include": ["stryker.config.json"],
+      "purpose": "【驗】變異測試工具設定素材。"
+    },
+    {
+      "root": "tsconfig.json",
+      "include": ["tsconfig.json"],
+      "purpose": "【驗】TypeScript 編譯設定素材。"
+    },
+    {
+      "root": "vitest.config.ts",
+      "include": ["vitest.config.ts"],
+      "purpose": "【驗】核心 vitest 設定素材。"
+    },
+    {
+      "root": "vitest.scripts.config.ts",
+      "include": ["vitest.scripts.config.ts"],
+      "purpose": "【驗】守門腳本 vitest 設定素材。"
+    }
+  ],
+  "exclude": [
+    ".orca-brief/",
+    "BMAD-METHOD-main*",
+    "node_modules/",
+    "**/*.log",
+    ".git/",
+    ".stryker-tmp/",
+    "reports/",
+    "package/dist/"
+  ],
+  "releaseChecks": [
+    "【推】將 payload 展開到 package/dist/template/ 前，逐項確認路徑存在。",
+    "【推】artifact 的檔案 multiset 必須與 payload 展開結果一致，且不得命中 exclude。",
+    "【推】A 階段只建立發布殼與計畫；init、rollback、衝突 fixture 與 tarball black-box gate 留給 B/C。"
+  ]
+}
