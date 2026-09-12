@@ -4,6 +4,24 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.9 — 2026-09-12
+
+**patch,bug 修復。跑過變異測試、或 repo 裡有任何凍結 worktree 的 consumer 都可能中。**
+升版動作:重 sync 一次。
+
+- **`sync-gates.sh` 的語言自動偵測不再踩進產物目錄(P-96)。** 【驗】consumer 實測:Python 偵測命中
+  `.stryker-tmp/sandbox-XXXX/.claude/worktrees/agent-…/template/scripts/py/mutate.py`
+  ——**變異沙箱 ▸ 臨時副本 ▸ 凍結 worktree ▸ repo 拆分前的舊模板副本,四層深**;
+  而該 repo 版控裡**零個 Python 檔**。於是它裝了兩個沒人需要的 Python 檔。
+  根因:偵測那一段**自己列了一份排除清單**(只有 `node_modules` 與 `.git`),沒用共用的
+  `DEFAULT_SKIP_DIRS`——**P-91 的第四個實例,而這次的重複在 shell 裡不在守門裡**。
+  【驗】修前印「找到 …mutate.py」,修後印「選集 ts(自動偵測:無 Python)」。
+- **通則(P-96):自動偵測的母體跟掃描的母體是同一個問題,而偵測更危險**——
+  掃描錯了會多報幾個假紅,**偵測錯了會改變裝什麼進去,而且裝完看起來一切正常**。
+- P-96 與 P-95 是鏡像:P-95 **該送的沒送到**(落在 gitignored 的目錄);
+  P-96 **不該送的送到了**(依據是 gitignored 目錄裡的東西)。
+  **兩個都是「掃描的母體包含了不該包含的層」,只是方向相反。**
+
 ## 1.6.8 — 2026-09-12
 
 **patch,只有文件。** 升版動作:重 sync 一次(守門腳本沒動)。

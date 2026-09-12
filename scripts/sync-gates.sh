@@ -239,7 +239,22 @@ detect_python_signal() {
   if [ -f "$root/pyproject.toml" ]; then PY_SIGNAL_REASON="找到 pyproject.toml"; return 0; fi
   if [ -f "$root/setup.cfg" ]; then PY_SIGNAL_REASON="找到 setup.cfg"; return 0; fi
   if ls "$root"/requirements*.txt >/dev/null 2>&1; then PY_SIGNAL_REASON="找到 requirements*.txt"; return 0; fi
-  found="$(find "$root" -name '*.py' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path "$dest/*" 2>/dev/null | head -1)"
+  # 1.6.9(P-91 第四個實例):偵測的母體必須排除**產物目錄**,否則會依據一份三、四層深的
+  # 舊副本做決定。【驗】consumer 實測:偵測命中
+  #   .stryker-tmp/sandbox-XXXX/.claude/worktrees/agent-…/template/scripts/py/mutate.py
+  # —— 變異沙箱 ▸ 臨時副本 ▸ 7 天前凍結的 worktree ▸ repo 拆分前的舊模板副本,四層;
+  # 而該 repo 的 `git ls-files '*.py'` 是空的。於是它裝了兩個沒人需要的 Python 檔。
+  # 這一段原本自己列一份排除清單(只有 node_modules 與 .git),沒有用共用的那份——
+  # 跟 1.6.3 的 check-doc-rot、1.6.5 的 check-doc-links 同一個病,只是這次重複在 shell 裡。
+  # 危害形狀跟 P-95 的「出貨落點」是鏡像:那個是**該送的沒送到**(落在 gitignored 的目錄),
+  # 這個是**不該送的送到了**(依據是 gitignored 目錄裡的東西)。兩個都是
+  # 「掃描的母體包含了不該包含的層」,只是方向相反。
+  local prune_args=() d
+  for d in node_modules .git .stryker-tmp dist build out coverage .turbo .cache target \
+           __pycache__ .venv venv reports .next .nuxt .svelte-kit .claude/worktrees archive; do
+    prune_args+=(-not -path "*/$d/*")
+  done
+  found="$(find "$root" -name '*.py' "${prune_args[@]}" -not -path "$dest/*" 2>/dev/null | head -1)"
   if [ -n "$found" ]; then PY_SIGNAL_REASON="找到 $found"; return 0; fi
   return 1
 }
