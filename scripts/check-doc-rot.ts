@@ -96,6 +96,7 @@ import {
   requireConfigType,
   requireKnownTopLevelKeys,
   requireRootDir,
+  resolveSkipDirs,
   splitSkipDirs,
 } from './_root.js';
 
@@ -230,10 +231,11 @@ function loadBlacklist(): { entries: BlacklistEntry[]; path: string } {
  *  **整個 ROOT**(不像 boundaries/gherkin-dup 只掃固定的少數子樹),不做前綴比對的話
  *  會遞迴進 `.claude/worktrees/<其他 worktree>` 把整個 repo 重新掃一次。 */
 function resolveSkipDirsForDocRot(gatesConfig: Record<string, unknown> | undefined): { segments: Set<string>; prefixes: string[] } {
-  const extra = gatesConfig?.skipDirs;
-  if (extra !== undefined) requireConfigType(extra, 'skipDirs', 'array', GATE_NAME);
-  const extraStrings = Array.isArray(extra) ? extra.filter((s): s is string => typeof s === 'string') : [];
-  return splitSkipDirs(new Set([...DEFAULT_SKIP_DIRS, ...extraStrings]));
+  // 1.6.3 起改為委派給 `_root.ts` 的 `resolveSkipDirs()`,不再自己複製一份合併邏輯。
+  // 原因:這裡原本重寫了「型別檢查 + 合併 DEFAULT_SKIP_DIRS」,於是 1.6.3 加在共用函式裡的
+  // **glob 硬錯**對這支不生效——同一個 `skipDirs` 設定,在別支會大聲失敗、在這支靜默無效。
+  // 這正是 P-90 的形狀(共用清單存在卻有人繞過它自己列一份),只是這次繞過的是**函式**不是清單。
+  return splitSkipDirs(resolveSkipDirs(gatesConfig, GATE_NAME));
 }
 
 function toPosix(p: string): string {
