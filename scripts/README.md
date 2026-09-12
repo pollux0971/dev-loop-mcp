@@ -1,7 +1,8 @@
 # scripts/ — 守門腳本
 
 `check-boundaries.ts`、`check-standalone.ts`、`check-doc-links.ts`、`check-phase-coverage.ts`、
-`check-step-dup.ts`、`check-gherkin-dup.ts` 是掃描器,`_root.ts` 是它們共用的 repo 根解析,
+`check-step-dup.ts`、`check-gherkin-dup.ts`、`check-dry-run.ts`、`check-module-cast.ts`(後兩支 1.6.0,
+P-86 / P-88)是掃描器,`_root.ts` 是它們共用的 repo 根解析,
 `sync-gates.sh` 把這些程式複製進目標 repo。`verify-against.sh <consumer repo 根>
 [--consumer-dir <子目錄>]` 是出版前的機械檢查:把模板版每支 `check-*.ts` 跟那個 consumer
 已裝的同名檔各跑一次,比退出碼、輸出、旗標清單三件事——出版規則見 `template/README.md`
@@ -17,7 +18,8 @@
 
 每支掃描器結尾都會印一行機器可讀標記 `gate=<name> result=PASS|FAIL scanned=<N>`(CHANGELOG
 1.3.2 (C)),`<name>` 是 `boundaries` / `doc-links` / `gherkin-dup` / `phase-coverage` /
-`standalone` / `step-dup` 之一,`<N>` 是這次掃到的目標數。`verify-against.sh` 靠這行標記
+`standalone` / `step-dup` / `dry-run` / `module-cast`(以及 `all` / `doc-rot` / `known-defects` /
+`next-gates` / `phase-status`)之一,`<N>` 是這次掃到的目標數。`verify-against.sh` 靠這行標記
 (加上退出碼必須是 0 或 1)判斷一次執行「算不算數」——見該腳本檔頭「執行有效性」段,這是
 CHANGELOG 1.3.2 (C) 修的迴歸:退出碼 127(command not found)以前會被誤判成「✓ 通過」。
 
@@ -179,6 +181,19 @@ exit 1;選填設定(`boundaries.allow.json`、`gates.config.json`)三處都找�
     自動偵測掃到的又不是你要的那個目錄時,直接寫死 `"cucumberCwd": "features"`
     比每次都靠自動偵測穩定。也可以用 `--cwd <dir>` 旗標一次性覆蓋(優先權比這份
     設定檔高)。
+  - `moduleCast.scanDirs`(選填,1.6.0,P-88):`check-module-cast.ts` 要掃的目錄(相對 ROOT
+    的陣列),沒填就是 `["features/steps"]`。steps 目錄不在預設位置的專案(例如 `tests/steps/`)
+    填這個;填了空陣列算設定錯(exit 1),不是「不掃」。掃到 0 個 `.ts` 檔一樣 exit 1(掃描器壞了)。
+  - `cucumberCwd` 也給 `check-dry-run.ts` 用(1.6.0,P-86):`npm run accept:dry` 現在是
+    `tsx scripts/check-dry-run.ts --tags 'not @manual'`,它自己跑 `cucumber-js --dry-run --format summary`
+    再讀摘要行——`N scenarios (...)` / `N steps (...)` 裡 undefined / ambiguous / failed 任一桶 ≥ 1 就
+    exit 1,0 個場景也 exit 1;cucumber 對這些狀態的退出碼是 0(`--strict` 也是),所以**不信它的
+    exit 0,只信它的 exit 非 0**。`--` 之後的參數原樣附給 cucumber-js。
+  - `dryRun.tags`(選填,1.6.0):`check-dry-run.ts` 段 A(驗收集合)用的 tag 運算式,要跟驗收 job
+    的一致(例如 `"not @manual and not @todo"`);`--tags` 旗標優先。**兩段**:段 A 用這條 tag 跑,
+    undefined / ambiguous 都紅;段 B 不帶 tag 再跑一次全集,只看 ambiguous——撞名跟 tag 無關,
+    被 tag 排除的 todo 場景一旦排進來就炸;而 todo 場景裡刻意還沒定義的步驟(規格上的「還沒做」)
+    在段 B 不算。沒帶任何 tag 時段 B 略過(跟段 A 是同一次執行)。
   - `sync.languages`(選填,CHANGELOG 1.3.4 (1)):`sync-gates.sh` 這次要同步哪些語言的
     掃描器,例如:
 

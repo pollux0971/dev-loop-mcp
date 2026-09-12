@@ -272,6 +272,8 @@ export function requireConfigType(value: unknown, key: string, kind: ConfigValue
  *   docRot                      — check-doc-rot.ts(S7)
  *   knownDefects                — check-known-defects.ts(S8)
  *   phaseStatus                 — check-phase-status.ts(S15)
+ *   moduleCast                  — check-module-cast.ts(1.6.0,P-88)
+ *   dryRun                      — check-dry-run.ts(1.6.0,P-86):tags
  */
 export const KNOWN_GATES_CONFIG_KEYS = [
   'cucumberCwd',
@@ -286,6 +288,8 @@ export const KNOWN_GATES_CONFIG_KEYS = [
   'docRot',
   'knownDefects',
   'phaseStatus',
+  'moduleCast',
+  'dryRun',
 ] as const;
 
 /** `obj` 的頂層鍵裡,有沒有不在 `knownKeys` 的——通常是打錯字(`"chian"` 之類)。

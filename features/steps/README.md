@@ -8,7 +8,9 @@ Cucumber 的步驟定義。**先讀 `_world.ts` 再寫新的**——它定義了
 整合用的放 `integration.steps.ts`。
 
 同一句步驟在不同 feature 出現時**共用同一個定義**。cucumber 會對重複定義報錯,
-這是好事——它逼你統一措辭。
+這是好事——它逼你統一措辭。但注意 `cucumber --dry-run` 對 ambiguous / undefined 的**退出碼是 0**
+(P-86),所以合併門檻用的是 `npm run accept:dry`(1.6.0 起會讀摘要行判紅)與 `npm run check:steps`,
+不是裸的 dry-run。
 
 ## 寫步驟的原則
 
@@ -17,6 +19,13 @@ Cucumber 的步驟定義。**先讀 `_world.ts` 再寫新的**——它定義了
 - **參數用 cucumber expression**:`the person types {string}`,不要用正規表示式除非必要
 - **不要在步驟裡寫商業邏輯**。步驟只是薄薄一層轉接,邏輯在核心套件裡
 - **一個步驟可以呼叫另一個嗎?** 可以但少用。三層以上就該重構
+- **呼叫實作用具名 import**(`import { computeDue } from '…'`),**不要**
+  `import * as core … ; const api = core as unknown as { … }`——那會讓 typecheck 跟 grep 對
+  「實作把那個函式刪了」同時瞎掉,只有真跑到那個場景才炸(`PITFALLS.md` P-88;
+  `npm run check:module-cast` 會擋)。型別對不上就修契約或加 adapter,不要用轉型蓋過去
+- **不要照抄別的 steps 檔的句子當自己的定義**,即使你的 feature 還沒用到那句:
+  `npm run check:steps` 對**定義清單本身**找重複,feature 沒用到的重複一樣紅(P-87)。
+  你需要那句就直接用(它已經有定義了),不需要再定義一次
 
 ## 通用步驟:`common.steps.ts`(只有協調者改)
 

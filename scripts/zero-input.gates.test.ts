@@ -184,6 +184,13 @@ const GATE_SPECS: GateSpec[] = [
     probeC: { relPath: 'scripts/gates.config.json', includes: ['設定檔壞掉', 'gates.config.json'] },
   },
   {
+    file: 'check-dry-run.ts',
+    gate: 'dry-run',
+    // 空目錄:gates.config.json 找不到(選填,靜默)→ 自動偵測找不到 cucumber 設定 → 名出找過的根目錄。
+    probeB: { includes: ['找不到 cucumber 設定', 'gate=dry-run result=FAIL scanned=0'] },
+    probeC: { relPath: 'scripts/gates.config.json', includes: ['設定檔壞掉', 'gates.config.json'] },
+  },
+  {
     file: 'check-doc-rot.ts',
     gate: 'doc-rot',
     probeB: { includes: ['設定檔未找到', 'doc-rot.blacklist.json'] },
@@ -198,6 +205,12 @@ const GATE_SPECS: GateSpec[] = [
     gate: 'known-defects',
     probeB: { includes: ['設定檔未找到', 'known-defects.json'] },
     probeC: { relPath: 'scripts/known-defects.json', includes: ['設定檔壞掉', 'known-defects.json'] },
+  },
+  {
+    file: 'check-module-cast.ts',
+    gate: 'module-cast',
+    probeB: { includes: ['掃到 0 個 .ts 檔', 'gate=module-cast result=FAIL scanned=0'] },
+    probeC: { relPath: 'scripts/gates.config.json', includes: ['設定檔壞掉', 'gates.config.json'] },
   },
   {
     file: 'check-next-gates.ts',

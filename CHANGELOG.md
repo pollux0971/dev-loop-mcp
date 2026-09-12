@@ -4,6 +4,99 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.0 — 2026-09-12
+
+**出版檢查(2026-09-12,協調者)**——模板自測三步全過:
+`sync-gates.test.sh` 全部通過(exit 0)、`npm run test:scripts` 13 檔 210 測試全綠(exit 0)、
+`verify-against.sh /data/python/llm_learning-cards` exit 1 共三項差異,**逐項判定如下,無迴歸**:
+
+1. `check-phase-coverage.ts` 旗標:模板有 `--strict`、consumer 無 → **刻意改進**,consumer 升版跟進。
+2. `check-step-dup.ts` 輸出文字不同 → **刻意改進**,本版把判定從「每種形狀恰好 1 個」改成
+   「0 或 1 個」,成功訊息跟著改寫。
+3. `check-step-dup.ts` 旗標一增一減,其中「consumer 有、模板無 `--strict`」被腳本標成
+   **「綠著掉功能的訊號」** → **假警報,見新增的 P-89**。【驗】逐行查證:兩邊那個字都在
+   註解與 log 字串裡(consumer L28 註解、模板 L341 `console.log`),該支真正解析的旗標只有
+   `--list`(L74)。本版改寫註解導致字面消失,工具誤判。**沒有功能被拿掉。**
+
+另註:`verify-against.sh` 對 `/data/python/AI_KM` 跑會六支全報「consumer 版未執行」,
+原因是該 repo 沒有安裝 `tsx`(`sh: 1: tsx: not found`),不是迴歸;換有裝 `tsx` 的 consumer 才量得到。
+
+**本版新增的坑與做法**:P-89(verify-against 旗標假陽性)、P-78 補充(改名偵測讓兩條獨立分支的
+交接互相衝突;搬檔案時註記要寫成不可解析的形式)、`docs/07-practices.md` (am)(an)(ao)
+(逾時理由要附機器負載、寬鬆要寫退出條件、測試環境變數由探針注入不靠 `export`)。
+後三項來源:專案 A 技術顧問 2026-09-12 回流。
+
+來源:AI_KM 顧問(2026-09-08,AI_KM origin/main f6e184c 量出來的三條回流)。
+**minor:新增兩支守門腳本(`check-dry-run.ts`、`check-module-cast.ts`)、`gates.config.json` 新頂層鍵
+`moduleCast`、`package.json` 的 `accept:dry` 改成呼叫 `check-dry-run.ts`(名字不變)、
+`check-step-dup.ts` 與 `check-phase-coverage.ts` 段一的判定規則改變。升版動作 = 重 sync 一次 +
+把 `check:module-cast` 掛進 `package.json` 與 `chain`;`accept:dry` 不用改名。**
+
+- **P-86(dry-run exit 0)**【驗】:模板自己的 @cucumber/cucumber 11.3.0 對一份兩個定義撞名的 fixture跑
+  `--dry-run --format summary` → 印 `2 scenarios (2 ambiguous)`、exit 0;加 `--strict` 仍 0;多一句沒定義的步驟
+  → `(1 undefined)`、exit 0、`--strict` 仍 0;同一份 fixture 真跑 exit 1。AI_KM 回報的是 ambiguous,undefined
+  是這次一起量到的,**比回報的更廣**——1.5.x 的 `accept:dry` 對兩種都瞎。
+  - 新增 `check-dry-run.ts`(gate `dry-run`):自己跑 dry-run、讀 `N scenarios (...)` / `N steps (...)` 摘要行,
+    undefined / ambiguous / failed 任一桶 ≥ 1 → exit 1;0 個場景 → exit 1(掃描器壞了,P-32 同規則);找不到摘要行、
+    cucumber 起不來、cucumber 自己退出碼非 0 → exit 1。只信「退出碼非 0」這個方向。`--tags`、`--cwd`、`--root`、
+    `--` 透傳;cwd 三層決定跟 `check-phase-coverage.ts` 同一套。
+  - `package.json` 的 `accept:dry` 改成 `tsx scripts/check-dry-run.ts --tags 'not @manual'`——**名字不變**,所以
+    autopilot SKILL 的 `chain` 範例、CHECKLIST 的 `{{FULL_CHECK_COMMANDS}}` 範例、PITFALLS P-02 的合併門檻都不用改
+    指令,只是它們現在真的會擋。
+  - `check-phase-coverage.ts` 段一同型修法:以前只數場景數,檔頭卻寫「每個 step 都能對上一個定義」(那句話從來沒被程式
+    檢查過);現在讀摘要行,undefined / ambiguous ≥ 1 該 phase 就紅,cucumber 的 `Failures:` 原文縮排印出。反向驗證做過:
+    fixture 多一句沒定義的步驟 → 段一紅 `undefined=1`;刪掉 → 綠。
+  - **兩段**(AI_KM 第二輪回饋):consumer 依規格刻意讓 todo 整合點 / `@model` 場景的步驟 undefined,驗收 job 用 tag
+    排除它們。段 A 用驗收 job 的 tag(`--tags` > `gates.config.json` 新鍵 `dryRun.tags` > 交給 cucumber 設定檔)跑,
+    undefined / ambiguous 都紅;段 B 不帶 tag 跑全集,只看 ambiguous(撞名跟 tag 無關)。`dryRun` 加進
+    `KNOWN_GATES_CONFIG_KEYS`。
+  - `check-dry-run.test.ts` 16 條,對 fixture 跑**真的 cucumber**(`node_modules` 符號連結到模板自己的);第二條是
+    「cucumber 本人對這份 fixture exit 0」的前提斷言——哪天 cucumber 自己會擋了,那條先紅,這支守門才能退休。
+- **P-87(跨檔逐字相同、feature 沒用到的定義)**【驗】:對模板 1.5.0 的 `check-step-dup.ts` 造 fixture:
+  `the store has {int} items` 兩檔各一份且 feature 有用 → **有抓到**。AI_KM 協調者事後送來撞名原文(純字面、無參數,
+  兩個 phase 的 feature 都用到),對 **v1.2.2**(AI_KM 裝的版本,他們的 SOURCE 標頭)與 1.5.0 造同型 fixture → **兩版都抓得到**
+  【驗】;所以 AI_KM 那次為什麼漏,不是版本、不是語法,見下面「AI_KM 個案」;
+  `the log line(s) contain(s) {string}` 兩檔各一份、feature 沒用 → **漏**;`an unused sentence` 兩檔各一份、feature 沒用
+  → **漏**。兩個漏的都是同一個原因:1.5.x 對 feature 這邊的集合迭代,定義那邊只是查表。
+  - **AI_KM 個案**(唯讀查 `/data/python/AI_KM` main f6e184c):他們裝的 `features/scripts/check-step-dup.ts` 是 v1.2.2,
+    對協調者送來的撞名原文造 fixture **抓得到**【驗】;守門**有接線**——`features/package.json` 的 `steps:dup` 與 `test`
+    (串四支守門,turbo 每次跑,6069681 起)【驗】;撞名的 phase-4 定義**從沒進過 git**(`git log --all -S` 只有 phase-3 那筆)
+    【驗】。結論(AI_KM 顧問給的,與上面三件事一致):測試 agent 在 commit 前自己跑 dry-run 抓到並改掉,守門根本沒機會跑——
+    **不是漏**。回報裡「check-step-dup 抓不到」是推論,不是量到的。
+    **本模板顧問(這個 session)的錯,具名照登**:第一輪回 AI_KM 時說「root 與 features/package.json 都沒有任何 script 呼叫
+    check-step-dup」——grep 的 pattern 是 `"accept\|"check\|cucumber`,對不到 `"steps:dup"` 與 `"test"` 那兩行,把「我的 grep
+    沒看到」講成「沒有」,而且標了【驗】。AI_KM 顧問對 origin/main 重量後退回。教訓同 07-practices (af)/(l):否定式宣稱
+    (「沒有 X」)要用會列出全部候選的查法(直接讀整份 scripts 區塊),不能用只列命中的 grep。
+    1.6.0 的 `check-step-dup.ts` 對他們 HEAD 跑:27 個 feature、376 個定義、0 重複,PASS。
+  - 改成對**定義清單本身**找重複:任一形狀 ≥2 個定義就紅,不管 feature 有沒有用到;每個定義印檔案 + 原始寫法
+    (regex 印 `/…/`);沒用到的明說「目前沒有任何 .feature 用到」。解析到 0 個定義(有 feature、steps 目錄卻不在
+    `features/steps`)也算掃描器壞了 → exit 1——**以前是靜默綠,這是刻意的行為改變**。`--list` 不變。
+  - 新增 `check-step-dup.test.ts` 9 條(fixture `git init`,因為這支沒有 `--root`);反向驗證 (a)–(d) 全做成自動測試。
+- **P-88(模組命名空間轉型)**:新增 `check-module-cast.ts`(gate `module-cast`),只擋 `import * as X` / `import X = require`
+  的 `X as unknown as …` 與 `import(…)`/`require(…)` 結果的直接轉型;對值的 `as unknown as` 放行(AI_KM 實測全掃 23 抓 2)。
+  `gates.config.json` 新頂層鍵 `moduleCast.scanDirs`(預設 `["features/steps"]`,已加進 `KNOWN_GATES_CONFIG_KEYS`);
+  `npm run check:module-cast`。測試 11 條。對模板自己的 `features/steps/` 跑:2 個檔案 0 命中;對 AI_KM main f6e184c 跑
+  (`--root`,唯讀):20 個檔案、**2 命中**(`app-shell-phase-2.steps.ts:49` `citationsModule`、`:129` `answerStateModule`),
+  正是 AI_KM 協調者量到的那 2 處真缺陷,0 誤報【驗】。
+- `zero-input.gates.test.ts` 的 `GATE_SPECS` 加 `check-dry-run.ts`、`check-module-cast.ts`(P-84 三探針都過)。
+- PITFALLS 新增 P-86 / P-87 / P-88,P-02 的對策補 1.6.0 的行為;`docs/07-practices.md` 新增 (ak)「守門提案接進 CI 前先故意
+  改壞輸入讓它紅一次」、(al)「steps 不准模組命名空間轉型」;`scripts/README.md`、`features/steps/README.md` 對應補段。
+- 出版前 `verify-against.sh` 對 AI_KM(main f6e184c,唯讀;AI_KM 是 pnpm monorepo,root 沒有 tsx,要
+  `PATH=<模板>/node_modules/.bin:$PATH` 才跑得動,不然六支全 127):**模板版六支全部執行有效**(退出碼 0/1、有 gate= 標記);
+  `verify-against.sh` 1.6.0 起自己把模板的 `node_modules/.bin` 附加在 PATH 尾端當退路);
+  **consumer 版六支全部「退出碼 0 但沒有 gate= 標記」**——他們裝的是 v1.2.2,標記是 1.3.2 才加的,verify-against 的
+  「執行有效性」規則把它們判成未執行,**沒有東西可比**。所以 README 的出版規則(對 ≥1 個 consumer 跑過 verify-against)
+  在嚴格意義上還沒滿足:AI_KM 的升版路徑是 1.2.2 → 1.3.4(`--check` 自比對)→ 最新,他們上 1.3.4 之後再比一次,
+  那時 AI_KM 就能當 consumer。1.6.0 因此仍是草稿;出版時通知 AI_KM。
+  另外對 AI_KM 直接跑了 1.6.0 的三支新/改的 gate(不經 verify-against):`check-step-dup.ts` PASS(376 定義 0 重複)、
+  `check-module-cast.ts` FAIL 2 命中(正是他們的 2 處真缺陷)、`check-dry-run.ts --tags 'not @manual and not @e2e and not @i2 and not @model'`
+  PASS(段 A 153 場景 0 undefined 0 ambiguous;段 B 194 場景 0 ambiguous,2 undefined 在驗收集合外不算)。
+- `npm run test:scripts` 210 條全綠(1.5.0 是 167;新增 dry-run 16、step-dup 10、module-cast 11,零輸入探針各 +3×2)。
+- 沒動 `CLAUDE.md`、`.claude/skills/`、`.claude/commands/`(規則層,使用者批准才動;這次不需要——`accept:dry` 名字沒變)。
+- 模板自己的 `npm run typecheck` 在 1.5.0 就是紅的(`tsconfig.json` 的 `types` 只有 `vitest/globals`,沒有 `node`,323 個
+  錯全是 `process` / `node:*` 找不到型別);用 `npx tsc --noEmit --types vitest/globals,node` 跑是 0 錯,1.6.0 的檔案沒有新增
+  型別錯。這條沒修,只記在這裡——改 tsconfig 是另一件事。
+
 ## 未出版
 
 - 2026-09-06 搬家:從 `llm_learning-cards/template/` 以 `git subtree split` 搬到獨立 repo `/data/python/dev-paradigm`,

@@ -23,7 +23,8 @@
 #
 # 對每支 check-*.ts(check-boundaries / check-doc-links / check-gherkin-dup /
 # check-phase-coverage / check-standalone / check-step-dup),consumer 安裝目錄下有
-# 同名檔才比;沒有就跳過那一支的比對。cwd 一律是 consumer 根,用 `npx tsx <路徑>` 執行:
+# 同名檔才比;沒有就跳過那一支的比對。cwd 一律是 consumer 根,用 `npx tsx <路徑>` 執行
+# (consumer 根找不到 tsx 時退回模板自己的 `node_modules/.bin`,見 run_capture):
 #   - check-boundaries.ts  加 `--root <consumer 根>`
 #   - check-standalone.ts  加 `--list`(不真的執行 manifest 裡的指令)
 #   - check-phase-coverage.ts  加 `--list`(不真的跑 cucumber,以免太慢)
@@ -169,9 +170,14 @@ extract_flags() {
 
 # $1 = 腳本路徑,其餘為旗標 → 在 CONSUMER 目錄下跑,輸出(stdout+stderr)寫到 $2 指定的檔案,
 # 印退出碼到 stdout(呼叫端用 $(...) 接)。
+# 1.6.0(來源 AI_KM 2026-09-08):consumer 是 pnpm monorepo、root 沒有 tsx 執行檔時,`npx tsx` 在
+# consumer 根會 `sh: tsx: not found`(退出碼 127),六支全部「未執行」。把模板自己的
+# `node_modules/.bin` **附加**在 PATH 尾端當退路——consumer 自己的 tsx(local node_modules 或
+# PATH 前段)仍然優先,只有找不到時才用模板的;不放前段,不然 consumer 版會被模板的 tsx 跑,
+# 不是 consumer 自己的環境。
 run_capture() {
   local script="$1" outfile="$2"; shift 2
-  ( cd "$CONSUMER" && npx tsx "$script" "$@" ) >"$outfile" 2>&1
+  ( cd "$CONSUMER" && PATH="$PATH:$TEMPLATE_DIR/node_modules/.bin" npx tsx "$script" "$@" ) >"$outfile" 2>&1
   echo $?
 }
 
