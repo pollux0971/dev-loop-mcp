@@ -428,11 +428,24 @@ function main(): void {
       console.log(`  ✗ ${p.relFile}  0 個場景(tag "${tagExpr}")`);
       continue;
     }
-    if (result.bad.length) {
+    // 1.6.4(P-92):段一也要問 phase 狀態,跟段二用同一個 `readPhaseStatus()`。
+    // `todo`/`ready`/`blocked` 的 phase **本來就該還沒實作**——「先寫 gherkin 再寫程式」是本範式
+    // 的核心動作,所以未來 phase 有 undefined 是**正常狀態**,不是壞掉。只有 `ambiguous`
+    // (兩個定義撞在一起)跟 phase 狀態無關,任何狀態都該紅。
+    // 1.6.0 把 P-86 的修法套進段一時漏了這個判斷:同一個檔、同一個函式、同一個語意需求,
+    // 段二排除了 todo,段一沒有。
+    const phaseStatus = readPhaseStatus(p.folder, p.phase);
+    const implemented = phaseStatus === 'done' || phaseStatus === 'in-progress';
+    const relevantBad = implemented ? result.bad : result.bad.filter((b) => !b.startsWith('undefined'));
+    if (!implemented && relevantBad.length === 0 && result.bad.length > 0) {
+      console.log(`  ✓ ${p.relFile}  ${result.scenarios} 個場景(狀態=${phaseStatus ?? '解析不到,當 todo'},${result.bad.join(', ')} 不算——尚未實作的 phase 有 undefined 是正常的)`);
+      continue;
+    }
+    if (relevantBad.length) {
       // 摘要行不乾淨:cucumber 自己的 Failures: 清單(哪句沒定義、哪兩個定義撞了)在 output 裡,
       // 印出來給終端機前的人看,不轉述。
-      failures.push(`${p.relFile}  dry-run 摘要行 ${result.bad.join(', ')}(cucumber 退出碼對此仍是 0,P-86)`);
-      console.log(`  ✗ ${p.relFile}  ${result.scenarios} 個場景,但 ${result.bad.join(', ')}`);
+      failures.push(`${p.relFile}  dry-run 摘要行 ${relevantBad.join(', ')}(cucumber 退出碼對此仍是 0,P-86)`);
+      console.log(`  ✗ ${p.relFile}  ${result.scenarios} 個場景,但 ${relevantBad.join(', ')}`);
       const detail = result.output.trim();
       if (detail) console.log(detail.split('\n').map((l) => `      ${l}`).join('\n'));
       continue;

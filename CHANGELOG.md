@@ -4,6 +4,23 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.6.4 — 2026-09-12
+
+**patch,bug 修復。停在 1.6.1/1.6.2 的 consumer 建議直接升到這版。**
+升版動作:重 sync 一次。
+
+- **`check-phase-coverage.ts` 段一現在會問 phase 狀態(P-92)。** 1.6.0 把 P-86 的修法
+  套進段一時漏了段二既有的 `readPhaseStatus()` 判斷,於是**每寫一個新的 `.feature`
+  (狀態還是 `todo`、程式還沒寫)就讓這道 gate 紅**——而「先寫 gherkin 再寫程式」
+  正是本範式的核心動作。
+  【驗】專案 A 升 1.6.2 後 `accept:coverage` 紅在 16 個 phase 檔,全部 `undefined=1~15`、
+  `ambiguous` 一個都沒有,那 16 個全是 `todo` 的未來 phase。
+  修法:`todo`/`ready`/`blocked` 只要求「tag 比對到 ≥1 個場景 + `ambiguous`=0」,
+  **不檢查 `undefined`**;`done`/`in-progress` 維持嚴格。**沒有新增設定**——
+  `FEATURE.md` 的 phase 表是唯一狀態來源,再開一個設定就會有兩個真相。
+- P-92 另記一條比這支腳本泛用的通則:**把一個修法擴散到「看起來相似」的地方時,
+  要先問那裡的前提是否相同,尤其是母體是誰決定的。**
+
 ## 1.6.3 — 2026-09-12
 
 **patch,bug 修復。** 升版動作:重 sync 一次(`_root.ts`、`check-doc-rot.ts` 有變更)。
