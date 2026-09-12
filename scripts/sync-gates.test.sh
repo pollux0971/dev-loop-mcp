@@ -297,6 +297,28 @@ assert_not_contains "舊版標頭字串不再出現" "$(sed -n '1p' "$target_fil
 local_hash_final="$(sha256_of "$local_file")"
 assert_eq ".local 檔在整個步驟 9 期間內容都不變" "$local_hash_final" "$local_hash_before"
 
+echo "== 步驟 10(1.6.6,P-94):假 consumer 想擴充——裝完之後能不能加一支自己的東西? =="
+# 來源:專案 A 協調者 2026-09-12。他問的不是「要不要設計一套 consumer 身分的驗收」,
+# 而是「**`sync-gates.test.sh` 的假 consumer,為什麼從來不試著擴充?**」
+# 步驟 1~9 驗的都是「裝得對不對」,沒有一項驗「裝完之後我能不能加自己的東西」。
+# 那個缺口的代價:他們的 worker 想加一支需要設定的 gate,第一直覺是去手改模板的
+# `_root.ts`(並留一條 HOTFIX)——而正確做法(自帶設定檔)模板裡早就有先例,
+# 只是**存在但沒有被指出來**。
+
+# (a) 往 gates.config.json 加一個自己的頂層鍵 → 必須紅,而且訊息要**指出正確的路**
+printf '{\n  "myOwnGate": { "x": 1 }\n}\n' > "$CONSUMER/scripts/gates.config.json"
+ext_out="$(cd "$CONSUMER" && npx tsx scripts/check-known-defects.ts 2>&1 || true)"
+assert_contains "consumer 自己的頂層鍵被擋下(不認識的鍵)" "$ext_out" "不認識的鍵:myOwnGate"
+assert_contains "訊息要說『不要改模板的 KNOWN_GATES_CONFIG_KEYS』" "$ext_out" "不要改模板的 KNOWN_GATES_CONFIG_KEYS"
+assert_contains "訊息要指出自帶設定檔這條路與先例" "$ext_out" "doc-rot.blacklist.json"
+
+# (b) 照那條路做 → 自帶設定檔的 gate 不受 KNOWN_GATES_CONFIG_KEYS 管,現有 gate 照常運作
+rm -f "$CONSUMER/scripts/gates.config.json"
+printf '{\n  "scope": ["src"]\n}\n' > "$CONSUMER/scripts/my-own-gate.scope.json"
+own_out="$(cd "$CONSUMER" && npx tsx scripts/check-known-defects.ts 2>&1 || true)"
+assert_not_contains "自帶設定檔不會讓既有 gate 紅" "$own_out" "不認識的鍵"
+rm -f "$CONSUMER/scripts/my-own-gate.scope.json"
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "sync-gates.test.sh: 全部通過"

@@ -304,7 +304,15 @@ export function requireKnownTopLevelKeys(
     if (!knownKeys.includes(key)) {
       failConfig(
         gateName,
-        `設定檔有不認識的鍵:${key}(打錯字?)已知鍵:${knownKeys.join(', ')}(${path})`,
+        // 1.6.6(P-94):訊息要指出「不是打錯字時該走哪條路」。原本只寫「打錯字?」,
+        // 於是 consumer 的 worker 想加自己的 gate 設定時,第一直覺是去手改模板的
+        // `KNOWN_GATES_CONFIG_KEYS`(並留一條 HOTFIX)——而正確做法(自帶設定檔)
+        // 模板裡早就有先例(`check-doc-rot.ts` 的 `doc-rot.blacklist.json`),
+        // 只是**存在但沒有被指出來**。差別在於前者要靠人想到,後者不用。
+        `設定檔有不認識的鍵:${key}(打錯字?)已知鍵:${knownKeys.join(', ')}(${path})\n` +
+          `  如果這不是打錯字、而是你自己的 gate 需要設定:**不要改模板的 KNOWN_GATES_CONFIG_KEYS**,` +
+          `讓那支 gate 自帶一份設定檔(先例:check-doc-rot.ts 的 doc-rot.blacklist.json)。` +
+          `gates.config.json 的頂層鍵是模板管的,加在這裡每次升版都會被討論一次。`,
       );
     }
   }
