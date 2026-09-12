@@ -319,6 +319,25 @@ own_out="$(cd "$CONSUMER" && npx tsx scripts/check-known-defects.ts 2>&1 || true
 assert_not_contains "自帶設定檔不會讓既有 gate 紅" "$own_out" "不認識的鍵"
 rm -f "$CONSUMER/scripts/my-own-gate.scope.json"
 
+echo "== 步驟 11(1.6.10,P-96):兩份排除清單的差集必須為空(跨語言,不能靠 import) =="
+# 來源:專案 A 協調者 2026-09-12 的更正。`sync-gates.sh` 是 bash、`DEFAULT_SKIP_DIRS` 是
+# TypeScript 的 export,**它沒辦法呼叫** —— 所以 1.6.9 的修法在 shell 裡硬寫了第二份清單。
+# 那不是「接上共用層」,是「**共用層跨不過語言邊界**」:兩份清單,將來會漂。
+#
+# 提報方把它寫成一個**可以被關閉**的陳述(而「應該用共用層」不能):
+#   「sync-gates.sh 的偵測排除清單與 DEFAULT_SKIP_DIRS 的差集不為空,而差集裡有 .stryker-tmp」
+# 這一步就是關閉它:**TS 那份的每一項,bash 偵測那段都要排除到。**
+ts_dirs="$(sed -n '/^export const DEFAULT_SKIP_DIRS/,/^];/p' "$TEMPLATE_DIR/scripts/_root.ts" \
+  | grep -oE "'[^']+'" | tr -d "'" | sort -u)"
+sh_dirs="$(sed -n '/for d in node_modules/,/; do$/p' "$TEMPLATE_DIR/scripts/sync-gates.sh" \
+  | sed 's/^ *for d in //; s/; do$//; s/\\$//' | tr ' ' '\n' | grep -v '^$' | sort -u)"
+missing=""
+for d in $ts_dirs; do
+  case " $(echo $sh_dirs) " in *" $d "*) ;; *) missing="$missing $d";; esac
+done
+assert_eq "DEFAULT_SKIP_DIRS 的每一項,bash 偵測那段都排除到了(差集為空)" "${missing# }" ""
+if [ -n "$missing" ]; then echo "      差集:$missing"; fi
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "sync-gates.test.sh: 全部通過"
