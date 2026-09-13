@@ -4,6 +4,37 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.7.3 — 2026-09-13
+
+**patch。新使用者現在可以從 GitHub 安裝一路跑到 `check:all` 全綠——這是第一次被證明。**
+安裝:`npx github:pollux0971/dev-paradigm#npx-v1.7.3 init .`。
+既有 consumer:重 sync 一次(`check-boundaries.ts` 的範例字串變了);**`tsconfig.json` 不會被 sync 覆蓋,
+請自己把 `"types"` 改成 `["vitest/globals", "node"]`**,否則 `npm run typecheck` 會紅在 `_world.ts`。
+
+**怎麼驗的**:從 GitHub `npx-v1.7.2` 裝一個全新專案,照 README 填完 placeholder,建一個真的小功能
+(「待辦清單」:實作 + 單元測試 + phase-1 gherkin + 步驟檔 + standalone 指令),再照步驟 4 逐條跑。
+1.7.1 的 UX 檢查只跑到填 placeholder 之前,當時坦承「填完之後能不能全綠沒驗證」——這次驗了,找到下面這些(P-99)。
+
+- **出貨的 `scripts/boundaries.owners.json` 是來源專案的真實落點表**(`02-ingest-pipeline`、`apps/desktop`…),
+  新專案跑 `npm run boundaries` → 「走訪找到 28 個檔,實際檢查 0 個」。`verify-against.sh` 的註解明寫那裡該是
+  「給新專案抄的佔位」——設計意圖是骨架,內容是殘留。換成只有通用列的骨架。
+- **CHECKLIST 與 README 叫人去填 `scripts/check-boundaries.ts` 的 OWNERS**——那是範例字串,而且是受 sync 管理的守門檔:
+  【驗】照填 → `sync-gates.sh --check` 紅「內容被改過」,錯誤訊息還建議加 HOTFIX 註解。改成指向 `boundaries.owners.json`,
+  守門檔的範例字串拿掉 placeholder。
+- **`tsconfig.json` 的 `types` 少了 `node`**:【驗】照 `check:all` 自己印的範例 chain 跑,`typecheck` 紅在出貨的 `_world.ts`。
+  上游一直把這條記成「模板自己的紅是設計如此」,但它原封不動出貨給每個新專案。加上後上游 typecheck 也從約 323 個錯誤變 0。
+- **`phase-1.feature.template` 的示範步驟跟內建步驟對不上**:【驗】照抄 `When the standalone command is executed against a fixture`
+  → cucumber 回報 Undefined。改成 `common.steps.ts` 已定義的 `When the standalone dev command is run`。
+- `gates.config.json` 的 gherkinDup 理由引用了不存在的 ADR-024(來源專案的編號),改指實際的樣板檔。
+- README 步驟 4 補一條:設定 `chain` 並確認 `npm run check:all` 最後一行是 `gate=all result=PASS`。
+- **`release-npx-branch.sh` 改成從 HEAD 的乾淨 worktree 打包**:第一版取自工作樹、要求整個工作樹乾淨——
+  另一個 session 在 `.orca-brief/` 放了一個未追蹤檔,發布就被擋;反過來,要是未追蹤檔落在 payload 的 glob 範圍內,
+  它會被打包進去。現在未追蹤檔不擋也不會混進產物,已追蹤檔有未 commit 修改才擋。
+
+【驗】修後同一個測試專案:`boundaries` PASS、`standalone` PASS、`test` 3/3、`accept` 2 scenarios passed、
+`check:all` → `gate=all result=PASS scanned=4 ran=4`。
+測試:`test:scripts` 253 全綠;`sync-gates.test.sh` 全過;npx 黑箱 5/5。
+
 ## 1.7.2 — 2026-09-13
 
 **patch,資料遺失 bug。⚠️ 不要用 `npx-v1.7.1`——請用 `npx github:pollux0971/dev-paradigm#npx-v1.7.2 init .`。**

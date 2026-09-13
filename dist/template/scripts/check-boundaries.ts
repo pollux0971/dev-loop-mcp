@@ -125,7 +125,7 @@ const OWNERS_EXAMPLE = `{
   "owners": [
     ["packages/contracts/", "contracts"],
     ["contracts/", "contracts"],
-    ["packages/core/src/{{FEATURE_SRC_DIR}}/", "{{FEATURE_OWNER}}"],
+    ["packages/core/src/todo/", "01-todo"],
     ["features/steps/", "steps"]
   ],
   "glue": ["infra", "steps", { "owner": "generated", "role": "glue" }],
