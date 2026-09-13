@@ -135,11 +135,17 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 |---|---|---|
 | `{{FIXTURE_TODAY}}` | `today` 欄位的預設值,要跟某個常用 fixture 的假設對齊(格式 `YYYY-MM-DD`) | `2026-09-10` |
 
-## scripts/check-boundaries.ts
+## scripts/boundaries.owners.json
 
 | Placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
-| `{{FEATURE_SRC_DIR}}` / `{{FEATURE_OWNER}}` | OWNERS 表範例行:原始碼子目錄與擁有它的功能資料夾名 | `packages/core/src/scheduler/` / `04-scheduler` |
+| `{{FEATURE_SRC_DIR}}` / `{{FEATURE_OWNER}}` | 落點表的一行:原始碼子目錄與擁有它的功能資料夾名。每個 Wave 0 能力一行,照這行複製 | `scheduler` / `04-scheduler` |
+
+⚠️ **填的是 `scripts/boundaries.owners.json`,不是 `scripts/check-boundaries.ts`。** 1.7.2 以前這一節標題寫的是
+`check-boundaries.ts`、placeholder 也放在那支檔的範例字串裡——但它是**受 sync 管理的守門檔**(第一行有 SOURCE 標頭),
+照填的話 `sync-gates.sh --check` 會報「內容被改過」,錯誤訊息還會建議你加 HOTFIX 註解。
+另外 1.7.2 以前出貨的 `boundaries.owners.json` 是**來源專案的真實落點表**(`02-ingest-pipeline`、`apps/desktop`…),
+跟新專案無關,導致 `npm run boundaries` 回報「掃描到 0 個檔案」;1.7.3 起換成只有通用列的骨架。
 
 ## standalone.json
 

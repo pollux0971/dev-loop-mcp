@@ -105,7 +105,7 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 ```bash
 mkdir my-project && cd my-project
 git init
-npx github:pollux0971/dev-paradigm#npx-v1.7.2 init .
+npx github:pollux0971/dev-paradigm#npx-v1.7.3 init .
 ```
 
 - 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
@@ -186,7 +186,8 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
       不能是指令本身找不到或炸掉)
 - [ ] `cucumber.js` 的 `paths` 已經指到你的 `features/` 與 `docs/integration/`
 - [ ] `features/steps/_world.ts` 與 `common.steps.ts` 就位,通用步驟只定義一次
-- [ ] `scripts/check-boundaries.ts` 的 `OWNERS` 表填好每個 Wave 0 能力的落點
+- [ ] `scripts/boundaries.owners.json` 的 `owners` 填好每個 Wave 0 能力的落點(**不是** `scripts/check-boundaries.ts`——那是受 sync 管理的守門檔,改了 `--check` 會紅)
+- [ ] `scripts/gates.config.json` 加上 `chain`(例:`["typecheck", "test", "boundaries", "standalone"]`),`npm run check:all` 最後一行是 `gate=all result=PASS`
 - [ ] `standalone.json` 每個 Wave 0 能力都有一行(先寫預期指令,即使還跑不起來也要列出來,
       這樣 `/phase-done` 才知道要驗什麼)
 - [ ] `docs/01-roadmap.md` 的 Wave 0 表與各 `features/*/FEATURE.md` 對得起來

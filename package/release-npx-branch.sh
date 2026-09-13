@@ -17,7 +17,7 @@
 #   bash package/release-npx-branch.sh --push     # 真的推 npx-release 分支與 npx-v<版本> tag 到 origin
 #
 # 前提:在模板 repo 根目錄執行;VERSION 與 package/package.json 的 version 一致(版本 gate 會擋);
-#       要發布的版本已經 commit(發布內容取自工作樹,但 tag 名取自 VERSION,不一致會發出錯的東西)。
+#       要發布的版本已經 commit——內容、VERSION、package.json 版本一律取自 HEAD,工作樹的未追蹤檔不影響產物。
 set -euo pipefail
 
 PUSH=0
@@ -26,15 +26,20 @@ PUSH=0
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="$(tr -d '[:space:]' < VERSION)"
-PKG_VERSION="$(node -p "require('./package/package.json').version")"
+# 版本與內容一律取自 HEAD,不取自工作樹(見下方「從 HEAD 打包」)。
+VERSION="$(git show HEAD:VERSION | tr -d '[:space:]')"
+PKG_VERSION="$(git show HEAD:package/package.json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).version))")"
 if [ "$VERSION" != "$PKG_VERSION" ]; then
   echo "✗ 版本不一致:VERSION=$VERSION,package/package.json=$PKG_VERSION" >&2
   exit 1
 fi
-if [ -n "$(git status --porcelain -- . ':!BMAD-METHOD-main*')" ]; then
-  echo "✗ 工作樹有未 commit 的變更——發布內容取自工作樹,先 commit 再發布,不然 tag 對應的原始碼查不到" >&2
-  git status --short -- . ':!BMAD-METHOD-main*' >&2
+# 已追蹤檔有未 commit 的修改 → 擋:發布取自 HEAD,這些修改不會進發布版,多半是忘了 commit。
+# 未追蹤檔 → 不擋:從 HEAD 的乾淨 worktree 打包,它們不可能混進產物。
+# (1.7.3:第一版取自工作樹、要求整個工作樹乾淨。另一個 session 在 .orca-brief/ 放了一個未追蹤檔,
+#  發布就被擋下;反過來說,要是那個檔剛好落在 payload 的 glob 範圍內,它會被打包進去。兩個方向都錯。)
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "✗ 已追蹤的檔有未 commit 的修改——發布內容取自 HEAD,這些修改不會被發布,先 commit" >&2
+  git status --short --untracked-files=no >&2
   exit 1
 fi
 
@@ -44,13 +49,16 @@ SOURCE_COMMIT="$(git rev-parse --short HEAD)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# 舊的 package/dist/ 會讓 cli 讀到過期快照(1.7.1 實際踩過:少落地一個檔、還印成功),先清掉再 pack。
-rm -rf package/dist
+# 從 HEAD 打包:開一個乾淨的 detached worktree,在裡面 npm pack。工作樹裡的未追蹤檔、舊的 package/dist/
+# 快照(1.7.1 踩過:讓 cli 少落地一個檔還印成功)都碰不到產物。
+SRC="$WORK/src"
+git worktree add -q --detach "$SRC" HEAD
+remove_src() { git worktree remove --force "$SRC" >/dev/null 2>&1 || true; }
+trap 'remove_src; rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/art" "$WORK/x"
-( cd package && npm pack --json --pack-destination "$WORK/art" > "$WORK/pack.json" )
+( cd "$SRC/package" && npm pack --json --pack-destination "$WORK/art" > "$WORK/pack.json" )
 TGZ="$(ls "$WORK/art"/*.tgz)"
 tar -xzf "$TGZ" -C "$WORK/x"
-rm -rf package/dist   # pack 的 prepack 會重建 dist/,發布完不留在工作樹
 
 node -e "
 const f='$WORK/x/package/package.json'; const p=require(f);
@@ -97,7 +105,7 @@ else
   git worktree add -q --detach "$REL"
   ( cd "$REL" && git checkout -q --orphan "$BRANCH" && git rm -rfq . )
 fi
-cleanup_worktree() { git worktree remove --force "$REL" >/dev/null 2>&1 || true; rm -rf "$WORK"; }
+cleanup_worktree() { git worktree remove --force "$REL" >/dev/null 2>&1 || true; remove_src; rm -rf "$WORK"; }
 trap cleanup_worktree EXIT
 
 ( cd "$REL" && find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + )
