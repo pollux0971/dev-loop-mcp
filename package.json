@@ -1,0 +1,14 @@
+{
+  "name": "pollux-dev-paradigm",
+  "version": "1.7.1",
+  "type": "module",
+  "bin": {
+    "pollux-dev-paradigm": "src/cli.mjs"
+  },
+  "files": [
+    "README.md",
+    "payload-manifest.json",
+    "src/cli.mjs",
+    "dist/"
+  ]
+}

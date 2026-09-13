@@ -1,0 +1,44 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:scripts": "vitest run --config vitest.scripts.config.ts",
+    "typecheck": "tsc --noEmit",
+    "accept": "NODE_OPTIONS=--import=tsx cucumber-js",
+    "accept:standalone": "NODE_OPTIONS=--import=tsx cucumber-js --tags '@standalone and not @manual'",
+    "accept:integration": "NODE_OPTIONS=--import=tsx cucumber-js docs/integration --tags 'not @manual'",
+    "mutate": "stryker run",
+    "standalone": "tsx scripts/check-standalone.ts",
+    "boundaries": "tsx scripts/check-boundaries.ts",
+    "accept:dry": "tsx scripts/check-dry-run.ts --tags 'not @manual'",
+    "check:steps": "tsx scripts/check-step-dup.ts",
+    "check:gherkin-dup": "tsx scripts/check-gherkin-dup.ts",
+    "accept:coverage": "tsx scripts/check-phase-coverage.ts",
+    "lint:docs": "tsx scripts/check-doc-links.ts",
+    "check:all": "tsx scripts/check-all.ts",
+    "check:next-gates": "tsx scripts/check-next-gates.ts",
+    "check:doc-rot": "tsx scripts/check-doc-rot.ts",
+    "check:known-defects": "tsx scripts/check-known-defects.ts",
+    "check:phase-status": "tsx scripts/check-phase-status.ts",
+    "check:module-cast": "tsx scripts/check-module-cast.ts"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.3.0",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.0"
+  },
+  "dependencies": {}
+}

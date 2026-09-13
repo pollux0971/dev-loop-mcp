@@ -1,0 +1,3 @@
+# vitest@^4.1 會踩到 npm 10.9 的 peer 相依解析 bug(Cannot read properties of null (reading edgesOut)),
+# 這個 repo 自己跑測試時要 legacy-peer-deps;consumer 有 lockfile 的話不受影響(2026-09-06)。
+legacy-peer-deps=true
