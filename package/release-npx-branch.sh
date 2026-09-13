@@ -13,7 +13,7 @@
 #   從 git 安裝時要是觸發它就會找不到檔。發布分支是**建好的產物**,不需要也不該再建一次。
 #
 # 用法:
-#   bash package/release-npx-branch.sh            # 演練:建好發布內容、印出會做什麼,不推
+#   bash package/release-npx-branch.sh            # 演練:建好產物並試跑 init,不建分支、不打 tag、不推
 #   bash package/release-npx-branch.sh --push     # 真的推 npx-release 分支與 npx-v<版本> tag 到 origin
 #
 # 前提:在模板 repo 根目錄執行;VERSION 與 package/package.json 的 version 一致(版本 gate 會擋);
@@ -66,6 +66,26 @@ if sed -n '/## 待批示/,/## 已批示/p' "$PROBE/DECISIONS_NEEDED.md" | grep -
 fi
 echo "✓ 產物本機試跑:$(grep -m1 '^✓' "$WORK/probe.out")"
 
+if [ "$PUSH" != 1 ]; then
+  # 演練模式不碰任何 ref。1.7.1 第一版在演練時就建了本機 tag,結果正式推送時被「tag 已存在」擋下——
+  # 「先演練再推」這個流程本身就會卡住。演練只負責證明產物可用、列出會發布的內容。
+  echo "發布分支 $BRANCH 的根目錄會是:"; ( cd "$WORK/x/package" && ls -A | sed 's/^/  /' )
+  if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+    echo "✗ 遠端已有 tag $TAG。發布版不覆蓋——要重發請先升版號" >&2; exit 1
+  fi
+  echo "(演練模式:沒有建立分支或 tag、沒有推送。確認無誤後加 --push)"
+  exit 0
+fi
+
+# 在碰任何 ref 之前先擋:本機或遠端已有這個 tag 就不發(發布版不覆蓋)。
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "✗ tag $TAG 已存在(本機)。發布版不覆蓋——要重發請先升版號" >&2
+  exit 1
+fi
+if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "✗ 遠端已有 tag $TAG。發布版不覆蓋——要重發請先升版號" >&2; exit 1
+fi
+
 # 用 git worktree 操作孤立分支,不動目前的工作樹。
 REL="$WORK/rel"
 if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
@@ -87,17 +107,9 @@ cp -a "$WORK/x/package/." "$REL/"
 由 package/release-npx-branch.sh 產生。內容是 npm pack 的產物,拿掉了 package.json 的 scripts。
 安裝:npx github:pollux0971/dev-paradigm#$TAG init ." )
 
-if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-  echo "✗ tag $TAG 已存在。發布版不覆蓋——要重發請先升版號" >&2
-  exit 1
-fi
 git tag -a "$TAG" "$(cd "$REL" && git rev-parse HEAD)" -m "npx 發布版 $VERSION(來源 main@$SOURCE_COMMIT)"
 
 echo "✓ 本機已建立分支 $BRANCH 與 tag $TAG(來源 main@$SOURCE_COMMIT)"
-if [ "$PUSH" = 1 ]; then
-  git push -q origin "$BRANCH"
-  git push -q origin "$TAG"
-  echo "✓ 已推送。安裝指令:npx github:pollux0971/dev-paradigm#$TAG init ."
-else
-  echo "(演練模式,沒有推送。確認無誤後加 --push;本機的 tag 可用 git tag -d $TAG 刪掉重來)"
-fi
+git push -q origin "$BRANCH"
+git push -q origin "$TAG"
+echo "✓ 已推送。安裝指令:npx github:pollux0971/dev-paradigm#$TAG init ."
