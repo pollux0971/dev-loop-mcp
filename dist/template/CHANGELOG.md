@@ -4,6 +4,24 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.7.2 — 2026-09-13
+
+**patch,資料遺失 bug。⚠️ 不要用 `npx-v1.7.1`——請用 `npx github:pollux0971/dev-paradigm#npx-v1.7.2 init .`。**
+(`npx-v1.7.1` 已經發布出去,發布版刻意不覆蓋,所以這裡明寫。只用過 sync 升版的 consumer 不受影響。)
+
+- **init 會蓋掉使用者改過的檔,還印成功(P-98)。** 【驗】`npx-v1.7.1` 從 GitHub 實測:init → 在 `CLAUDE.md`
+  加一行 → 再 init → 「✓ init 完成」、exit 0,那一行被模板原文蓋掉。根因是衝突掃描對「在安裝紀錄裡的檔」
+  整個跳過,而讀安裝紀錄時把每個檔的 `sha256` 丟掉了,從來沒拿來比。
+  現在:內容已是這一版 → 不動;跟安裝當時一樣(使用者沒碰)→ 可更新;都不是 → **衝突、零寫入**,訊息指名是哪個檔。
+- **重跑 init 現在是真的 no-op**:內容相同的檔不重寫(原本每個檔都被 rename 一次,修改時間全變)。
+- 黑箱測試新增第 5 個 gate `reinstall-preserves-user-edits`(沒改過重跑 → 零變化;改過再 init → 衝突、使用者那行還在)。
+  反向驗證:把保護退回舊行為 → `init overwrote a file the user modified after install (data loss)`。
+- **為什麼 1.7.1 的四個 gate 全綠還是漏掉**:conflict gate 只測「全新資料夾裡已有的同名檔」,
+  沒測「init 自己裝的檔後來被使用者改」——而那是最常發生的一條路(步驟 1 就叫人去填 `CLAUDE.md`)。
+  這個 bug 是發布後照 README 在真實安裝上逐條核對時,順手試「改一個檔再 init」才撞到的。
+- `release-npx-branch.sh` 小修:演練不碰任何 ref(第一版演練會留本機 tag,讓「先演練再推」的流程本身卡住);
+  「tag 已存在」的檢查移到建立發布 commit 之前。
+
 ## 1.7.1 — 2026-09-13
 
 **patch。新使用者照 README 跑不完——使用者要求的 UX 檢查找到的,全部是 bug。**
