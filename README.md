@@ -105,13 +105,14 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 ```bash
 mkdir my-project && cd my-project
 git init
-npx github:pollux0971/dev-paradigm#npx-v1.7.1 init .
+npx github:pollux0971/dev-paradigm#npx-v1.7.2 init .
 ```
 
 - 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
 - **只支援全新專案**(空資料夾,或剛 `git init` 的 repo)。
 - **不會**執行 `npm install`、**不會** `git init`——這兩步留給你,init 失敗時才不會混進不可回復的副作用。
 - 撞到已存在的同名檔時**一個檔都不寫**,把衝突全部列出來後結束(沒有 `--force`)。
+- **重跑 init 是安全的**:沒改過的檔不動;**init 裝好之後你改過的檔,再跑 init 會列為衝突、一個字都不蓋**(`npx-v1.7.1` 有會蓋掉修改的 bug,請不要用那一版,見 CHANGELOG 1.7.2)。
 - 想先看會建立哪些檔:加 `--dry-run`。`--help` 看全部選項。
 
 **沒有 npx 權限時**,clone 下來直接跑同一支 CLI(效果相同):

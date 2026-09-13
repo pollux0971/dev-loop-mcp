@@ -96,13 +96,14 @@ async function templateContext() {
 
 async function managedPaths(target) {
   const file = path.join(target, INSTALL_MANIFEST);
-  if (!await isFile(file)) return new Set();
+  if (!await isFile(file)) return new Map();
   try {
     const installed = await readJson(file);
-    const paths = new Set(installed.files?.map((entry) => entry.path) ?? []);
-    if (installed.manifestVersion === 1 && installed.templateVersion) paths.add(INSTALL_MANIFEST);
+    // 1.7.1:回傳「路徑 → 安裝當時的內容雜湊」。原本只回傳路徑集合,衝突掃描因此無從得知使用者有沒有改過。
+    const paths = new Map((installed.files ?? []).map((entry) => [entry.path, entry.sha256 ?? null]));
+    if (installed.manifestVersion === 1 && installed.templateVersion) paths.set(INSTALL_MANIFEST, null);
     return paths;
-  } catch { return new Set(); }
+  } catch { return new Map(); }
 }
 
 function safeRelative(relative) {
@@ -161,7 +162,18 @@ async function collisionScan(target, plan, owned) {
     const destination = path.join(target, output.path);
     if (!await exists(destination)) continue;
     if (output.packageConflict) { conflicts.push(output.packageConflict); continue; }
-    if (output.path === "package.json" || owned.has(output.path)) continue;
+    if (output.path === "package.json") continue; // package.json 走保守 merge,衝突在 packagePlan 列出
+    if (owned.has(output.path)) {
+      // 1.7.1(資料遺失 bug):原本「在安裝紀錄裡」就直接放行覆蓋。【驗】使用者在 init 裝好的 CLAUDE.md
+      // 加了一行,再跑一次 init → 印「✓ init 完成」、exit 0,而那一行被模板原文蓋掉。安裝紀錄明明記了
+      // 每個檔的 sha256,只是從來沒拿來比。現在:內容已經是這一版 → 不動;跟安裝當時一樣(使用者沒碰)
+      // → 可以更新;都不是 → 使用者改過,列為衝突、零寫入。
+      const current = sha256(await fs.readFile(destination, "utf8"));
+      if (current === output.hash) continue;
+      if (owned.get(output.path) && current === owned.get(output.path)) continue;
+      conflicts.push(`✗ ${output.path} 是 init 裝的,但裝完之後被改過(內容與安裝紀錄不符)——不覆蓋你的修改`);
+      continue;
+    }
     const firstLine = (await fs.readFile(destination, "utf8")).split(/\r?\n/, 1)[0];
     if (!SOURCE_RE.test(firstLine)) conflicts.push(`✗ ${output.path} 已存在且沒有 SOURCE 標頭(是 consumer 自有檔)`);
   }
@@ -183,7 +195,14 @@ async function commitPlan(target, plan, manifest, failAfter = 0) {
   const journal = { version: 1, stage, backup, operations: [] };
   const writeJournal = () => fs.writeFile(journalPath, json(journal), "utf8");
   try {
-    const all = [...plan, { path: INSTALL_MANIFEST, body: manifest, hash: sha256(manifest) }];
+    const candidates = [...plan, { path: INSTALL_MANIFEST, body: manifest, hash: sha256(manifest) }];
+    // 1.7.1:內容已經相同的檔不重寫——重跑 init 應該是真的 no-op(原本會把每個檔 rename 一次,修改時間全變)。
+    const all = [];
+    for (const output of candidates) {
+      const destination = path.join(target, output.path);
+      if (await isFile(destination) && sha256(await fs.readFile(destination, "utf8")) === output.hash) continue;
+      all.push(output);
+    }
     for (const output of all) {
       const staged = path.join(stage, output.path);
       await fs.mkdir(path.dirname(staged), { recursive: true });

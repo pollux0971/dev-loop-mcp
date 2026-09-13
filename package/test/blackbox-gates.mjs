@@ -263,6 +263,38 @@ async function gateCleanInit(artifact, manifest, payload) {
   await assertCleanInstall(packageDir, target, manifest, payload);
 }
 
+/**
+ * 1.7.1(資料遺失 bug 的回歸 gate):init 裝好的檔被使用者改過,再跑一次 init →
+ * 必須列為衝突、零寫入、使用者的修改原封不動;而沒改過時重跑必須是真的 no-op。
+ * 【驗】沒有這條之前的實測:使用者在 init 裝的 CLAUDE.md 加一行,再 init → 印「✓ init 完成」、exit 0,
+ * 那一行被模板原文蓋掉。原有的 conflict gate 只測「全新資料夾裡已有的同名檔」,沒測「init 自己裝的檔後來被改」,
+ * 而 cli.mjs 對「在安裝紀錄裡的檔」整個跳過檢查——安裝紀錄記了每個檔的 sha256,但從來沒拿來比。
+ */
+async function gateReinstall(artifact) {
+  const extracted = await makeTemp("reinstall");
+  const packageDir = await unpack(artifact.tarball, extracted);
+  const cli = path.join(packageDir, "src", "cli.mjs");
+  const target = path.join(extracted, "consumer");
+  await fs.mkdir(target);
+  const first = await run(process.execPath, [cli, "init", target]);
+  assert.equal(first.code, 0, `first init failed:\n${output(first)}`);
+
+  const untouched = await snapshot(target);
+  const rerun = await run(process.execPath, [cli, "init", target]);
+  assert.equal(rerun.code, 0, `rerun on untouched install failed:\n${output(rerun)}`);
+  await assertSnapshot(target, untouched, "rerun on untouched install must be a no-op");
+
+  const userLine = "consumer 自己寫的規則:這一行不可以被 init 蓋掉\n";
+  await fs.appendFile(path.join(target, "CLAUDE.md"), userLine);
+  const edited = await snapshot(target);
+  const again = await run(process.execPath, [cli, "init", target]);
+  assert.notEqual(again.code, 0, "init overwrote a file the user modified after install (data loss)");
+  requireLine(again, "✗ init 先掃後寫發現衝突(零寫入):");
+  assert.match(output(again), /CLAUDE\.md 是 init 裝的,但裝完之後被改過/, "conflict message must name the user-modified file");
+  await assertSnapshot(target, edited, "user-modified file must be left untouched");
+  assert.ok((await fs.readFile(path.join(target, "CLAUDE.md"), "utf8")).endsWith(userLine), "user's line is gone");
+}
+
 async function gateConflict(artifact) {
   const extracted = await makeTemp("conflict");
   const packageDir = await unpack(artifact.tarball, extracted);
@@ -354,10 +386,11 @@ async function main() {
   if (probe === "conflict") return probeConflict(artifact);
   if (probe === "rollback") return probeRollback(artifact, payload);
   assert.equal(probe, undefined, `unknown probe: ${probe}`);
-  assert.ok(only === undefined || ["tarball", "clean-init", "conflict", "rollback"].includes(only), `unknown gate: ${only}`);
+  assert.ok(only === undefined || ["tarball", "clean-init", "conflict", "reinstall", "rollback"].includes(only), `unknown gate: ${only}`);
   if (only === "tarball") { console.log("✓ gate tarball-multiset PASS"); return; }
   if (only === "clean-init") { await gateCleanInit(artifact, manifest, payload); console.log("✓ gate clean-init PASS"); return; }
   if (only === "conflict") { await gateConflict(artifact); console.log("✓ gate conflict-zero-write PASS"); return; }
+  if (only === "reinstall") { await gateReinstall(artifact); console.log("✓ gate reinstall-preserves-user-edits PASS"); return; }
   if (only === "rollback") { await gateRollback(artifact, payload); console.log("✓ gate rollback-two-failures PASS (n=1, late)"); return; }
   await gateCleanInit(artifact, manifest, payload);
   await gateConflict(artifact);
@@ -365,8 +398,10 @@ async function main() {
   console.log("✓ gate tarball-multiset PASS");
   console.log("✓ gate clean-init PASS");
   console.log("✓ gate conflict-zero-write PASS");
+  await gateReinstall(artifact);
+  console.log("✓ gate reinstall-preserves-user-edits PASS");
   console.log("✓ gate rollback-two-failures PASS (n=1, late)");
-  console.log("✓ blackbox gates PASS (4/4)");
+  console.log("✓ blackbox gates PASS (5/5)");
 }
 
 main().catch((error) => {
