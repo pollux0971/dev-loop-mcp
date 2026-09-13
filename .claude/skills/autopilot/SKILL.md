@@ -22,18 +22,16 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 
 ## 1. 權責表(誰決定什麼)
 
-| 情況 | 誰決定 | 怎麼做 |
-|---|---|---|
-| 派工順序、合併順序、worktree、審核回合 | **協調者自己** | 直接做 |
-| 需求訪談、brainstorm／party 主持、L0/L1 綜整、`/feature` L2 提案 | **產品 PM** | 所有使用者產品需求先交 `product-pm`;PM 可提交探索請求,但 session/worktree 仍由協調者建立與監督 |
-| 技術取捨:資料結構、介面形狀、規格措辭、gate 例外、要不要重跑、變異存活怎麼分類 | **技術顧問**(session `{{ADVISOR_SESSION}}`) | SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。**保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57) |
-| 新功能、新需求、改「不在範圍」 | **使用者** | 由產品 PM 主持 `/feature` 分流出 L2 提案,放進「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批 |
-| 改 `contracts/` 硬約定、改 `CLAUDE.md` | **使用者** | 同上,附 ADR 草稿 |
-| 花錢超過當日上限(`{{DAILY_CAP_ENV}}`) | **使用者** | 不跑;@llm 場景延到明天或等他加碼 |
-| 觀感／品質確認(`@manual and not @e2e`) | **技術顧問** | 由技術顧問判定，將依據與發現寫進 phase 驗收報告或 `IN-REVIEW.md` |
-| 端到端「你做得到嗎」確認(任何 `@e2e`，即使同時帶 `@manual`) | **使用者** | 列清單(場景原文 + 檔案路徑)，放「等老闆」清單；不可由測試或技術顧問代替 |
+誰決定什麼,以 `CLAUDE.md`「做決定時」表為準,本迴圈不另抄一份。這裡只補協調者在每一類要做的動作:
 
-判斷「新功能」由產品 PM 呼叫內部 `feature-triage`:E / C / B → 使用者;A → 技術顧問;D 先拆分後逐項重新判定。`product-pm` 是使用者入口,`feature-triage` 不直接與它競爭觸發。
+- **自己決的**(派工、合併、worktree、審核回合):直接做。
+- **問技術顧問的**:SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。
+  **保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57)。
+- **問產品 PM 的**:所有使用者產品需求先交 `product-pm`;PM 可提探索請求,但 session/worktree 仍由協調者建立與監督。
+  PM 呼叫內部 `feature-triage` 分流後:E / C / B → 使用者;A → 技術顧問;D 先拆分後逐項重新判定。
+- **等使用者的**:放「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批。改硬約定或 `CLAUDE.md` 要附 ADR 草稿;
+  `@e2e` 場景列清單(原文 + 檔案路徑);花錢超過 `{{DAILY_CAP_ENV}}` 就不跑,@llm 場景延到明天。
+- **技術顧問判定的**(`@manual and not @e2e`):等他把依據寫進 phase 驗收報告或 `IN-REVIEW.md`。
 
 ## 2. 每輪流程
 
@@ -42,7 +40,7 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 git diff --name-only main...<branch> | grep <要改的檔案>
 ```
 每個 in-progress branch 都要為空才動手——這條在合併(步驟 1)、先修 main(§4)、技術顧問直接改規則層
-(§1 權責表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
+(`CLAUDE.md`「做決定時」表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
 
 ### 2a. 三種 dispatch mode（每次派工必填）
 

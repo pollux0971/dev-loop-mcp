@@ -17,6 +17,11 @@
   `/sprint`、`/feature` 六列在指令後面括號標實際 skill 名,並加一句說明沒有 `.claude/commands/` 別名。
 - **`package/README.md:21` 拿掉寫死的版本號**:原文寫「與根 `VERSION` 相同的版本 `1.5.0`」,
   現在其實是 1.7.4,改成不含數字的敘述,避免每次升版又要記得改這裡。
+- **去蕪存菁(審計 `.orca-brief/DOC-AUDIT-REPORT.md` D1–D4)**:刪 `.orca-brief/drafts/` 四份 ADR-016 定案前的草稿與
+  `.orca-brief/proposals/scanner-roster.md`(#13 已落地成 `skip-dirs-roster.test.ts`),共 467 行,`shipping-coverage.test.ts`
+  的 `NOT_SHIPPED` 名冊同步拿掉 `drafts/` 那條殘留豁免;`CLAUDE.md`「做決定時」段落刪掉跟下一段重複的「轉述不算授權」句
+  (「這張表要由使用者本人 commit 進 main」保留);`autopilot/SKILL.md` §1 不再另抄一份權責表,只留協調者專屬動作,
+  誰決定什麼一律以 `CLAUDE.md` 為準——兩份表各自演化會分歧。
 - **確認 `gates.config.json` 缺 `chain` 已有交代**:`README.md:190` 的落地檢查清單已經明講
   consumer 要自己在 `gates.config.json` 加 `chain`,不是遺漏,不改。
 

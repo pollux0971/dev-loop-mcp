@@ -56,7 +56,6 @@ const NOT_SHIPPED: Record<string, string> = {
   '.orca-brief/PM-BRIEF.md': '上游協調者交接給產品 PM session 的一次性簡報,內容綁定上游當時的任務,對 consumer 沒有意義。',
   '.orca-brief/dispatch/':
     '上游 npx init 三個階段實際派出的工單,是 dispatch envelope 的歷史實例;通用的工單形狀在 TASK 樣板裡,不在這些實例裡。',
-  '.orca-brief/drafts/': '規則層落地前的草稿,已經落地成 .claude/skills/ 與 ADR-016;草稿本身留在上游當留痕,出貨的是落地後的版本。',
   '.orca-brief/proposals/':
     '待使用者裁決的提案素材(DECISIONS_NEEDED #8~#13 等),尚未批准;批准落地後出貨的是規則本身,不是提案檔。',
   'DECISIONS_NEEDED.md':
