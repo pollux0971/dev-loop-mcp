@@ -75,14 +75,16 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 
 ## 可用指令
 
+斜線指令是慣用簡稱，實際 skill 名在括號內；沒有 `.claude/commands/` 別名。
+
 - `/product-pm [意圖]` — 使用者的產品需求入口；主持探索、brainstorm、party、brief、PRD 與 `/feature`
-- `/feature <描述>` — 由產品 PM 主持，內部呼叫 `feature-triage` 做 A/B/C/D/E 分流；**先提案、等確認、再寫檔**
+- `/feature <描述>`（skill：`feature-triage`，經 `product-pm`） — 由產品 PM 主持，內部呼叫 `feature-triage` 做 A/B/C/D/E 分流；**先提案、等確認、再寫檔**
 - `/dev-worker <dispatch>` — 只供協調者派工；必須帶單一 mode、`allowed_paths`、權威來源與完成條件，不接受使用者直接呼叫
-- `/phase-done <folder>/<phase>` — 驗收一個 phase
-- `/integrate <IN>` — 驗收一個整合點
-- `/mutate [folder]` — 跑 mutation testing 並判讀
-- `/decide <描述>` — 記錄 ADR
-- `/sprint` — 規劃本週
+- `/phase-done <folder>/<phase>`（skill：`phase-acceptance`） — 驗收一個 phase
+- `/integrate <IN>`（skill：`integration-check`） — 驗收一個整合點
+- `/mutate [folder]`（skill：`mutation-testing`） — 跑 mutation testing 並判讀
+- `/decide <描述>`（skill：`decision-record`） — 記錄 ADR
+- `/sprint`（skill：`sprint-planning`） — 規劃本週
 
 ## 做決定時(固定段落,使用者親口填)
 
@@ -119,4 +121,4 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 協調者收到沒有標記的顧問宣稱,一律當【推】處理,不當事實往下傳(見 `docs/07-practices.md` (a)/(l))。
 等使用者的事放 `DECISIONS_NEEDED.md`(格式見該檔)。協調者的迴圈見 `.claude/skills/autopilot/SKILL.md`。
 
-> 採用模板版本:v{{TEMPLATE_VERSION}}(升版看 `template/CHANGELOG.md`)
+> 採用模板版本:v{{TEMPLATE_VERSION}}(升版看 `CHANGELOG.md`)

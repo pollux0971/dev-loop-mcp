@@ -108,7 +108,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 
 ## 3. 維護清單(沒事可做時,由上往下)
 
-1. `template/PITFALLS.md` 與 `docs/02-decision-map.md` 裡標「待覆核」「待辦」的項目(例如 `--deps-only` 入口)
+1. `PITFALLS.md` 與 `docs/02-decision-map.md` 裡標「待覆核」「待辦」的項目(例如 `--deps-only` 入口)
 2. 標準級模組變異分數 < 80% 的檔案(`reports/mutation/` 最近一次),補測試
 3. `{{LINT_COMMAND}}` 的健檢結果,能自動修的修
 4. 文件漂移:roadmap 現況表、features/README.md 索引、各 FEATURE.md phase 表三者對不上的地方。
@@ -174,7 +174,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
   「不因為等待確認而停下其他能做的事」,這裡把它跟「停止」明確分開,避免兩者被混為一談)
 - 契約收緊(硬約定要走 ADR,軟約定改了跑測試)——那是一次性的工作量,做完就繼續,不是理由停下整個迴圈
 - 發現缺陷——開工單修,不是停下來等人拍板要不要修(除非缺陷本身牽涉硬約定或範圍,那走 §1 的權責表)
-- 模板升版——`git diff template/v<採用版>..v<新版> -- template/` 看完決定要不要跟,跟不跟都不是停止理由
+- 模板升版——`git diff v<採用版>..v<新版>` 看完決定要不要跟,跟不跟都不是停止理由
 - 平台 runtime 掛掉——先用 `git` 與 `pgrep -af claude` 確認 agent 是不是其實還活著;活著就不重派(重派會撞成同一份工作跑兩份),改做不需要這個平台的其他工作;平台恢復後,重建剛才被吃掉的 task(不是假設它還在排程裡)
 - worker 開 escalation——那是 worker 在正常求助,不是迴圈壞掉;照 §1 權責表把問題分給該回答的人,問完之前先去做別的 ready 工作
 - worker 說「我不照工單做」並附實測——先看那個實測,實測站得住腳就是工單本身有錯,修工單或走 ADR,不是逼 worker 硬做或把這當成迴圈要停下來的訊號
