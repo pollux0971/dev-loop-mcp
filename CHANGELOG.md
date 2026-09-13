@@ -4,6 +4,50 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.7.1 — 2026-09-13
+
+**patch。新使用者照 README 跑不完——使用者要求的 UX 檢查找到的,全部是 bug。**
+**安裝方式改變**(使用者裁決:私有 GitHub、不發 npm):
+
+```bash
+npx github:pollux0971/dev-paradigm#npx-v1.7.1 init .
+```
+
+已採用的 consumer 升版動作:重 sync 一次(守門腳本沒有行為變更)。
+
+**UX 檢查怎麼做的**:空資料夾、只看 README、照字面做,從步驟 0 跑到步驟 4,每個卡點記原始輸出。
+
+- **README 步驟 0 的指令是壞的**:`cp -r template/. …` → `No such file or directory`。那是 repo 從
+  `llm_learning-cards/template/` 搬家前的路徑。改寫成 npx(與 clone 後跑同一支 CLI 的備案),
+  並明說**不要 `cp -r` 整個模板 repo**(會把模板自己的協調紀錄、收件匣、發布殼帶進去)。
+- **README 完全沒提 `npx init`**,而且套件是 private,`npx pollux-dev-paradigm init` → 404。
+- **我推薦的「GitHub git URL」照字面做也不行**:【驗】`npx github:pollux0971/dev-paradigm#v1.7.0 init .` →
+  `could not determine executable to run`。npm 從 git 安裝讀的是 **repo 根目錄**的 package.json,而那份是
+  給 consumer 的樣板(沒有 `bin`)。新增 `package/release-npx-branch.sh`:把 `npm pack` 產物放進孤立分支
+  `npx-release` 的根目錄、打 `npx-v<版本>` tag;預設只演練,`--push` 才推送。
+  【驗】先用本機 `git+file://` 模擬整條流程成功,才寫成腳本。
+- **新專案的收件匣塞了模板自己的 12 件待裁事項**:npx 出貨的是上游那份 `DECISIONS_NEEDED.md`。
+  改出貨空白骨架 `package/skeleton/DECISIONS_NEEDED.md`(manifest 新增選用 `dest` 欄位指定落地路徑)。
+  黑箱測試加斷言「新專案的收件匣待批示必須是空的」;反向驗證:manifest 改回上游那份 → 紅並說明原因。
+- **README 與 CHECKLIST 教的驗證指令永遠不可能回傳空**:`grep -rn '{{' .`——`CHECKLIST.md` 自己就有幾十行 `{{`。
+  改成排除 5 份「在文字裡介紹 placeholder」的文件,並逐檔確認剩下的都是真正要填的地方。
+- **README 叫 consumer 把自己的設定鍵加進 `KNOWN_GATES_CONFIG_KEYS`**——正是讓 consumer 的 worker 手改 `_root.ts`
+  的那句話,跟 1.6.6(P-94)直接矛盾。改成「自帶設定檔」,只有模板本身新增守門才改那份清單。
+- **README 升版指令**用的是舊 tag 名 `template/v…` 與不存在的 `template/` 路徑,已修。
+- **`init` 結束訊息**叫人「依 README 五步驟繼續」,而步驟 0 就是那個壞掉又多餘的 `cp`;改成「從步驟 1 繼續」。
+- **`--help` 印成 `✗` 錯誤、退出碼 1**;改成正常印用法、退出碼 0,並列出私有 GitHub 的安裝指令。
+- **P-97 在修 UX 時當場發作**:舊 `package/dist/` 快照讓 `init` 少落地一個檔、還印成功。
+  manifest 條目展開成 0 個檔改為大聲失敗(1.7.0 當時登記成「刻意不修、風險已被接住」,第二天就被推翻,見 P-97)。
+- **更正 UX 報告的一項**:我原本回報「CHECKLIST 漏列 24 個 placeholder」——**錯的**。CHECKLIST 用範圍寫法
+  (雙大括號包住 `ENV_VAR_1/2/3`、`CRITICAL_LOGIC_1..5` 這種寫法),我逐字比對所以對不上(P-89,這次是協調者自己)。
+  〔這一句原本直接寫出帶雙大括號的範例,被 npx 黑箱測試的「placeholder 零殘留」守門擋下——CHANGELOG 會出貨給 consumer,
+  文字裡的範例長得跟沒填的欄位一模一樣。同一天第二次在自己寫的字上踩到 P-89。〕
+  展開範圍後重算,**真正漏列的只有 `{{FEATURE_NAME}}` 一個**,已補;CHECKLIST 也補一句說明範圍寫法。
+- 出貨覆蓋名冊(1.7.0)**第一次實戰就精準抓到兩件**:上游 `DECISIONS_NEEDED.md` 不再出貨(未分類)、
+  `package/skeleton/` 開始出貨(跟「`package/` 整包不出貨」的宣告打架)。分類已更新。
+
+**沒驗證到的(誠實列出)**:填完所有 placeholder 之後步驟 2~5 能不能全綠——那需要一個真實專案的內容,沒有編造一個去測。
+
 ## 1.7.0 — 2026-09-13
 
 **minor。** 使用者批次授權協調者自行裁決四件「純內部、可回滾、不改 consumer 介面」的提案

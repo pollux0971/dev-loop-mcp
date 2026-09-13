@@ -228,7 +228,15 @@ async function assertCleanInstall(packageDir, target, manifest, payload) {
   assert.equal(init.code, 0, `clean init failed:\n${output(init)}`);
   assert.match(init.stdout, /^✓ init 完成: \d+ paths, template v\d+\.\d+\.\d+$/m);
   const installed = sorted((await filesUnder(target)).map((file) => path.relative(target, file).split(path.sep).join("/")));
-  assert.deepEqual(installed, sorted([...payload, ".npx-init-manifest.json"]), "installed path set differs from manifest");
+  // 1.7.1:單檔條目可用 `dest` 指定落地路徑,落地集合要套用同一個對應(tarball 仍然是來源路徑)。
+  const destOf = new Map((manifest.payload ?? []).filter((e) => e.dest).map((e) => [e.root, e.dest]));
+  const expectedInstalled = payload.map((p) => destOf.get(p) ?? p);
+  assert.deepEqual(installed, sorted([...expectedInstalled, ".npx-init-manifest.json"]), "installed path set differs from manifest");
+  // 1.7.1:新專案的收件匣必須是空的。1.7.0 以前出貨的是上游那份,consumer 一開始就有十幾件模板內部待裁事項。
+  const inbox = await fs.readFile(path.join(target, "DECISIONS_NEEDED.md"), "utf8");
+  const pendingSection = inbox.slice(inbox.indexOf("## 待批示"), inbox.indexOf("## 已批示"));
+  assert.ok(pendingSection.includes("## 待批示"), "落地的 DECISIONS_NEEDED.md 沒有「待批示」段落");
+  assert.deepEqual([...pendingSection.matchAll(/^\|\s*\d+\s*\|/gm)].map((m) => m[0]), [], "新專案的收件匣「待批示」不是空的——出貨了上游的內部事項");
   const expectedHeaderFiles = (await filesUnder(path.join(target, "scripts"))).filter((file) => file.endsWith(".ts") || file.endsWith(".py"));
   for (const file of expectedHeaderFiles) assert.match((await fs.readFile(file, "utf8")).split(/\r?\n/, 1)[0], SOURCE_HEADER, `invalid SOURCE header: ${file}`);
   const sync = await run("bash", [path.join(target, "scripts", "sync-gates.sh"), target, "scripts", "--check"]);

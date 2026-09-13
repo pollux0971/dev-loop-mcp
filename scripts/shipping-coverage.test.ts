@@ -59,8 +59,16 @@ const NOT_SHIPPED: Record<string, string> = {
   '.orca-brief/drafts/': '規則層落地前的草稿,已經落地成 .claude/skills/ 與 ADR-016;草稿本身留在上游當留痕,出貨的是落地後的版本。',
   '.orca-brief/proposals/':
     '待使用者裁決的提案素材(DECISIONS_NEEDED #8~#13 等),尚未批准;批准落地後出貨的是規則本身,不是提案檔。',
-  'package/':
-    'npx 發布殼本身(package.json、cli、build-template、黑箱測試);它是**出貨工具**,以 npm 套件的形式存在,不是 template payload 的一部分。',
+  'DECISIONS_NEEDED.md':
+    '模板自己的收件匣(裡面是模板本身的待裁事項)。consumer 拿到的是 package/skeleton/DECISIONS_NEEDED.md 落地成的空白骨架;' +
+    '1.7.0 以前出貨的是這一份,新專案一開始就有十幾件跟他無關的待批示(1.7.1 UX 檢查發現)。',
+  'package/package.json': 'npx 發布殼的 manifest;它以 npm 套件的形式存在(發布分支的根),不是 template payload 的一部分。',
+  'package/payload-manifest.json': '出貨清單本身;它描述要出貨什麼,自己不落地到 consumer。以套件檔的形式跟著發布分支走。',
+  'package/README.md': 'npx 發布殼的說明文件,給維護發布流程的人看;consumer 的說明在根目錄 README.md。',
+  'package/src/': 'npx 的 CLI 與建置程式(cli.mjs、build-template.mjs);cli.mjs 以套件的 bin 形式存在,不是 payload。',
+  'package/test/':
+    'npx 發布殼的黑箱測試:它會複製整個模板 repo、跑 npm pack、在暫存目錄 init,依賴上游的完整結構與 package/ 本身;consumer 那裡沒有 package/,跑不起來。',
+  'package/release-npx-branch.sh': '把 npm pack 的產物推成發布分支與 npx-v<版本> tag 的腳本,只有模板維護者在上游執行。',
   'package-lock.json': '模板自己開發環境的 lockfile;consumer 會依自己的 package.json 產生自己的 lockfile,出貨上游的只會造成衝突。',
   'scripts/zero-input.gates.test.ts':
     '守的是**模板自己**全部 gate 的零輸入行為(P-84),依賴模板 repo 的完整 gate 清單;consumer 那邊的 gate 組成不同,跑不起來也沒意義。',

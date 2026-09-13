@@ -53,7 +53,8 @@
 ## 版本
 
 `VERSION` 是模板版本(semver),`CHANGELOG.md` 記每版動了什麼。專案的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;
-之後模板升版,用 `git diff template/v<採用版>..template/v<新版> -- template/` 看差異決定要不要跟。
+之後模板升版,在模板 repo 裡用 `git diff v<採用版>..v<新版> --stat` 看差異決定要不要跟
+(1.5.0 以前的 tag 叫 `template/vX.Y.Z`,見檔頭說明)。
 三個專案用同一套東西,沒有版本一週後就是三套。
 
 守門腳本用 `scripts/sync-gates.sh <你的 repo 根>` 複製進去(檔頭會寫來源版本),CI 才自包含;升版重跑一次,`--check` 可放進 CI 抓手改。不要直接呼叫模板路徑(CI 與別台機器沒有它)。sync 若印「已存在且沒有 SOURCE 標頭」就是它撞到你們自己寫的同名檔,它不會蓋、也一個檔都沒寫:把你們的檔改名 `<base>.local.<ext>`(例如 `check-boundaries.local.test.ts`)再跑一次(1.5.0,P-85)。
@@ -65,9 +66,13 @@
 npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡真的存在,不存在就算失敗——
 新加一支守門,永遠是「先掛 npm script,再寫進 `chain`」,不是反過來。`gates.config.json` 認得的
 頂層鍵有哪些,以 `scripts/_root.ts` 匯出的 `KNOWN_GATES_CONFIG_KEYS` 為準(不在這裡重複列一份會
-漂移的清單);新增一支守門用到新的頂層鍵,同時要把鍵名加進那份清單,否則 `gates.config.json` 一填
-那個鍵就會被判定成「不認識的鍵」而整個設定檔失敗(S9,見 `docs/07-practices.md`「gates.config.json
-壞掉被靜默忽略」相關 PITFALLS 條目)。
+漂移的清單);不在清單裡的頂層鍵,整份設定檔會被判定為「不認識的鍵」而失敗(S9)。
+
+⚠️ **consumer 自己加的守門需要設定時,不要改 `KNOWN_GATES_CONFIG_KEYS`**——那份清單在模板檔裡,
+改了就是手改模板檔,下次 sync 會跟你打架。**讓那支守門自帶一份設定檔**,先例是
+`check-doc-rot.ts` 的 `doc-rot.blacklist.json`(P-94;1.7.0 以前這裡寫的是「把鍵名加進那份清單」,
+那句話讓一個 consumer 的 worker 真的去手改了 `_root.ts`)。只有**模板本身**新增守門時,
+才由模板維護者把鍵名加進 `KNOWN_GATES_CONFIG_KEYS`。
 
 `check:doc-rot` 出貨時預設是 **report 模式**(`gates.config.json` 沒填 `docRot.mode` 就是
 `"report"`):命中黑名單會全部印出來、`gate=doc-rot result=FAIL` 標記照印,但不擋 exit code。
@@ -93,17 +98,34 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 
 ## 5 步驟落地到新專案
 
-### 步驟 0:複製
+### 步驟 0:落地
 
-把整個 `template/` 資料夾的內容複製到新 repo 的根目錄(包含隱藏的 `.claude/`):
+**用 npx(建議)。** 需要能讀取私有 repo `pollux0971/dev-paradigm`(git 已設好 SSH 或 credential):
 
 ```bash
-cp -r template/. /path/to/new-repo/
-cd /path/to/new-repo
-git init   # 如果還沒有
+mkdir my-project && cd my-project
+git init
+npx github:pollux0971/dev-paradigm#npx-v1.7.1 init .
 ```
 
-複製完 `template/` 這層目錄本身就不需要了。
+- 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
+- **只支援全新專案**(空資料夾,或剛 `git init` 的 repo)。
+- **不會**執行 `npm install`、**不會** `git init`——這兩步留給你,init 失敗時才不會混進不可回復的副作用。
+- 撞到已存在的同名檔時**一個檔都不寫**,把衝突全部列出來後結束(沒有 `--force`)。
+- 想先看會建立哪些檔:加 `--dry-run`。`--help` 看全部選項。
+
+**沒有 npx 權限時**,clone 下來直接跑同一支 CLI(效果相同):
+
+```bash
+git clone https://github.com/pollux0971/dev-paradigm.git
+node dev-paradigm/package/src/cli.mjs init my-project
+```
+
+⚠️ **不要用 `cp -r` 複製整個模板 repo。** 那會把模板**自己的**東西一起帶進你的專案——協調紀錄
+(`.orca-brief/`)、上游的收件匣(`DECISIONS_NEEDED.md` 裡是模板本身的待裁事項)、npx 發布殼(`package/`)。
+init 只落地 consumer 該拿到的那一份,收件匣也是空白的。
+
+落地完成後**直接從步驟 1 開始**。
 
 ### 步驟 1:使用者親口填「做決定時」那張表,然後填 `CHECKLIST.md`
 
@@ -117,7 +139,17 @@ git init   # 如果還沒有
 (`package.json` 的 `name`、`.env.example` 的變數名之類是機械性替換,漏了不會立刻報錯,
 但會在你以為填好了的地方留一個地雷)。
 
-驗證:`grep -rn '{{' .` 在新 repo 根目錄應該回傳空。
+驗證(應該回傳空):
+
+```bash
+grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
+  --exclude=CHECKLIST.md --exclude=CHANGELOG.md --exclude=PITFALLS.md \
+  --exclude=README.md --exclude=07-practices.md .
+```
+
+排除的那 5 份是**在文字裡介紹或引用** placeholder 的文件(`CHECKLIST.md` 本身就列著每一個),
+不是要填的地方。1.7.0 以前這裡寫的是 `grep -rn '{{' .`——**那個指令永遠不可能回傳空**
+(`CHECKLIST.md` 自己就有幾十行 `{{`),照做的人會以為自己永遠沒填完。
 
 ### 步驟 2:寫 `contracts/types.md` 與 fixtures,然後凍結
 

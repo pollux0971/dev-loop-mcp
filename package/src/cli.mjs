@@ -62,7 +62,13 @@ async function expandEntry(sourceRoot, entry) {
       if (matcher.test(relative)) files.push(candidate);
     }
   }
-  return [...new Set(files)].sort();
+  const expanded = [...new Set(files)].sort();
+  // 1.7.1(P-97 發作後修):一個 manifest 條目展開成零個檔,一定是寫錯或來源不在——大聲失敗。
+  // 原本 filesUnder 對不存在的 root 靜默回傳 [],實測過一次:舊的 package/dist/ 快照裡沒有新條目的路徑,
+  // init 少落地一個 DECISIONS_NEEDED.md、印「✓ init 完成」、exit 0。零輸入不是很乾淨,是掃描器壞了(P-32)。
+  if (expanded.length === 0) throw new Error(`manifest 條目「${entry.root}」展開成 0 個檔(來源根目錄:${sourceRoot})。` +
+    `可能是條目寫錯,或 package/dist/ 是舊快照——刪掉 package/dist/ 或重跑 npm pack 再試。`);
+  return expanded;
 }
 
 function render(text, target) {
@@ -136,7 +142,8 @@ async function buildPlan(context, target) {
     if (entry.root === "package.json") continue;
     for (const source of await expandEntry(sourceRoot, entry)) {
       const sourceRelative = path.relative(sourceRoot, source).split(path.sep).join("/");
-      const relative = TRANSPORT_ALIASES.get(entry.root) === sourceRelative ? entry.root : sourceRelative;
+      // 1.7.1:單檔條目可用 `dest` 指定落地路徑(例:空白骨架 package/skeleton/DECISIONS_NEEDED.md → DECISIONS_NEEDED.md)。
+      const relative = entry.dest ?? (TRANSPORT_ALIASES.get(entry.root) === sourceRelative ? entry.root : sourceRelative);
       let body = render((await fs.readFile(source)).toString("utf8"), target);
       if (relative.startsWith("scripts/") && (relative.endsWith(".ts") || relative.endsWith(".py"))) body = sourceHeader(version, commit, body, path.extname(relative));
       add(relative, body);
@@ -213,12 +220,24 @@ async function init(target, options) {
   if (options.dryRun) { console.log(`✓ plan ${plan.length + 1} paths, template v${context.version}`); for (const output of [...plan, { path: INSTALL_MANIFEST }]) console.log(`  ${output.path}`); return; }
   await commitPlan(target, plan, manifest, Number(process.env.NPX_INIT_FAIL_AFTER || 0));
   console.log(`✓ init 完成: ${plan.length + 1} paths, template v${context.version}`);
-  console.log("未執行 npm install 或 git init;請依 README 五步驟繼續。");
+  console.log("未執行 npm install 或 git init;請從 README「步驟 1」繼續(步驟 0 的複製已經由 init 完成)。");
 }
+
+const USAGE = [
+  "用法: pollux-dev-paradigm init [target] [--dry-run] [--yes]",
+  "",
+  "  init [target]   把開發範式落地到 target(預設目前目錄)。只支援全新專案;不執行 npm install 或 git init。",
+  "  --dry-run       只列出會建立哪些檔,不寫入。",
+  "  --yes           接受預設值,不互動(CI 用)。",
+  "",
+  "  私有 GitHub 安裝:npx github:pollux0971/dev-paradigm#npx-v<版本> init .",
+  "  落地後照 README「步驟 1」往下做(步驟 0 的複製已經由 init 完成)。",
+].join("\n");
 
 async function main(argv) {
   const [command = "", ...args] = argv;
-  if (command !== "init") throw new Error("用法: node src/cli.mjs init [target] [--yes] [--dry-run]");
+  if (command === "--help" || command === "-h" || command === "help") { console.log(USAGE); return; }
+  if (command !== "init") throw new Error(`不認得的指令「${command || "(空白)"}」。\n${USAGE}`);
   const flags = args.filter((arg) => arg.startsWith("--"));
   const unknown = flags.filter((flag) => !["--yes", "--dry-run"].includes(flag));
   if (unknown.length) throw new Error(`不提供 ${unknown.join(", ")};請改名或刪除衝突檔後重跑`);

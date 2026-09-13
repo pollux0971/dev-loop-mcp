@@ -1,13 +1,23 @@
 # 落地清單
 
-複製 `template/` 之後,把下面每一個 `{{PLACEHOLDER}}` 找到、填掉。表格依檔案分組,
+`init` 落地之後(見 README 步驟 0),把下面每一個 `{{PLACEHOLDER}}` 找到、填掉。表格依檔案分組,
 「填什麼」是給你的指引,「本專案的例子」是抽出這套範式的來源專案(一個桌面學習卡片系統,
 教學卡 + 考試卡,LLM 產生內容、間隔重複排程)實際填的值,照抄格式,不要照抄內容。
 
 > `README.md` 裡出現的 `` `{{PLACEHOLDER}}` `` 字樣是在說明「有一個東西長這樣」,
 > 不是一個真的要填的欄位,不在下面的表裡。
 
-驗證方式:全部填完後,`grep -rn '{{' .`(在新專案根目錄執行)應該沒有任何輸出。
+驗證方式:全部填完後,在新專案根目錄執行下面這行,應該沒有任何輸出:
+
+```bash
+grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
+  --exclude=CHECKLIST.md --exclude=CHANGELOG.md --exclude=PITFALLS.md \
+  --exclude=README.md --exclude=07-practices.md .
+```
+
+排除的 5 份是在文字裡介紹或引用 placeholder 的文件,不是要填的地方。(1.7.0 以前這裡寫 `grep -rn '{{' .`——本檔自己就有幾十行 `{{`,那個指令永遠不可能回傳空。)
+
+表格裡 `{{X_1/2/3}}`、`{{X_1..5}}` 這種寫法代表一組編號連續的 placeholder,每一個都要填。
 
 ## CLAUDE.md
 
@@ -116,6 +126,7 @@
 |---|---|---|
 | `{{FEATURE_A}}` / `{{FEATURE_B}}` | 步驟檔命名範例 | `scheduler` / `grading` |
 | `{{FIXTURE_TODAY}}` | 通用步驟表裡「today is」範例用的日期,要跟 `_world.ts` 的預設值一致 | 2026-09-10 |
+| `{{FEATURE_NAME}}` | 只出現在 `standaloneKey()` 的註解範例裡,跟 `{{FEATURE_TAG}}` 成對:feature 資料夾名稱去掉 `NN-` 編號的那一段 | `ingest`(對應 `@ingest` → `01-ingest`) |
 | `{{FEATURE_TAG}}` | 同上 | `scheduler` |
 
 ## features/steps/_world.ts
