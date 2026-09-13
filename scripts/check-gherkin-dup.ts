@@ -54,7 +54,7 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { DEFAULT_SKIP_DIRS, ROOT, loadGatesConfig, requireConfigType, resolveConfig } from './_root.js';
+import { ROOT, loadGatesConfig, requireConfigType, resolveConfig, resolveSkipDirs } from './_root.js';
 
 /** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
 const GATE_NAME = 'gherkin-dup';
@@ -116,11 +116,13 @@ function groupMatchesAllow(group: Scenario[], scenario: string, onlyUnder: strin
 /** S10:跟其餘會走目錄樹的 gate 共用同一份略過清單(`_root.ts` 的 `DEFAULT_SKIP_DIRS`
  *  + `gates.config.json` 的 `skipDirs` 追加),不在這支腳本裡另外寫一份。 */
 function resolveSkipDirsForGherkinDup(): Set<string> {
+  // 1.7.0(#13 名冊抓到的,P-91 第五/六個實例):原本這裡自己重寫了「型別檢查 + 合併 DEFAULT_SKIP_DIRS」,
+  // 於是 1.6.3 加在共用層的 glob 硬錯對這支不生效。**上面那段註解一直寫著「不在這支腳本裡另外寫一份」,
+  // 而下一行就寫了一份**——註解描述的是意圖,不是實作,沒有東西檢查兩者一致。
+  // 1.6.3~1.6.10 的逐支盤點都沒抓到它,原因是盤點用 `grep resolveSkipDirs`,而這個函式名
+  // `resolveSkipDirsFor…` 剛好以那個字串開頭——字面掃描讀不到脈絡(P-89)。名冊用 `\bresolveSkipDirs\s*\(` 才分得出來。
   const p = resolveConfig(import.meta.dirname, 'gates.config.json');
-  const cfg = loadGatesConfig(p, GATE_NAME);
-  if (cfg?.skipDirs !== undefined) requireConfigType(cfg.skipDirs, 'skipDirs', 'array', GATE_NAME);
-  const extra = Array.isArray(cfg?.skipDirs) ? (cfg.skipDirs as unknown[]).filter((s): s is string => typeof s === 'string') : [];
-  return new Set([...DEFAULT_SKIP_DIRS, ...extra]);
+  return resolveSkipDirs(loadGatesConfig(p, GATE_NAME), GATE_NAME);
 }
 
 function* walk(dir: string, skipDirs: Set<string>): Generator<string> {

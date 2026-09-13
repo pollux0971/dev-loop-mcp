@@ -4,6 +4,40 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
 
+## 1.7.0 — 2026-09-13
+
+**minor。** 使用者批次授權協調者自行裁決四件「純內部、可回滾、不改 consumer 介面」的提案
+(`DECISIONS_NEEDED.md` 已批示 13·18·21·22)。升版動作:重 sync 一次(`_root.ts`、`check-all.ts`、
+`check-gherkin-dup.ts`、`check-step-dup.ts` 有變更)。**consumer 端唯一可見的變化是 `check:all` 最後一行多了 `ran=`**,
+加在行尾,既有用 `toContain` 比對前綴的斷言不受影響。
+
+- **#18 `check-all` 摘要行加 `ran=`**:`gate=all result=FAIL scanned=19 ran=3` = `--fail-fast` 在第 3 步中止。
+  原本 `check-all.ts:32` 寫的是一條叮嚀(「`scanned` 要配 `result` 一起看」)——**一句不需要存在的規則,
+  是最不會腐爛的規則**,有了 `ran`,歧義本身消失。
+  施工時發現標記散在 **7 個地方各自手寫**(check-all 自己 5 處 + `_root.ts` 共用的 `requireRootDir`、`failConfig` 2 處)。
+  只改主要那行的話,`ran=` 會**時有時無**,解析它的人會在設定檔壞掉那一次拿不到值——那正是 P-93。
+  所以 `_root.ts` 加 `setMarkerSuffix()`:需要尾欄的 gate 啟動時自己登記,共用層不特判 gate 名稱,沒登記的 gate 標記完全不變。
+  【驗】新增 4 條測試涵蓋每一種結束狀態(全過 / --continue / 設定檔 JSON 壞掉 / --root 不存在);
+  反向驗證:拿掉登記 → 剛好走共用路徑的那 2 條紅。
+- **#13 共用排除層名冊**(`scripts/skip-dirs-roster.test.ts`):每支碰到排除邏輯的掃描器,必須**呼叫**
+  `resolveSkipDirs()` 或附理由豁免。**第一次跑就抓到兩個真 bug**:`check-gherkin-dup.ts`、`check-step-dup.ts`
+  各自重寫了合併邏輯,1.6.3 的 glob 硬錯對它們從沒生效——而 1.6.x 三次手動盤點都把它們標成合規(見 P-97)。已修。
+- **#21 出貨覆蓋名冊**(`scripts/shipping-coverage.test.ts`):每個 tracked 檔都要能回答「它靠什麼到 consumer 手上」——
+  真的出貨了 / 刻意不出貨(附理由)/ 已知缺口(**必須指向一件還在待批示的裁決**,裁決一離開待批示就紅)。
+  出貨集合**不重寫展開邏輯**,而是複製 tracked 檔後**真的跑 `npm pack` 讀 tarball、真的跑 `sync-gates.sh` 看落地**。
+  【驗】量到:tracked 110、npx 出貨 85、sync 出貨 31;兩個管道都沒送的 25 個,其中 2 個是真缺口
+  (`.orca-brief/TASK.md.template`、`scripts/py/.gitignore`),登記指向 #23。
+  反向驗證:在 `.orca-brief/` 底下加一個新檔 → 以未分類紅出來;把缺口指向已批示的裁決 → 以「欠帳不能在裁決之後繼續掛著」紅出來。
+- **#22 工單樣板改預設**(`.orca-brief/TASK.md.template`):加「工單會用到的數字(一律當場取數)」與
+  「把別人的東西拿進來之前,先預測會動到哪幾個檔」兩節,開頭說明為什麼是**改預設**而不是**加守門**
+  (工單內容是 orca 的 task 物件,不在版控裡,所有守門結構上都看不到它)。
+  施工時抓到自己一個 UX 陷阱:表格裡的指令為了 markdown 把 `|` 寫成 `\|`,**agent 讀的是原始檔,
+  照抄會把 `\|` 當成字面參數,管線直接斷掉**——指令全部移出表格放進 code block,
+  【驗】從原始檔照抄 (B)(C) 實跑得出 017、23。沒有新增 `{{PLACEHOLDER}}`(那兩個值在範式裡是固定的)。
+- **沒做、另開 #23**:「sync 送不了非守門檔」(skill、樣板)。要讓 `.md` 帶 SOURCE 標頭得改兩個出貨管道共用的標頭契約,
+  樣板搬家要改規則層引用——**兩者都超出這次授權**。
+- 測試:`test:scripts` 13 檔 211 → **15 檔 247**,全綠;`sync-gates.test.sh` 全部通過。
+
 ## 1.6.10 — 2026-09-12
 
 **patch。** 升版動作:重 sync 一次(只有 `sync-gates.test.sh` 與文件,守門腳本沒動)。

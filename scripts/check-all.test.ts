@@ -115,7 +115,7 @@ describe('check-all:0 個目標一律 FAIL', () => {
     const { code, output } = runCheckAll(dir);
 
     expect(code).toBe(1);
-    expect(output).toContain('gate=all result=FAIL scanned=0');
+    expect(output).toContain('gate=all result=FAIL scanned=0 ran=0');
     expect(output).toContain('"chain"');
   }, SPAWN_TIMEOUT_MS);
 
@@ -142,7 +142,8 @@ describe('check-all:--fail-fast 對照 --continue(預設)', () => {
     expect(output).toContain('✗ broken (exit 1)');
     expect(output).toContain('⏭  a  (--fail-fast,未執行)');
     expect(output).not.toContain('✓ a');
-    expect(output).toContain('gate=all result=FAIL scanned=2');
+    // 1.7.0(#18):scanned 是設定了幾個、ran 是真的跑了幾個——fail-fast 在第 1 步中止 → ran=1
+    expect(output).toContain('gate=all result=FAIL scanned=2 ran=1');
   }, SPAWN_TIMEOUT_MS);
 
   it('預設(--continue):第一個失敗之後,後面的項目照跑', () => {
@@ -205,5 +206,41 @@ describe('check-all:S9 設定檔壞掉', () => {
 
     expect(code).toBe(0);
     expect(output).toContain('gate=all result=PASS scanned=2');
+  }, SPAWN_TIMEOUT_MS);
+});
+
+describe('check-all:ran= 在每一種結束狀態都存在(1.7.0,#18;P-93 的教訓)', () => {
+  // 加 ran= 之前 check-all.ts:32 寫的是一條叮嚀「scanned 要配 result 一起看」。
+  // 這組測試要守的不是「ran 算得對」而已,是**任何結束狀態都印得出 ran=**——
+  // 否則解析 ran= 的 consumer 會在某一種失敗那次拿不到值(總結的輸出漏掉一種狀態)。
+  it('全部通過:ran 等於 scanned', () => {
+    const dir = makeFixture({ scripts: { a: PASS, b: PASS }, gatesConfig: { chain: ['a', 'b'] } });
+    const { code, output } = runCheckAll(dir);
+    expect(code).toBe(0);
+    expect(output).toContain('gate=all result=PASS scanned=2 ran=2');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('--continue(預設)失敗後照跑:ran 仍等於 scanned', () => {
+    const dir = makeFixture({ scripts: { broken: failWith(1), a: PASS }, gatesConfig: { chain: ['broken', 'a'] } });
+    const { output } = runCheckAll(dir);
+    expect(output).toContain('gate=all result=FAIL scanned=2 ran=2');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('設定檔 JSON 壞掉(經過 _root.ts 的共用 failConfig 印標記)→ 仍帶 ran=0', () => {
+    const dir = makeFixture({ scripts: { a: PASS }, gatesConfig: { chain: ['a'] } });
+    writeFileSync(join(dir, 'scripts', 'gates.config.json'), '{ this is not json', 'utf8');
+    const { code, output } = runCheckAll(dir);
+    expect(code).toBe(1);
+    expect(output).toContain('gate=all result=FAIL scanned=0 ran=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('--root 指到不存在的目錄(經過 _root.ts 的 requireRootDir)→ 仍帶 ran=0', () => {
+    const r = spawnSync('npx', ['tsx', CHECK_ALL_TS, '--root', join(tmpdir(), 'lc-check-all-does-not-exist-xyz')], {
+      encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
+    });
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    expect(r.status).toBe(1);
+    expect(output).toContain('gate=all result=FAIL scanned=0 ran=0');
   }, SPAWN_TIMEOUT_MS);
 });

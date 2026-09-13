@@ -29,7 +29,11 @@
  * 退出碼:0 全部通過;1 任一項失敗(含「不是 npm script」),或 `chain` 沒讀到任何項目。
  *
  * `scanned` 就是 `chain` 的長度,不管 `--fail-fast` 有沒有讓後面的項目沒真的跑——
- * 這個數字回答的是「這條鏈設定了幾個目標」,不是「這次真的執行了幾個」。
+ * 這個數字回答的是「這條鏈設定了幾個目標」;**`ran` 回答「這次真的執行了幾個」**(1.7.0,#18)。
+ * `gate=all result=FAIL scanned=19 ran=3` = `--fail-fast` 在第 3 步中止。任何失敗路徑(含
+ * `--root` 不存在、設定檔壞掉、沒有 chain)都印 `ran=0`,**不會有一種狀態缺這一欄**。
+ * 加 `ran` 之前這裡寫的是一條叮嚀(「`scanned` 要配 `result` 一起看」);**一句不需要存在的規則,
+ * 是最不會腐爛的規則**——有了 `ran`,歧義本身消失,那條叮嚀就不必存在。
  */
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -41,6 +45,7 @@ import {
   readConfigJson,
   requireConfigType,
   requireRootDir,
+  setMarkerSuffix,
 } from './_root.js';
 
 /** 所有掃描器共用的那句話。0 個目標的紅,方向永遠是「掃描器壞了」。 */
@@ -52,7 +57,7 @@ const GATE_NAME = 'all';
 /** 印一則設定錯誤、印 gate 標記(0 目標)、exit 1(S14 的 hardErrorMessage 用)。 */
 function configErrorAll(msg: string): never {
   console.error(`✗ ${msg}`);
-  console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+  console.log(`gate=${GATE_NAME} result=FAIL scanned=0 ran=0`);
   process.exit(1);
 }
 
@@ -63,6 +68,7 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
+setMarkerSuffix(' ran=0'); // 經過 _root.ts 印的提早失敗標記也要帶 ran=,見 setMarkerSuffix
 requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 const MARKDOWN = process.argv.includes('--markdown');
 const FAIL_FAST = process.argv.includes('--fail-fast');
@@ -95,7 +101,7 @@ function loadChain(): string[] {
     console.error(`✗ 設定檔未找到於 ${found.triedPaths.join('、')}`);
     console.error('check-all 需要 gates.config.json 的 "chain"(要依序跑哪幾個 npm script)才知道跑什麼。範例:\n');
     console.error(CHAIN_EXAMPLE);
-    console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+    console.log(`gate=${GATE_NAME} result=FAIL scanned=0 ran=0`);
     process.exit(1);
   }
   // 解析錯誤(壞掉的 JSON)、不認識的頂層鍵(打錯字)都在這裡大聲失敗(S9),不會是
@@ -108,13 +114,13 @@ function loadChain(): string[] {
     console.error(`✗ ${p} 沒有 "chain"(或是空陣列)`);
     console.error('check-all 需要在 gates.config.json 加一個非空的 "chain" 陣列,元素是 package.json scripts 底下的名字。範例:\n');
     console.error(CHAIN_EXAMPLE);
-    console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+    console.log(`gate=${GATE_NAME} result=FAIL scanned=0 ran=0`);
     process.exit(1);
   }
   for (const name of raw.chain) {
     if (typeof name !== 'string' || !name) {
       console.error(`✗ ${p} 的 "chain" 每一項都要是非空字串,實際:${JSON.stringify(raw.chain)}`);
-      console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+      console.log(`gate=${GATE_NAME} result=FAIL scanned=0 ran=0`);
       process.exit(1);
     }
   }
@@ -125,7 +131,7 @@ function loadPackageScripts(): Record<string, string> {
   const p = join(ROOT, 'package.json');
   if (!existsSync(p)) {
     console.error(`✗ 找不到 ${p}`);
-    console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
+    console.log(`gate=${GATE_NAME} result=FAIL scanned=0 ran=0`);
     process.exit(1);
   }
   // package.json 不是 gates.config.json,沒有「已知頂層鍵」這個概念(name、scripts、
@@ -181,7 +187,8 @@ function main(): void {
   const scanned = results.length;
 
   console.log(failed.length ? `\n${failed.length} 個失敗` : '\n全部通過');
-  const marker = `gate=${GATE_NAME} result=${failed.length ? 'FAIL' : 'PASS'} scanned=${scanned}`;
+  const ran = results.filter((r) => r.ran).length;
+  const marker = `gate=${GATE_NAME} result=${failed.length ? 'FAIL' : 'PASS'} scanned=${scanned} ran=${ran}`; // ran 加在行尾(P-89 施工規則)
   console.log(marker);
 
   if (MARKDOWN) {

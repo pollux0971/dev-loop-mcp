@@ -63,12 +63,28 @@ export function rootDirError(root: string): string | undefined {
  * 也不應該在這裡擋)。呼叫端要在**任何設定檔查找之前**呼叫這個函式(S14 的
  * hard-error 是下一關,不是這一關)。
  */
+/**
+ * 1.7.0(#18):提早失敗時印的 gate 標記要能帶「這支 gate 專屬」的尾欄。
+ * 起因:`check-all.ts` 的摘要行加了 `ran=`(這次真的執行了幾個),但它有兩條失敗路徑會經過
+ * 這裡(`requireRootDir`、`failConfig`)印標記——只改 check-all 自己那幾行的話,`ran=` 會
+ * **時有時無**,解析 `ran=` 的 consumer 會在設定檔壞掉那一次拿不到值。那正是 P-93 的形狀
+ * (總結的輸出漏掉一種狀態,比沒有更糟)。所以不在共用層特判 gate 名稱,而是讓需要尾欄的
+ * gate 在啟動時自己登記;沒登記的 gate 標記完全不變。
+ */
+let markerSuffix = '';
+export function setMarkerSuffix(suffix: string): void {
+  markerSuffix = suffix;
+}
+function earlyFailMarker(gateName: string): string {
+  return `gate=${gateName} result=FAIL scanned=0${markerSuffix}`;
+}
+
 export function requireRootDir(root: string, rootExplicit: boolean, gateName: string): void {
   if (!rootExplicit) return;
   const message = rootDirError(root);
   if (message === undefined) return;
   console.error(message);
-  console.log(`gate=${gateName} result=FAIL scanned=0`);
+  console.log(earlyFailMarker(gateName));
   process.exit(1);
 }
 
@@ -218,7 +234,7 @@ export function lookupConfig(
  */
 function failConfig(gateName: string, message: string): never {
   console.error(`✗ ${message}`);
-  console.log(`gate=${gateName} result=FAIL scanned=0`);
+  console.log(earlyFailMarker(gateName));
   process.exit(1);
 }
 
