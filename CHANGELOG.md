@@ -4,6 +4,38 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
+## 1.8.0 — 2026-09-14
+
+**minor。** 使用者 2026-09-14 批准(`DECISIONS_NEEDED.md` 已批示 12·17·25①·26)。
+安裝:`npx github:pollux0971/dev-paradigm#npx-v1.8.0 init .`。
+**既有 consumer 升版動作**:重 sync 一次(`sync-gates.sh`、`scripts/hooks/pre-commit` 行為變了);`autopilot` 多了兩個要填的欄位
+`{{UNMERGED_CAP}}`、`{{BRANCH_DRIFT_CAP}}`(見 CHECKLIST);**已經裝了 pre-commit hook 的人要重新 cp 一次**才會拿到新的判斷邏輯。
+
+**⚠️ 規則層執行者註記**:本版動了 `.claude/skills/autopilot/SKILL.md`。依 `CLAUDE.md`,規則層變更由技術顧問執行;
+技術顧問 session 已不存在,使用者在知情下要求繼續改,由協調者執行並自行做矛盾掃描(掃描結果見下)。
+
+- **pre-commit hook 依「變異測試會不會改工作區」分流(#12,P-100)**:`.mutate.lock`(模板的 mutate.py,一定直接改檔)照舊擋;
+  `.stryker.lock` **只有** `stryker*.json` 設了 `"inPlace": true` 才擋,判斷用 JSON 解析(字串裡提到 inPlace 不算)。
+  兩個 consumer 各自量到 inPlace 全未設定——1.7.x 的 hook 在他們那裡擋的是不存在的危害,代價是所有 worktree 包含 main 都不能 commit。
+  **沒有採納外部提案的「殘留鎖直接放行」**:對 mutate.py 不成立,殘留鎖代表檔案可能還沒還原(實作前查 `--recover` 才發現)。
+- **hook 安裝提示知道 worktree 了(#12)**:改用 `git rev-parse --git-path hooks` 取得實際 hooks 目錄,並印出共用的 worktree 數。
+  【驗】1.8.0 以前寫死 `.git/hooks`,linked worktree 裡 `.git` 是檔案,那行安裝指令直接失敗、「有沒有裝」永遠判成沒裝。
+  `--check` 那行原本也寫死 `scripts/`,守門裝在別的子目錄(例如 `features/scripts/`)的 consumer 照抄會錯。
+- **consumer 可以表達「決定不裝」,而且會被印出來(#17)**:寫一行理由到 `<安裝目錄>/hooks/pre-commit.local.md`,
+  `--check` 改印 `○ pre-commit hook 未安裝(consumer 決定:<理由>)`,不再每輪提示安裝。**是印出決定,不是靜音**——
+  靜音的話下一個人不會知道這裡曾經有一個決定。
+- **`autopilot` 的 rebase 矛盾統一(#26)**:第 1 步寫合併「不 rebase」、第 3 步卻寫「rebase 這件事由協調者做」。
+  統一為「**同步**由協調者做,方式是 `git merge main`;唯一例外是從未推出去的分支接到剛落地的共用檔 chore 上」。
+- **矛盾掃描另外抓到一條**:`docs/07-practices.md` 還寫「審核輪 ≤ 1」,但 `autopilot` 早已放寬為 `{{PARALLEL_CAP}}` 加檔案鎖排隊(P-34)。已對齊。
+- **#25 第①部分:AI_KM 實測過、不需要新角色的做法**,收進 `docs/07-practices.md` (ap)~(au) 與工單樣板:
+  (ap) 未合入交付物上限與分支落後上限——「ready 多少開多少」加「一次合一條」會讓完工的東西排隊等收(AI_KM 量到 13 個有 8 個完工閒置);
+  (aq) 審核要在「main + 分支合併後」的樹上跑、嚴格級反向驗證要換人重做;(ar) 長時間 gate 用 `setsid nohup` 跟 session 脫鉤;
+  (as) 工單固定「不准 push 遠端」;(at) 清閒置 worktree 的條件(防止誤殺剛開的 worktree)與刪前打 archive tag;
+  (au) 兩個**尚未實測**的候選(熱點檔改註冊表、merge 證據產生器),明確標示不是已驗證做法。
+  **#25 第②部分(新增接線 / 整合清樹兩個角色)仍待裁**,等 AI_KM 的 24 小時延遲數字。
+- 測試:`sync-gates.test.sh` 新增步驟 12(worktree 裡的 hook 狀態與決定檔)、步驟 13(hook 的 6 種鎖情境)、步驟 14(目標還不是 git repo);原有一條比對舊提示格式的斷言更新成新格式並加嚴。
+- **發布前被 npx 黑箱 gate 抓到的迴歸**:hook 偵測第一版在「目標還不是 git repo」時(npx init 刻意不 git init,所以這是第一次 sync 的正常狀態),`git worktree list` 失敗、在 pipefail 下讓整支 sync 以 128 **靜默**結束。步驟 12 只在 git repo 裡測,抓不到;補步驟 14,並做了反向驗證(拿掉修正 → 步驟 14 紅「預期 0,實際 128」→ 還原 → 綠)。
+
 ## 1.7.4 — 2026-09-13
 
 **patch。修掉調查報告（`.orca-brief/SURVEY-REPORT.md` 第 14 節)抓到的文件問題,都是措辭/連結,不動程式邏輯。**

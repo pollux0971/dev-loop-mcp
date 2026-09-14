@@ -232,6 +232,41 @@ read_sync_languages() {
   ' "$1" 2>/dev/null
 }
 
+# pre-commit hook 的狀態(1.8.0,#12 #17)。設定三個全域變數給兩處提示共用:
+#   HOOK_STATE  = installed | declined | absent
+#   HOOK_DIR    = git 實際使用的 hooks 目錄(絕對路徑)
+#   HOOK_NOTE   = declined 時是 consumer 寫的決定;其餘狀態是「幾個 worktree 共用」的說明
+# 為什麼不寫死 `$TARGET/.git/hooks`:【驗】linked worktree 裡 `.git` 是一個檔案不是資料夾,真正的 hooks
+# 目錄在主 repo 的 .git/hooks,**所有 worktree 共用同一個**。1.8.0 以前寫死的路徑讓安裝指令在 worktree 裡
+# 直接失敗,「有沒有裝」也永遠判成沒裝;而且沒有人告訴使用者「一裝就是全部 worktree 一起生效」。
+resolve_hook_state() {
+  local hp common gitdir wt_count decision
+  hp="$(git -C "$TARGET" rev-parse --git-path hooks 2>/dev/null || echo ".git/hooks")"
+  case "$hp" in /*) HOOK_DIR="$hp" ;; *) HOOK_DIR="$(cd "$TARGET" && pwd)/$hp" ;; esac
+  # 目標還不是 git repo 時(npx init 刻意不 git init),`git worktree list` 會失敗;在 pipefail + set -e 下
+  # 那會讓整支 sync 直接以 128 結束、什麼都不說(1.8.0 發布前 npx 黑箱 gate 抓到)。所以結尾要 `|| true`。
+  wt_count="$(git -C "$TARGET" worktree list 2>/dev/null | wc -l | tr -d ' ' || true)"
+  [ -n "$wt_count" ] && [ "$wt_count" -ge 1 ] || wt_count=1
+  if [ "$wt_count" -gt 1 ]; then
+    HOOK_NOTE="這個 repo 有 ${wt_count} 個 worktree,共用同一個 hooks 目錄——裝一次就是全部一起生效"
+  else
+    HOOK_NOTE="只有一個 worktree"
+  fi
+  if [ -f "$HOOK_DIR/pre-commit" ] && grep -q "mutate.lock" "$HOOK_DIR/pre-commit" 2>/dev/null; then
+    HOOK_STATE="installed"; return
+  fi
+  # consumer 可以明講「我們決定不裝」:寫 <安裝目錄>/hooks/pre-commit.local.md,第一行非空白的字就是決定。
+  # 用 `.local` 命名是沿用 P-85 的慣例——sync 永遠不碰帶 `.local` 的檔。
+  # 為什麼要印出決定而不是靜音(#17):靜音的話下一個人看到的是「什麼都沒有」,不會知道這裡曾經有一個決定;
+  # 而一行每輪重播的「裝法:cp …」會贏過任何人的記憶——consumer 記了 ADR 決定不裝,worker 照著提示把它
+  # 「修好」成 ✓,潛伏四小時後在 main 上擋下協調者的 commit(專案 A 2026-09-12 實例)。
+  if [ -f "$DEST/hooks/pre-commit.local.md" ]; then
+    decision="$(grep -m1 -vE '^[[:space:]]*$' "$DEST/hooks/pre-commit.local.md" | sed -E 's/^[#[:space:]]+//')"
+    HOOK_STATE="declined"; HOOK_NOTE="${decision:-(pre-commit.local.md 是空的,請寫一行理由)}"; return
+  fi
+  HOOK_STATE="absent"
+}
+
 # 自動偵測:$1=consumer 根、$2=本次的安裝目錄(排除,見上面檔頭「語言選集」段的解釋)。
 # 找到訊號時把理由寫進全域 PY_SIGNAL_REASON,供選集依據訊息使用。
 detect_python_signal() {
@@ -392,12 +427,12 @@ if [ "$MODE" = "--check" ]; then
   # 是不是這支模板的 hook(跟其餘檔案用 SOURCE 標頭判斷「是不是模板裝的」同一個道理,
   # 只是 pre-commit 這個檔案本身**不能**有 SOURCE 標頭——那會把 shebang 往下推一行,
   # git 執行 hook 時會找不到直譯器,見 scripts/hooks/pre-commit 檔頭說明)。
-  installed_hook="$TARGET/.git/hooks/pre-commit"
-  if [ -f "$installed_hook" ] && grep -q "mutate.lock" "$installed_hook" 2>/dev/null; then
-    echo "✓ pre-commit hook 已安裝"
-  else
-    echo "○ pre-commit hook 未安裝(選用;見 scripts/hooks/pre-commit,裝法:cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit)"
-  fi
+  resolve_hook_state
+  case "$HOOK_STATE" in
+    installed) echo "✓ pre-commit hook 已安裝($HOOK_DIR;$HOOK_NOTE)" ;;
+    declined)  echo "○ pre-commit hook 未安裝(consumer 決定:$HOOK_NOTE)" ;;
+    *)         echo "○ pre-commit hook 未安裝(選用;$HOOK_NOTE。它只擋會直接改工作區的變異測試——模板的 mutate.py、inPlace: true 的 Stryker;沙箱模式不需要它。決定不裝就寫一行理由到 $SUBDIR/hooks/pre-commit.local.md,這行會改印你的決定。裝法:cp $SUBDIR/hooks/pre-commit $HOOK_DIR/pre-commit && chmod +x $HOOK_DIR/pre-commit)" ;;
+  esac
 
   # 接線檢查(見上面「## 接線檢查」的說明)。只管 $DEST 底下的 .ts(py 工具不是靠
   # package.json 的 scripts 呼叫,不在這個檢查範圍內)。
@@ -579,10 +614,15 @@ else
   # S12(模板 1.4.1):提示怎麼裝 pre-commit hook——只印,不自動裝(理由見上面複製
   # 那一段)。已經裝過(.git/hooks/pre-commit 含 mutate.lock 這個字串)就不用再提醒。
   if [ -f "$TEMPLATE_DIR/scripts/hooks/pre-commit" ]; then
-    installed_hook="$TARGET/.git/hooks/pre-commit"
-    if ! { [ -f "$installed_hook" ] && grep -q "mutate.lock" "$installed_hook" 2>/dev/null; }; then
+    resolve_hook_state
+    if [ "$HOOK_STATE" = "absent" ]; then
       echo
-      echo "hook:cp $SUBDIR/hooks/pre-commit .git/hooks/pre-commit && chmod +x $SUBDIR/hooks/pre-commit .git/hooks/pre-commit(未安裝,hook 不進版控)"
+      echo "hook(選用,未安裝):$HOOK_NOTE。它只擋會直接改工作區的變異測試(mutate.py、inPlace: true 的 Stryker)。"
+      echo "  要裝:cp $SUBDIR/hooks/pre-commit $HOOK_DIR/pre-commit && chmod +x $HOOK_DIR/pre-commit"
+      echo "  不裝:寫一行理由到 $SUBDIR/hooks/pre-commit.local.md(之後 --check 會印你的決定,不再提示安裝)"
+    elif [ "$HOOK_STATE" = "declined" ]; then
+      echo
+      echo "hook:consumer 決定不裝($HOOK_NOTE)"
     fi
   fi
 fi

@@ -12,11 +12,24 @@
 #   .stryker.lock —— 消費者專案自己的 TS 版變異測試驅動工具常見的鎖檔名(同樣是
 #                     JSON、含 "pid" 欄位;模板本身不寫這個檔,純粹認得它、一併檢查)
 #
-# 判斷規則,對每個存在的鎖檔:
-#   - 解析不出 "pid"(壞掉的 JSON,或沒有這個欄位)→ 拒絕,要求人工檢查。
-#   - pid 還活著(`kill -0`)→ 拒絕:另一個變異測試正在跑,等它跑完再 commit。
-#   - pid 已死(殘留鎖)→ 拒絕:提示怎麼復原(.mutate.lock 用 `--recover` 重跑;
-#     .stryker.lock 照消費者專案自己的復原流程)。
+# 判斷規則(1.8.0 起依「變異測試會不會弄髒工作區」分流,#12):
+#   這支 hook 要擋的是「把被突變過的檔案 commit 進去」。所以先問:這個鎖代表的變異測試
+#   **會不會直接改工作區的檔案**?不會的話,不管它在跑還是殘留,commit 都是安全的。
+#
+#   .mutate.lock(本模板的 mutate.py)——**一定直接改檔**(改完用 git HEAD 比對還原),所以:
+#     - 解析不出 pid → 拒絕,要求人工檢查。
+#     - pid 活著 → 拒絕:工作區此刻就有被突變的檔。
+#     - pid 已死(殘留)→ 拒絕:上一次被中斷,目標檔可能還是突變版;用 `--recover` 核對並還原。
+#     (外部提案曾建議「殘留鎖直接放行,因為鎖會自己回收」——對 mutate.py **不成立**:回收鎖
+#      不等於還原檔案,殘留鎖正是「檔案可能還沒還原」的訊號。)
+#
+#   .stryker.lock(consumer 自己的 Stryker 驅動工具)——**只有 inPlace: true 才直接改檔**。
+#     Stryker 預設 inPlace: false,在沙箱複本裡突變,工作區從頭到尾不被碰。所以:
+#     - repo 裡**沒有任何** stryker*.json 設 `"inPlace": true` → **放行**,只印一行提醒
+#       (1.8.0 以前一律拒絕;【驗】兩個 consumer 各自量到 inPlace 全未設定,這支 hook 在他們那裡
+#        擋的是不存在的危害,代價是跑變異測試期間**所有 linked worktree 包含 main 都不能 commit**)。
+#     - 有 inPlace: true → pid 活著或解析不出就拒絕;殘留就拒絕並要求先看 `git diff`,
+#       確認沒有突變殘留再刪鎖。**不再**叫人「照專案自己的復原流程」——那份流程多半不存在。
 #
 # 這支 hook **不會被 sync-gates.sh 自動安裝進 `.git/hooks/`**(git hooks 天生不受
 # 版本控制,每個開發者的 `.git/hooks/` 是本機獨立目錄,自動覆寫別人手動裝的 hook
@@ -44,9 +57,41 @@ read_pid() {
   ' "$1" 2>/dev/null || true
 }
 
+# stryker*.json 裡有沒有任何一份設 "inPlace": true(用 node 解析,不用 grep——註解或字串裡提到
+# inPlace 不算,P-89)。找不到設定檔或解析失敗都當作沒有設,因為 Stryker 的預設就是 false。
+stryker_in_place() {
+  node -e '
+    const fs = require("fs"), path = require("path");
+    const root = process.argv[1];
+    const skip = new Set(["node_modules", ".git", ".stryker-tmp", "dist", "build", "coverage"]);
+    const hit = [];
+    const walk = (dir, depth) => {
+      if (depth > 6) return;
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) { if (!skip.has(e.name)) walk(full, depth + 1); continue; }
+        if (!/^stryker.*\.json$/i.test(e.name)) continue;
+        try { if (JSON.parse(fs.readFileSync(full, "utf8")).inPlace === true) hit.push(path.relative(root, full)); } catch {}
+      }
+    };
+    walk(root, 0);
+    process.stdout.write(hit.join(","));
+  ' "$ROOT" 2>/dev/null || true
+}
+
 for name in "${LOCK_NAMES[@]}"; do
   lock="$ROOT/$name"
   [ -f "$lock" ] || continue
+
+  if [ "$name" = ".stryker.lock" ]; then
+    in_place="$(stryker_in_place)"
+    if [ -z "$in_place" ]; then
+      echo "○ $name 存在,但沒有任何 stryker*.json 設 \"inPlace\": true——Stryker 在沙箱裡突變、不碰工作區,放行這次 commit。"
+      continue
+    fi
+  fi
 
   pid="$(read_pid "$lock")"
   if [ -z "$pid" ]; then
@@ -63,8 +108,8 @@ for name in "${LOCK_NAMES[@]}"; do
       echo "✗ commit 被拒絕:$name 是殘留鎖(pid $pid 已死,通常是上一次執行被中斷)。" \
            "請對同一個檔案重跑 mutate.py 並加 --recover(見 scripts/py/mutate.py 的 --recover 說明),確認乾淨後再 commit。"
     else
-      echo "✗ commit 被拒絕:$name 是殘留鎖(pid $pid 已死,通常是上一次執行被中斷)。" \
-           "請照這個專案自己的變異測試工具的復原流程處理 $lock,確認乾淨後再 commit。"
+      echo "✗ commit 被拒絕:$name 是殘留鎖(pid $pid 已死,通常是上一次執行被中斷),而 $in_place 設了 inPlace: true——" \
+           "工作區可能還留著被突變的檔案。先跑 git diff 確認沒有突變殘留(有的話用 git checkout -- <檔> 還原),再刪掉 $lock 後 commit。"
     fi
     blocked=1
   fi

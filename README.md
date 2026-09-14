@@ -80,11 +80,20 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 `docRot.exclude`)之後,再加 `"docRot": { "mode": "enforce" }` 切回會擋的行為——新守門第一版
 幾乎必然抓到規則沒想到的合理例外,見 `PITFALLS.md` P-71。
 
-`scripts/hooks/pre-commit`(S12)擋住「突變測試進行中被 commit」這件事,`sync-gates.sh` 只把它
-同步進 `<安裝目錄>/hooks/pre-commit`,**不會自動裝進 `.git/hooks/`**(git hooks 不受版本控制)。
-同步完印出的 `hook:cp <安裝目錄>/hooks/pre-commit .git/hooks/pre-commit && chmod +x ...` 那行照做
-即可裝上;不裝也不影響其餘守門,只是少了「commit 那一刻」這道防線(`scripts/py/mutate.py` 自己的
-`.mutate.lock` 仍然在**啟動**那一刻擋住同時跑第二個 mutate.py)。
+`scripts/hooks/pre-commit`(S12)擋住「把被突變過的檔案 commit 進去」這件事,`sync-gates.sh` 只把它
+同步進 `<安裝目錄>/hooks/pre-commit`,**不會自動裝進 git 的 hooks 目錄**(git hooks 不受版本控制)。
+**裝之前先知道三件事**(1.8.0):
+
+1. **它只擋會直接改工作區的變異測試**:模板的 `mutate.py`(一定直接改檔),以及設了 `"inPlace": true` 的 Stryker。
+   Stryker 預設在沙箱裡跑、不碰工作區——**你的 `stryker*.json` 都沒設 `inPlace: true` 的話,它不會擋任何 commit**。
+2. **有 linked worktree 的 repo,hooks 目錄是全部 worktree 共用的**:裝一次就是每個 worktree(包含 main)一起生效。
+   `--check` 會印出實際的 hooks 目錄與共用的 worktree 數,照它印的安裝指令做(1.8.0 以前寫死 `.git/hooks`,在 worktree 裡會失敗)。
+3. **決定不裝就寫下來**:寫一行理由到 `<安裝目錄>/hooks/pre-commit.local.md`,`--check` 會改印
+   `○ pre-commit hook 未安裝(consumer 決定:<你的理由>)`,不再每輪提示安裝。
+   (1.8.0 以前沒有這個出口:consumer 記了 ADR 決定不裝,worker 照著每輪重播的安裝提示把它「修好」,決定被靜默推翻。)
+
+不裝也不影響其餘守門,只是少了「commit 那一刻」這道防線(`scripts/py/mutate.py` 自己的 `.mutate.lock`
+仍然在**啟動**那一刻擋住同時跑第二個 mutate.py)。
 
 **出版規則:沒有對至少一個 consumer 跑過 `scripts/verify-against.sh <consumer repo 根>` 不打 tag。**
 這支腳本把模板版每支 `check-*.ts` 跟那個 consumer repo 已裝的同名檔各跑一次,比退出碼、
@@ -105,7 +114,7 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 ```bash
 mkdir my-project && cd my-project
 git init
-npx github:pollux0971/dev-paradigm#npx-v1.7.4 init .
+npx github:pollux0971/dev-paradigm#npx-v1.8.0 init .
 ```
 
 - 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
