@@ -27,6 +27,14 @@
 
 【驗】改動只有上述文件措辭與連結,無程式邏輯變動。
 
+verify-against consumer AI_KM(守門版 v1.2.2):0 支一致 / 6 支差異,差異:
+`check-boundaries.ts`、`check-doc-links.ts`、`check-gherkin-dup.ts`、`check-phase-coverage.ts`、
+`check-standalone.ts`、`check-step-dup.ts` 六支都被 `verify-against.sh` 判成「consumer 版未執行」
+(輸出沒有 `gate=` 機器可讀標記),但手動逐支重跑 consumer 版,六支都 exit 0、輸出正常、沒有報錯——
+真正原因是 AI_KM 裝的六支 SOURCE 標頭都是 `template v1.2.2`,而 `gate=<name> result=…` 標記是
+CHANGELOG 1.3.2 (C) 才加的功能,v1.2.2 本來就不會印。**consumer 版本舊,不是迴歸**,AI_KM 尚未
+`sync-gates.sh` 跟進到有這個標記的版本。
+
 ## 1.7.3 — 2026-09-13
 
 **patch。新使用者現在可以從 GitHub 安裝一路跑到 `check:all` 全綠——這是第一次被證明。**
