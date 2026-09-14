@@ -54,3 +54,29 @@
 分支落後門檻。這些不需要新角色,可以進 `PITFALLS.md` / `docs/07-practices.md` 與 `.orca-brief/TASK.md.template`(#22 的樣板)。
 **第 1、2 條(瓶頸是交件等待、高 WIP 不等於快)是這整個提案的核心論據**,值得先問:在「協調者是唯一排程者」的前提下,
 能不能用「協調者用 Monitor 事件驅動收件、而不是 15 分鐘輪詢」解決同一個瓶頸,而不新增排程者?
+
+---
+
+## 六、模板現況對照(2026-09-14,AI_KM 問「模板有沒有已經做完整」,協調者逐項 grep 查證)
+
+AI_KM 追加了 7 條已在執行的優化(傳菜員接線、在製品上限、清舊分支、一個功能一口鍋、自動記帳、重活搬大機器、兩條審核規則),
+並問模板是否已有 (a)~(e)。**【驗】以下每條都是 grep 模板 docs/、CLAUDE.md、PITFALLS、skills、工單樣板後的結果。**
+
+| 項目 | 模板現況 | 缺什麼 |
+|---|---|---|
+| (a) 在製品上限 / 整合優先停線 | **部分有**:`CLAUDE.md`「WIP ≤ 2」;`docs/07-practices.md` 890 起「WIP ≤ 2 → 同開上限 = ready 集合大小」,代價由三條吸收(一次合一條、rebase 由協調者吸收、審核輪 ≤ 1);`autopilot` §2 第 3 步 | **沒有「未合入交付物上限」與「超過就停止派工、產能轉整合」**。模板限的是**開工**(ready 集合大小)和**合併節奏**(一次一條),沒限**做完卻還沒合的量**。【推】「同開上限 = ready 集合大小」加「一次合一條」這個組合,**正好會製造 AI_KM 量到的症狀**(開得多、合得慢、完工閒置) |
+| (b) 熱點共用檔解耦 | **部分有**:ADR-014「共用檔只有協調者改」(package.json、lock、tsconfig、standalone.json、`_world.ts`、`common.steps.ts`…)與「跨資料夾的 gherkin 句子只在 common.steps 定義一次」;「組合層」概念(`docs/05`、`docs/01-roadmap.md`、ADR-004) | 模板的做法是**序列化**(只有一個人能改熱點檔),**沒有解耦慣例**(把熱點檔改成每個能力自己註冊,讓大家根本不必改它)。AI_KM 的 #4「server.ts 只遍歷能力註冊表」是新的 |
+| (c) merge 證據自動產生 / 機械檢查 | **只有規範,沒有機械化**:工單樣板「四段輸出(突變/紅訊息原文/sha256/回綠)進 commit body」;P-15(判定只看退出碼與明確成功訊息,數字審核輪要重跑);P-28(反向驗證的腳本要在 repo 裡) | **沒有產生器、沒有檢查 merge body 完整性的 gate**。AI_KM 的 #5 是新的 |
+| (d) 分支漂移上限 | **部分有**:工單樣板與 07-practices (ag)「續用舊 worktree 看紅燈前先 `git merge main`,不 rebase」;`autopilot`「rebase 由協調者吸收」 | **沒有數字門檻或同步頻率**(落後幾顆必須同步)。另外查到**模板自相矛盾**,見下 |
+| (e) 閒置 worktree 清理 / archive tag 可逆刪除 | **幾乎沒有**:`autopilot` §2「全綠 → tag 打在合併 commit、清 worktree」——只有**合併後**清,沒有閒置判定條件,也沒有刪前打 archive tag | AI_KM 的 #3 是新的;他們量到的坑(「分支是 main 祖先」會誤判剛開、未 commit 的新 worktree)也是新的 |
+| 規則 7:審核在「main + 分支合併後」的樹跑 / 嚴格級非作者重做 | **沒有**:grep「非作者」「合併後的樹」零命中。工單樣板要求反向驗證,但沒要求非作者、也沒要求在合併後的樹 | 新的 |
+| #6 重活搬大機器 | **相關但不同**:`autopilot` 的 `{{PARALLEL_CAP}}`(同時跑幾份變異測試由使用者填,3 份約 OOM 臨界)、審核輪 ≤ 1 | 模板只限**同時幾份**,沒有**移到別台機器**的做法 |
+
+### 查的時候撞到的模板矛盾(登記為 DECISIONS_NEEDED #26)
+
+【驗】`.claude/skills/autopilot/SKILL.md` **同一份檔案內**:
+- 第 63 行:合併 `git merge --no-ff <branch>`,「**不 rebase**,每個 phase 三輪 commit 的軌跡是刻意留的」;
+- 第 92-93 行:「**rebase 由協調者吸收**(worker 的分支落後 main 時,**rebase 這件事由協調者做**)」。
+而 `.orca-brief/TASK.md.template:86` 與 `docs/07-practices.md:770` 寫的是「`git merge main`(**不 rebase**)」,
+`docs/07-practices.md:903` 又是「rebase 由協調者吸收」。【推】92-93 行想說的多半是「**同步落後的分支這件事**由協調者做」,
+動詞用錯了;但照字面執行的協調者會去 rebase,毀掉第 63 行刻意保留的三輪 commit 軌跡。
