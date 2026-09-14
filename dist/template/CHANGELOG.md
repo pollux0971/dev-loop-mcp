@@ -2,7 +2,38 @@
 
 版本規則(semver):PITFALLS / docs / 措辭改動升 **patch**;新增或改變檔案結構、腳本、CLAUDE.md 固定段落升 **minor**;改硬規則或落地步驟升 **major**。
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
-`git diff <採用版 tag>..<新版 tag> -- template/` 決定要不要跟。每個版本打 tag `template/vX.Y.Z`。
+`git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
+
+## 1.7.4 — 2026-09-13
+
+**patch。修掉調查報告（`.orca-brief/SURVEY-REPORT.md` 第 14 節)抓到的文件問題,都是措辭/連結,不動程式邏輯。**
+
+- **清掉 `template/` 死路徑**:repo 已於 2026-09-06 搬家,根目錄本身就是模板,不再有 `template/` 子目錄。
+  修正 `CLAUDE.md:122`、`docs/03-agile-workflow.md:48`、`scripts/README.md:8,66,71`、
+  `.claude/skills/autopilot/SKILL.md:111,177` 共 6 處死路徑(`template/X` → `X`、`template/vX` → `vX`);
+  `CHANGELOG.md` 歷史條目與 `PITFALLS.md` 的歷史事件記錄不動,那是紀錄,不是現況指引。
+- **`CLAUDE.md`「可用指令」表補 skill 對照**:斜線指令是慣用簡稱,`.claude/skills/` 底下的實際目錄名
+  不一定跟指令同名(consumer 靠 sync 同步,不能改名)。`/phase-done`、`/integrate`、`/mutate`、`/decide`、
+  `/sprint`、`/feature` 六列在指令後面括號標實際 skill 名,並加一句說明沒有 `.claude/commands/` 別名。
+- **`package/README.md:21` 拿掉寫死的版本號**:原文寫「與根 `VERSION` 相同的版本 `1.5.0`」,
+  現在其實是 1.7.4,改成不含數字的敘述,避免每次升版又要記得改這裡。
+- **去蕪存菁(審計 `.orca-brief/DOC-AUDIT-REPORT.md` D1–D4)**:刪 `.orca-brief/drafts/` 四份 ADR-016 定案前的草稿與
+  `.orca-brief/proposals/scanner-roster.md`(#13 已落地成 `skip-dirs-roster.test.ts`),共 467 行,`shipping-coverage.test.ts`
+  的 `NOT_SHIPPED` 名冊同步拿掉 `drafts/` 那條殘留豁免;`CLAUDE.md`「做決定時」段落刪掉跟下一段重複的「轉述不算授權」句
+  (「這張表要由使用者本人 commit 進 main」保留);`autopilot/SKILL.md` §1 不再另抄一份權責表,只留協調者專屬動作,
+  誰決定什麼一律以 `CLAUDE.md` 為準——兩份表各自演化會分歧。
+- **確認 `gates.config.json` 缺 `chain` 已有交代**:`README.md:190` 的落地檢查清單已經明講
+  consumer 要自己在 `gates.config.json` 加 `chain`,不是遺漏,不改。
+
+【驗】改動只有上述文件措辭與連結,無程式邏輯變動。
+
+verify-against consumer AI_KM(守門版 v1.2.2):0 支一致 / 6 支差異,差異:
+`check-boundaries.ts`、`check-doc-links.ts`、`check-gherkin-dup.ts`、`check-phase-coverage.ts`、
+`check-standalone.ts`、`check-step-dup.ts` 六支都被 `verify-against.sh` 判成「consumer 版未執行」
+(輸出沒有 `gate=` 機器可讀標記),但手動逐支重跑 consumer 版,六支都 exit 0、輸出正常、沒有報錯——
+真正原因是 AI_KM 裝的六支 SOURCE 標頭都是 `template v1.2.2`,而 `gate=<name> result=…` 標記是
+CHANGELOG 1.3.2 (C) 才加的功能,v1.2.2 本來就不會印。**consumer 版本舊,不是迴歸**,AI_KM 尚未
+`sync-gates.sh` 跟進到有這個標記的版本。
 
 ## 1.7.3 — 2026-09-13
 

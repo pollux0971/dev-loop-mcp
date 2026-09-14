@@ -22,18 +22,16 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 
 ## 1. 權責表(誰決定什麼)
 
-| 情況 | 誰決定 | 怎麼做 |
-|---|---|---|
-| 派工順序、合併順序、worktree、審核回合 | **協調者自己** | 直接做 |
-| 需求訪談、brainstorm／party 主持、L0/L1 綜整、`/feature` L2 提案 | **產品 PM** | 所有使用者產品需求先交 `product-pm`;PM 可提交探索請求,但 session/worktree 仍由協調者建立與監督 |
-| 技術取捨:資料結構、介面形狀、規格措辭、gate 例外、要不要重跑、變異存活怎麼分類 | **技術顧問**(session `{{ADVISOR_SESSION}}`) | SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。**保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57) |
-| 新功能、新需求、改「不在範圍」 | **使用者** | 由產品 PM 主持 `/feature` 分流出 L2 提案,放進「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批 |
-| 改 `contracts/` 硬約定、改 `CLAUDE.md` | **使用者** | 同上,附 ADR 草稿 |
-| 花錢超過當日上限(`{{DAILY_CAP_ENV}}`) | **使用者** | 不跑;@llm 場景延到明天或等他加碼 |
-| 觀感／品質確認(`@manual and not @e2e`) | **技術顧問** | 由技術顧問判定，將依據與發現寫進 phase 驗收報告或 `IN-REVIEW.md` |
-| 端到端「你做得到嗎」確認(任何 `@e2e`，即使同時帶 `@manual`) | **使用者** | 列清單(場景原文 + 檔案路徑)，放「等老闆」清單；不可由測試或技術顧問代替 |
+誰決定什麼,以 `CLAUDE.md`「做決定時」表為準,本迴圈不另抄一份。這裡只補協調者在每一類要做的動作:
 
-判斷「新功能」由產品 PM 呼叫內部 `feature-triage`:E / C / B → 使用者;A → 技術顧問;D 先拆分後逐項重新判定。`product-pm` 是使用者入口,`feature-triage` 不直接與它競爭觸發。
+- **自己決的**(派工、合併、worktree、審核回合):直接做。
+- **問技術顧問的**:SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。
+  **保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57)。
+- **問產品 PM 的**:所有使用者產品需求先交 `product-pm`;PM 可提探索請求,但 session/worktree 仍由協調者建立與監督。
+  PM 呼叫內部 `feature-triage` 分流後:E / C / B → 使用者;A → 技術顧問;D 先拆分後逐項重新判定。
+- **等使用者的**:放「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批。改硬約定或 `CLAUDE.md` 要附 ADR 草稿;
+  `@e2e` 場景列清單(原文 + 檔案路徑);花錢超過 `{{DAILY_CAP_ENV}}` 就不跑,@llm 場景延到明天。
+- **技術顧問判定的**(`@manual and not @e2e`):等他把依據寫進 phase 驗收報告或 `IN-REVIEW.md`。
 
 ## 2. 每輪流程
 
@@ -42,7 +40,7 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 git diff --name-only main...<branch> | grep <要改的檔案>
 ```
 每個 in-progress branch 都要為空才動手——這條在合併(步驟 1)、先修 main(§4)、技術顧問直接改規則層
-(§1 權責表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
+(`CLAUDE.md`「做決定時」表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
 
 ### 2a. 三種 dispatch mode（每次派工必填）
 
@@ -108,7 +106,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 
 ## 3. 維護清單(沒事可做時,由上往下)
 
-1. `template/PITFALLS.md` 與 `docs/02-decision-map.md` 裡標「待覆核」「待辦」的項目(例如 `--deps-only` 入口)
+1. `PITFALLS.md` 與 `docs/02-decision-map.md` 裡標「待覆核」「待辦」的項目(例如 `--deps-only` 入口)
 2. 標準級模組變異分數 < 80% 的檔案(`reports/mutation/` 最近一次),補測試
 3. `{{LINT_COMMAND}}` 的健檢結果,能自動修的修
 4. 文件漂移:roadmap 現況表、features/README.md 索引、各 FEATURE.md phase 表三者對不上的地方。
@@ -174,7 +172,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
   「不因為等待確認而停下其他能做的事」,這裡把它跟「停止」明確分開,避免兩者被混為一談)
 - 契約收緊(硬約定要走 ADR,軟約定改了跑測試)——那是一次性的工作量,做完就繼續,不是理由停下整個迴圈
 - 發現缺陷——開工單修,不是停下來等人拍板要不要修(除非缺陷本身牽涉硬約定或範圍,那走 §1 的權責表)
-- 模板升版——`git diff template/v<採用版>..v<新版> -- template/` 看完決定要不要跟,跟不跟都不是停止理由
+- 模板升版——`git diff v<採用版>..v<新版>` 看完決定要不要跟,跟不跟都不是停止理由
 - 平台 runtime 掛掉——先用 `git` 與 `pgrep -af claude` 確認 agent 是不是其實還活著;活著就不重派(重派會撞成同一份工作跑兩份),改做不需要這個平台的其他工作;平台恢復後,重建剛才被吃掉的 task(不是假設它還在排程裡)
 - worker 開 escalation——那是 worker 在正常求助,不是迴圈壞掉;照 §1 權責表把問題分給該回答的人,問完之前先去做別的 ready 工作
 - worker 說「我不照工單做」並附實測——先看那個實測,實測站得住腳就是工單本身有錯,修工單或走 ADR,不是逼 worker 硬做或把這當成迴圈要停下來的訊號

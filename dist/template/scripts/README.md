@@ -5,7 +5,7 @@
 P-86 / P-88)是掃描器,`_root.ts` 是它們共用的 repo 根解析,
 `sync-gates.sh` 把這些程式複製進目標 repo。`verify-against.sh <consumer repo 根>
 [--consumer-dir <子目錄>]` 是出版前的機械檢查:把模板版每支 `check-*.ts` 跟那個 consumer
-已裝的同名檔各跑一次,比退出碼、輸出、旗標清單三件事——出版規則見 `template/README.md`
+已裝的同名檔各跑一次,比退出碼、輸出、旗標清單三件事——出版規則見 `README.md`
 「版本」段。consumer 的守門安裝目錄怎麼找(CHANGELOG 1.3.2 (B)):`--consumer-dir` 明講,
 否則依序找 `<consumer>/scripts/`、`<consumer>/features/scripts/`、再不然掃
 `find <consumer> -name _root.ts -maxdepth 4` 找到的第一個目錄;四層都沒有才算「consumer
@@ -63,12 +63,12 @@ glob 列舉,會吃到專案自己寫的 `check-*.test.ts`(沒有 SOURCE 標頭)�
 NODE_PATH=<採用專案根>/node_modules npx tsc --noEmit \
   --module esnext --moduleResolution bundler --target es2022 \
   --strict --exactOptionalPropertyTypes --noUncheckedIndexedAccess \
-  --types node --skipLibCheck template/scripts/*.ts
+  --types node --skipLibCheck scripts/*.ts
 ```
 
 `NODE_PATH` 指到一個裝了 `@types/node`(與其他型別套件)的 `node_modules`——模板自己沒有
 `package.json` / `node_modules`,借用已採用這套範式的專案的即可,那份 tsconfig 本來就是
-「最嚴」的參考基準。全部 `template/scripts/*.ts` 都要在這組旗標下無錯誤。
+「最嚴」的參考基準。全部 `scripts/*.ts` 都要在這組旗標下無錯誤。
 
 `py/mutate.py` + `py/test_mutate.py` 是定向反向驗證工具的 **Python 版**(來源專案 C,模板
 1.3.1 收入,用法與規格對應見 `py/README.md` 與 `docs/07-practices.md` (e))。`sync-gates.sh`

@@ -18,4 +18,4 @@
 
 【驗】單一入口：`cd package && npm test`。它會從實際 `npm pack` tarball 解出 CLI 後執行四個 gate；可用 `npm test -- --gate=tarball|clean-init|conflict|rollback` 單獨重跑。故意破壞探針用 `npm test -- --probe=<gate>`，預期 exit 1，避免測試退化成空檢查。
 
-【驗】本殼目前使用合法的佔位 package name、與根 `VERSION` 相同的版本 `1.5.0`，並保持 `private: true`；最終名稱與發布政策不在本階段決定。
+【驗】本殼目前使用合法的佔位 package name、與根 `VERSION` 相同的版本，並保持 `private: true`；最終名稱與發布政策不在本階段決定。
