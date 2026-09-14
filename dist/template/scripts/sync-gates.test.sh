@@ -190,7 +190,9 @@ if [ -f "$CONSUMER/.git/hooks/pre-commit" ]; then
 else
   pass "sync 沒有自動把 hook 裝進 .git/hooks/"
 fi
-assert_contains "plain sync 印出手動安裝 hook 的指令" "$sync_out" "hook:cp"
+assert_contains "plain sync 印出手動安裝 hook 的指令(1.8.0 起指向 git 實際的 hooks 目錄)" "$sync_out" "要裝:cp scripts/hooks/pre-commit "
+assert_contains "plain sync 的 hook 提示指到 .git/hooks/pre-commit" "$sync_out" ".git/hooks/pre-commit && chmod +x"
+assert_contains "plain sync 的 hook 提示同時告訴 consumer 怎麼表達「決定不裝」(#17)" "$sync_out" "不裝:寫一行理由到 scripts/hooks/pre-commit.local.md"
 assert_contains "--check 印出 pre-commit hook 未安裝(資訊性,不算失敗)" "$check_out_4" "○ pre-commit hook 未安裝"
 
 echo
@@ -337,6 +339,66 @@ for d in $ts_dirs; do
 done
 assert_eq "DEFAULT_SKIP_DIRS 的每一項,bash 偵測那段都排除到了(差集為空)" "${missing# }" ""
 if [ -n "$missing" ]; then echo "      差集:$missing"; fi
+
+echo "== 步驟 12(1.8.0,#12 #17):pre-commit hook 在 linked worktree 與「consumer 決定不裝」 =="
+# 【驗】linked worktree 裡 `.git` 是檔案、hooks 目錄在主 repo 且全部 worktree 共用。1.8.0 以前寫死 `.git/hooks`,
+# 安裝指令在 worktree 裡直接失敗、「有沒有裝」永遠判成沒裝;而且 consumer 無法表達「決定不裝」,
+# 提示每輪重播,worker 照著把它「修好」,把 consumer 的決定靜默推翻(專案 A 實例)。
+HWT="$(mktemp -d)"
+(
+  cd "$HWT" && git init -q main && cd main && cp "$TEMPLATE_DIR/package.json" . && git add -A && git -c user.name=t -c user.email=t@t commit -q -m x
+  bash "$SYNC_GATES" . scripts >/dev/null 2>&1; git add -A; git -c user.name=t -c user.email=t@t commit -q -m sync
+  git worktree add -q ../wt
+) >/dev/null 2>&1
+hook_line() { (cd "$HWT/wt" && bash "$SYNC_GATES" . scripts --check 2>&1 | grep "pre-commit hook"); }
+h1="$(hook_line)"
+assert_contains "worktree 裡未裝:說出 worktree 共用 hooks 目錄" "$h1" "個 worktree,共用同一個 hooks 目錄"
+assert_contains "worktree 裡未裝:安裝路徑是主 repo 的 hooks 目錄,不是 .git/hooks" "$h1" "/main/.git/hooks/pre-commit"
+cmd="$(echo "$h1" | grep -oE 'cp [^)]*pre-commit && chmod \+x [^)]*pre-commit')"
+( cd "$HWT/wt" && eval "$cmd" ) >/dev/null 2>&1
+assert_contains "照印出的指令在 worktree 裡安裝後,判定為已安裝" "$(hook_line)" "✓ pre-commit hook 已安裝"
+rm -f "$HWT/main/.git/hooks/pre-commit"
+printf '# 不裝:沒有 inPlace 的 Stryker 設定,見 ADR-048\n' > "$HWT/wt/scripts/hooks/pre-commit.local.md"
+h2="$(hook_line)"
+assert_contains "consumer 寫了決定:印出決定" "$h2" "consumer 決定:不裝:沒有 inPlace 的 Stryker 設定,見 ADR-048"
+assert_not_contains "consumer 寫了決定:不再印安裝指令" "$h2" "cp "
+rm -rf "$HWT"
+
+echo "== 步驟 13(1.8.0,#12):pre-commit hook 依「變異測試會不會改工作區」分流 =="
+# mutate.py 一定直接改檔 → 活鎖、殘留鎖都擋(殘留鎖代表檔案可能還沒還原,外部提案的「殘留放行」對它不成立);
+# Stryker 只有 inPlace: true 才改檔 → 沒設就放行(兩個 consumer 都量到 inPlace 全未設定)。
+HK="$(mktemp -d)"; ( cd "$HK" && git init -q . )
+sleep 300 & HK_LIVE=$!
+hook_rc() { (cd "$HK" && bash "$TEMPLATE_DIR/scripts/hooks/pre-commit" >/dev/null 2>&1); echo $?; rm -f "$HK/.stryker.lock" "$HK/.mutate.lock" "$HK"/stryker*.json; }
+echo "{\"pid\":$HK_LIVE}" > "$HK/.stryker.lock"
+assert_eq "stryker 活鎖、沒有 inPlace 設定 → 放行" "$(hook_rc)" "0"
+echo "{\"pid\":$HK_LIVE}" > "$HK/.stryker.lock"; echo '{"inPlace":true}' > "$HK/stryker.config.json"
+assert_eq "stryker 活鎖、inPlace:true → 擋" "$(hook_rc)" "1"
+echo '{"pid":999999}' > "$HK/.stryker.lock"; echo '{"inPlace":true}' > "$HK/stryker.config.json"
+assert_eq "stryker 殘留鎖、inPlace:true → 擋" "$(hook_rc)" "1"
+echo "{\"pid\":$HK_LIVE}" > "$HK/.stryker.lock"; echo '{"note":"inPlace true 只是說明","inPlace":false}' > "$HK/stryker.config.json"
+assert_eq "字串裡提到 inPlace 但實際 false → 放行(不用 grep 判斷,P-89)" "$(hook_rc)" "0"
+echo "{\"pid\":$HK_LIVE}" > "$HK/.mutate.lock"
+assert_eq "mutate.py 活鎖 → 擋" "$(hook_rc)" "1"
+echo '{"pid":999999}' > "$HK/.mutate.lock"
+assert_eq "mutate.py 殘留鎖 → 擋(檔案可能還沒還原)" "$(hook_rc)" "1"
+kill "$HK_LIVE" 2>/dev/null; wait "$HK_LIVE" 2>/dev/null || true; rm -rf "$HK"
+
+echo "== 步驟 14(1.8.0):目標還不是 git repo 時,sync 與 --check 不能因為 hook 狀態偵測而崩潰 =="
+# npx init 刻意不 git init,所以「還不是 git repo」是 consumer 第一次跑 sync 的正常狀態。
+# 1.8.0 的 hook 偵測第一版在這裡以 128 靜默結束(pipefail 下 git worktree list 失敗),是 npx 黑箱 gate 抓到的。
+NG="$(mktemp -d)"
+bash "$TEMPLATE_DIR/scripts/sync-gates.sh" "$NG" scripts > "$NG.sync.out" 2>&1
+assert_eq "非 git 目標:sync 退出碼" "$?" "0"
+bash "$TEMPLATE_DIR/scripts/sync-gates.sh" "$NG" scripts --check > "$NG.check.out" 2>&1
+NG_CODE=$?
+# 空目錄沒有 package.json,「同步進來但沒接線」會正確地讓 --check 回 1——那不是這一步要驗的。
+# 這一步只驗「沒有崩潰」:退出碼是 --check 自己的判定(0 或 1),不是 shell 被 set -e 砍掉的 128。
+case "$NG_CODE" in 0|1) NG_CODE=ok ;; esac
+assert_eq "非 git 目標:--check 跑完自己的判定(0/1),不是崩潰" "$NG_CODE" "ok"
+grep -q "pre-commit hook" "$NG.check.out"
+assert_eq "非 git 目標:--check 仍印出 hook 狀態那一行" "$?" "0"
+rm -rf "$NG" "$NG.sync.out" "$NG.check.out"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then

@@ -206,6 +206,8 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 | `{{LINT_COMMAND}}` | 對產出資料做健檢的指令 | `npm run lint:wiki` |
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
 | `{{PARALLEL_CAP}}` | 同時處於審核輪(跑變異測試)的 worktree 上限,由使用者依機器規格與帳號額度填,協調者不猜 | `3`(單機 Stryker 平行的 OOM 臨界值) |
+| `{{UNMERGED_CAP}}` | 做完但還沒合進 main 的交付物上限;超過就暫停派新工、產能轉整合。依你們的合併速度填,協調者不猜 | `10`(AI_KM;見 `docs/07-practices.md` (ap)) |
+| `{{BRANCH_DRIFT_CAP}}` | in-progress 分支落後 main 的 commit 數上限;超過先同步(`git merge main`)再派下一棒 | `50`(AI_KM;落後 200 以上時衝突與漏改集中出現) |
 | `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
 §4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
 
