@@ -151,12 +151,18 @@ git diff --stat -- package-lock.json
 - 還原**不要用 `git checkout -- <file>`**(會清掉同檔裡其他未 commit 的合法編輯);用 `$WORKTREE/.mutate-tmp/`(worktree 專屬)或 `git show HEAD:<path> > <path>`,再 `sha256sum` 逐位元證明。**不要備份到 /tmp 共用目錄**(並行 session 會覆蓋)。
 - 四段輸出(突變 / 紅訊息原文 / sha256 前後 / 回綠)進 commit body。
 
-## 交接檔
+## 交接檔——兩種模式用不同的檔,不要混
 
-角色之間(測試/開發/審核)交接用 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,**不進
-版控**)——**不要**在 worktree 根目錄開一個追蹤的 `REVIEW.md`,那會在合併時覆蓋 main 上其他
-分支留下的紀錄(PITFALLS P-78:兩份文件警告過,第三人照舊慣例踩過一次)。每一輪開場先讀它、
-收工前更新它,不要依賴 session 記憶。
+**單人模式**(沒有 ADR-018 四常駐角色、你自己一個人依序扮演測試/開發/審核):角色交接用
+`.orca-brief/REVIEW.md`(gitignored,worktree 專屬,**不進版控**)——**不要**在 worktree
+根目錄開一個追蹤的 `REVIEW.md`,那會在合併時覆蓋 main 上其他分支留下的紀錄(PITFALLS P-78:
+兩份文件警告過,第三人照舊慣例踩過一次)。每一輪開場先讀它、收工前更新它,不要依賴 session 記憶。
+
+**四角色鏈模式**(ADR-018,每一棒是獨立 worktree、有接線 agent 在跑):**不要寫 REVIEW.md**——
+每個 worktree 只活這一棒,沒有「下一輪開場讀它」這件事,接線 agent 也**不讀** REVIEW.md。
+交件內容一律寫 `.orca-brief/<worktree名>-REPORT.md`(未追蹤,清樹前歸檔),見下面「回報格式」與
+「鏈規格」段。1.9.0 之前這裡沒把兩種模式分清楚,同一條鏈裡兩棒都寫錯成 REVIEW.md(`fix-gate-header-2`
+實例)——接線 agent 現在兩個檔名都認,但這不代表可以繼續寫錯,寫對的檔名才是規格。
 
 ## 完成前必跑(貼原文,不要只說「通過」)
 
@@ -171,6 +177,10 @@ git status --short
 - {{KNOWN_RED_NOTE}}(專案特有的假紅說明:哪些紅是「還沒做」不是「弄壞了」)
 
 ## 回報格式
+
+**四角色鏈模式**:存成 `.orca-brief/<worktree名>-REPORT.md`,終端最後一行印
+`REVIEW VERDICT: PASS <報告路徑>` 或 `RETURN <報告路徑>`——路徑是接線 agent 唯一認的信號,
+不要只印 `PASS` 不附路徑。**單人模式**:內容併進 `.orca-brief/REVIEW.md`,不用另存一份。
 
 ```
 模型:<你實際跑在哪個模型>
@@ -202,7 +212,7 @@ chain:
     model: <當場依 §2a mode 選定的模型>
     allowed_paths: [<逐條列出,跟上面「你要交的」一致>]
     done_when: "<一個會失敗的檢查,跟上面「逐項」對應那條一致>"
-    next: "終端印 REVIEW VERDICT: PASS → 交線給下一棒;RETURN → 回報協調者,不自動重試"
+    next: "終端印 REVIEW VERDICT: PASS <.orca-brief/<worktree名>-REPORT.md 路徑> → 交線給下一棒;RETURN <同路徑> → 回報協調者,不自動重試。不要寫 REVIEW.md"
   - leg: 2
     ...
 # 有幾棒就寫幾棒,不要為了湊格式硬填空棒
