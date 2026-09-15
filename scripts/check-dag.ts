@@ -165,6 +165,7 @@ function buildDag(root: string, folders: string[], nodes: Map<string, Node>, res
     externalBlockers: new Map(),
     satisfiedIntegrations: new Set(),
   };
+  const warnedSelfReferences = new Set<string>();
 
   for (const folder of folders) {
     const nextPath = join(root, 'features', folder, 'NEXT.md');
@@ -180,6 +181,15 @@ function buildDag(root: string, folders: string[], nodes: Map<string, Node>, res
       for (const reference of references) {
         const source = phaseReferenceTarget(reference) ?? integrationReferenceTarget(reference);
         if (source !== undefined) {
+          if (reference.kind === 'phase' && source === target) {
+            const phaseNum = reference.phaseNum ?? gate.phaseNum;
+            const warningKey = `${gate.file}:${gate.lineNo}:phase-${phaseNum}`;
+            if (!warnedSelfReferences.has(warningKey)) {
+              warnedSelfReferences.add(warningKey);
+              console.log(`${gate.file}: 第 ${gate.lineNo} 行 gate 引用了自己(phase-${phaseNum}),已忽略`);
+            }
+            continue;
+          }
           addEdge(dag, source, target);
           if (reference.kind === 'integration' && referenceIsSatisfied(gate, reference)) {
             dag.satisfiedIntegrations.add(source);
