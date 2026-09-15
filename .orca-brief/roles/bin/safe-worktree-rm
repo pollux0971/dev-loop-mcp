@@ -7,6 +7,7 @@
 #   - 絕對路徑、無 /../ /./、不是 symlink、realpath 在 allowed_worktree_roots 底下且不等於根
 #   - 不命中 protected_path_exact_or_prefix
 #   - 是 git worktree 且 porcelain 只剩交接檔(handoff_file_regex)
+#   - gitignored 的 .orca-brief/* 已原樣歸檔到 archive/<worktree名>/
 #   - 分支的 archive/<branch> tag 已存在且指向現在的 tip(orca worktree rm 會順手刪本地分支,所以 tag 一定要先打)
 #   - 分支自己的 commit 全部已在 main(git log <branch> --not main 為空),且 tip 不在 main first-parent 鏈上(擋剛開的空分支)
 # 任一行不過 → 整批不動。全過才逐一 orca-ide worktree rm --force(先存 porcelain)。
@@ -17,6 +18,7 @@ DRY=0
 [[ "${1:-}" == "--dry-run" ]] && { DRY=1; shift; }
 PLAN="${1:-}"
 MAIN="${SAFE_WT_MAIN:-/data/python/dev-paradigm}"   # 覆寫只給測試用
+ARCHIVE="${SAFE_ARCHIVE:-/data/python/dev-paradigm-briefs/archive}"   # 覆寫只給測試用
 [[ -n "$PLAN" && -f "$PLAN" && -f "$POLICY" ]] || { echo "用法: safe-worktree-rm [--dry-run] <plan-file>(policy: $POLICY)" >&2; exit 2; }
 
 mapfile -t RAW < <(grep -vE '^\s*(#.*)?$' "$PLAN")
@@ -54,6 +56,17 @@ for p in "${RAW[@]}"; do
   bad="$(git -C "$n" status --porcelain --untracked-files=all | grep -vE "$HANDOFF_RE" || true)"
   if [[ -n "$bad" ]]; then
     echo "REFUSED: porcelain 有交接檔以外的東西: $p" >&2; echo "$bad" | sed 's/^/    /' >&2; fail=1; continue
+  fi
+  # gitignored 的交接檔(.orca-brief/REVIEW.md 依 P-17 是 ignored)不會出現在一般 porcelain,worktree 一刪就沒了。
+  # 2026-09-15 npx-init-a 實例:17KB 的 REVIEW.md 差點跟著刪。要求 archive/<worktree名>/<同相對路徑> 有一模一樣的拷貝。
+  wt="$(basename "$n")"
+  miss=""
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    cmp -s "$n/$rel" "$ARCHIVE/$wt/$rel" || miss+="    $rel"$'\n'
+  done < <(git -C "$n" status --porcelain --ignored --untracked-files=all | sed -n 's/^!! \(\.orca-brief\/.*[^/]\)$/\1/p')
+  if [[ -n "$miss" ]]; then
+    echo "REFUSED: ignored 交接檔還沒歸檔到 $ARCHIVE/$wt/(或內容不同): $p" >&2; printf '%s' "$miss" >&2; fail=1; continue
   fi
   if ! git -C "$MAIN" rev-parse -q --verify "refs/tags/archive/$b" >/dev/null; then
     echo "REFUSED: 還沒打 archive/$b tag: $p" >&2; fail=1; continue

@@ -81,8 +81,10 @@ npm ci                                                # 新樹沒有 node_module
 
 條件照 `docs/07-practices.md` (at),**每一輪重讀那段**,跟下面對不上就以 (at) 為準並回報顧問。目前是四條全部成立才清:
 1. 分支**自己的** commit 已進 main(不是「分支是 main 的祖先」——剛開的分支也是祖先);
-2. 它所有終端 `lastOutputAt` ≥ 60 分鐘沒輸出,也沒有 spinner/選單/等輸入;而且沒有行程的 cwd 在那個目錄
-   (`for p in /proc/[0-9]*; do [ "$(readlink $p/cwd 2>/dev/null)" = "<路徑>" ] && echo $p; done`,不要用 `ps | grep`);
+2. 它所有終端 `lastOutputAt` ≥ 60 分鐘沒輸出,也沒有 spinner/選單/等輸入;而且沒有**終端以外**的工作行程 cwd 在那個目錄
+   (`for p in /proc/[0-9]*; do [ "$(readlink $p/cwd 2>/dev/null)" = "<路徑>" ] && echo "$p $(tr '\0' ' ' < $p/cmdline)"; done`,不要用 `ps | grep`)。
+   **顧問裁 2026-09-15**:終端自己的 shell 與裡面閒置的 agent(`bash`/`zsh`/`codex`/`claude` 及其 node 本體)在所有終端都閒置 ≥60 分時**不算**——
+   終端存在就一定有它們,`orca-ide worktree rm --force` 會一起收掉。**算**的是 `npm`/`npx`/`vitest`/`tsc`/`tsx`/`cucumber`/`stryker`/`git`(非 status)這類在跑的工作;有一個就不清。拿不準的行程 → 列出 cmdline 問顧問;
 3. `git status --porcelain --untracked-files=all` 只剩交接檔(`.orca-brief/<名>-REPORT|BRIEF|REVIEW.md`);
 4. 不在 in-progress 清單(協調者給的 + Orca `workspaceStatus`/comment 標 in-progress 的)、不在保護名單。
 
@@ -93,7 +95,14 @@ npm ci                                                # 新樹沒有 node_module
 **清的順序**(一步都不能跳):
 1. **快照**:`git worktree list --porcelain`、`orca-ide terminal list --json` 存到 `plans/<時間>-snapshot/`。之後判斷只讀快照,動作後再量一次對照。
 2. **計畫檔**:`/data/python/dev-paradigm-briefs/plans/<時間>-worktree-rm.txt`,一行一個絕對路徑。旁邊寫每行的 (at) 四條量測值。
-3. **歸檔交接檔**:`cp` 到 `/data/python/dev-paradigm-briefs/archive/<worktree名>/`,`test -s` 每個都在。
+3. **歸檔交接檔**(保留相對路徑):
+   - 未追蹤的交接檔 `.orca-brief/<名>-REPORT|BRIEF|REVIEW.md` → `cp`;
+   - **gitignored 的** `.orca-brief/*`(`git status --porcelain --ignored --untracked-files=all | grep '^!! \.orca-brief/'`,例如 `.orca-brief/REVIEW.md`)→ `cp`。
+     一般 porcelain 看不到它,worktree 一刪就沒了;`safe-worktree-rm` 會 `cmp` 核對;
+   - **顧問裁 2026-09-15**:工單拷貝放在 worktree 根目錄的未追蹤檔(例如 `TASK-*.md`),`cmp` 跟主 checkout 裡已追蹤的正本
+     (例如 `.orca-brief/dispatch/<同名>`)**一模一樣**才可以 `mv` 到 `archive/<worktree名>/`(搬走不是刪,可回復);不一樣 → 當成未歸檔,問顧問;
+   - 其他 ignored 產物(`node_modules/`、`package/dist/` 這類可重建的)不用歸檔;
+   - 每個歸檔檔 `test -s`。
 4. **打 tag**(主 checkout,不 push):`git -C /data/python/dev-paradigm tag archive/<branch> <tip sha>`。
    `orca-ide worktree rm` 會順手刪本地分支,所以 **tag 一定在刪之前**。tag 名已存在又指向別顆 → 停,問顧問。
 5. **乾跑**:`/data/python/dev-paradigm/.orca-brief/roles/bin/safe-worktree-rm --dry-run <計畫檔>`。
@@ -103,6 +112,11 @@ npm ci                                                # 新樹沒有 node_module
 8. **ledger**:`/data/python/dev-paradigm-briefs/ledger/cleanup-ledger.md` 每清一個一列:
    `| 時間 | 路徑 | 分支 | 刪除當下 tip sha | archive tag | lastOutputAt | (at)① 依據 | porcelain | 計畫檔 | 預期→實際 |`
    「預期→實際」寫刪前/刪後 `git worktree list | wc -l`、歸檔檔 `test -s` 結果。不一致 → 停,回報顧問,這輪不再清。
+
+**只剩分支、沒有 worktree**(顧問裁 2026-09-15):不走快照/歸檔/dry-run。步驟縮成:確認不在 in-progress 清單 →
+`git log --no-merges <branch> --not main` 為空、且 tip 不在 `git rev-list --first-parent main` 裡(跟 safe-worktree-rm 同一條判準)→
+`git tag archive/<branch> <tip>` → `git branch -d <branch>`(`-D` 不准)→ ledger 一列(路徑欄寫「無 worktree」,預期→實際寫 `git branch --list <branch>` 前後)。
+發布分支 `npx-release` 與 `npx-v*` tag 永遠不動。
 
 **舊分支盤點**(第一輪做、之後有新東西才做):寫 `/data/python/dev-paradigm-briefs/ledger/inventory-<日期>.md`,
 每支分成 A 已在 main / B 已被取代或放棄 / C 還需要整合。**只寫表,給協調者裁**;A、B 要清也照上面八步,C 交協調者排整合。
