@@ -1,0 +1,21 @@
+{
+  "_comment": "dev-paradigm 整合/清樹 agent 的機械護欄(改自 AI_KM-briefs/bin/safety-policy.json)。safe-trash 與 safe-worktree-rm 共用。改這份檔是高風險動作,只有技術顧問改。保護名單比對:realpath 後『等於或以 <值>/ 開頭』,所以 /data/python/dev-paradigm 不會誤擋 /data/python/dev-paradigm-briefs。 worktree 目錄不在 allowed_trash_roots:刪 worktree 只准走 safe-worktree-rm(它會核 porcelain/tag/已合入),不准用 safe-trash 繞過。",
+  "allowed_trash_roots": [
+    "/data/python/dev-paradigm-briefs/archive",
+    "/data/python/dev-paradigm-briefs/plans",
+    "/data/python/dev-paradigm-briefs/wiring-state"
+  ],
+  "allowed_worktree_roots": [
+    "/home/pollux/orca/workspaces/dev-paradigm"
+  ],
+  "protected_path_exact_or_prefix": [
+    "/data/python/dev-paradigm",
+    "/data/python/dev-paradigm-briefs/tickets",
+    "/data/python/dev-paradigm-briefs/ledger",
+    "/data/python/dev-paradigm-briefs/integrate",
+    "/data/python/dev-paradigm-briefs/trash",
+    "/home/pollux/orca/workspaces/dev-paradigm/integrate"
+  ],
+  "protected_path_substrings": [],
+  "handoff_file_regex": "^\\?\\? \\.orca-brief/[^/]+-(REPORT|BRIEF|REVIEW)\\.md$"
+}

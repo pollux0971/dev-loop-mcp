@@ -218,6 +218,8 @@ Wave 0 的每個 phase-1 一個 worktree,可以同時開工,順序自由。**每
 | **技術顧問 / 審核**(advisor-reviewer) | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push | 不直接改 worker 的分支 |
 | **開發 worker**(dev) | 只寫實作 | **不新增不修改 `*.test.ts` 與 `features/steps/**`**,可以跑測試但不能改;不 push;共用檔不動,需求寫進自己 `FEATURE.md` 的「待協調」段 |
 | **測試 agent**(test) | 照 `.feature` 先寫步驟檔與單元測試(紅),交給 dev 做綠;變異不足也由它補 | 不寫實作程式碼 |
+| **接線 agent**(wiring,ADR-018) | 偵測 worker 交件(讀終端結論行與 `.report`/`.review` 檔,不用 mailbox),只照工單鏈規格開下一棒;卡互動選單就解除或回報 | 不決定鏈的內容、不排序、不合併、不清樹、不改鏈規格 |
+| **整合/清樹 agent**(integrator,ADR-018) | 把候選分支合到最新 main 的臨時樹跑全 gate + 觸及資料夾所有 done phase,紅就隔離是哪一支;照 `docs/07-practices.md` (at) 清閒置 worktree,刪前打 archive tag | 不派工、不合併、不 push、不改任何分支內容 |
 
 審核時的機械檢查(擋掉 worker 碰了不該碰的檔案):
 

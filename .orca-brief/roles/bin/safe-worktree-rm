@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# safe-worktree-rm [--dry-run] <plan-file>
+#
+# dev-paradigm 整合/清樹 agent 刪 worktree 的唯一入口。計畫檔一行一個 worktree 絕對路徑。
+# 這支只擋「做錯的機械條件」;(at) 的判斷條件(自己的 commit 已進 main、閒置 ≥60 分、不在 in-progress)
+# 由 agent 在寫計畫檔前量,這裡再機械核一次能核的部分:
+#   - 絕對路徑、無 /../ /./、不是 symlink、realpath 在 allowed_worktree_roots 底下且不等於根
+#   - 不命中 protected_path_exact_or_prefix
+#   - 是 git worktree 且 porcelain 只剩交接檔(handoff_file_regex)
+#   - 分支的 archive/<branch> tag 已存在且指向現在的 tip(orca worktree rm 會順手刪本地分支,所以 tag 一定要先打)
+#   - 分支自己的 commit 全部已在 main(git log <branch> --not main 為空),且 tip 不在 main first-parent 鏈上(擋剛開的空分支)
+# 任一行不過 → 整批不動。全過才逐一 orca-ide worktree rm --force(先存 porcelain)。
+set -euo pipefail
+
+POLICY="${SAFE_POLICY:-$(dirname "$0")/safety-policy.json}"   # 覆寫只給測試用
+DRY=0
+[[ "${1:-}" == "--dry-run" ]] && { DRY=1; shift; }
+PLAN="${1:-}"
+MAIN="${SAFE_WT_MAIN:-/data/python/dev-paradigm}"   # 覆寫只給測試用
+[[ -n "$PLAN" && -f "$PLAN" && -f "$POLICY" ]] || { echo "用法: safe-worktree-rm [--dry-run] <plan-file>(policy: $POLICY)" >&2; exit 2; }
+
+mapfile -t RAW < <(grep -vE '^\s*(#.*)?$' "$PLAN")
+[[ ${#RAW[@]} -gt 0 ]] || { echo "REFUSED: 計畫檔沒有任何路徑" >&2; exit 1; }
+mapfile -t ROOTS < <(jq -r '.allowed_worktree_roots[]' "$POLICY")
+mapfile -t PROT < <(jq -r '.protected_path_exact_or_prefix[]' "$POLICY")
+HANDOFF_RE="$(jq -r '.handoff_file_regex' "$POLICY")"
+
+fail=0
+declare -a NORM BRANCH
+for p in "${RAW[@]}"; do
+  if [[ "$p" != /* || "$p" == *'/../'* || "$p" == *'/./'* || "$p" == *'/..' || "$p" == *'/.' ]]; then
+    echo "REFUSED: 非絕對路徑或含 /../ /./: $p" >&2; fail=1; continue
+  fi
+  if [[ -L "$p" ]]; then echo "REFUSED: symlink: $p" >&2; fail=1; continue; fi
+  n="$(realpath -m -- "$p")"
+  ok=0
+  for r in "${ROOTS[@]}"; do
+    r="$(realpath -m -- "$r")"
+    [[ "$n" == "$r" ]] && { echo "REFUSED: 等於允許根目錄本身: $p" >&2; fail=1; ok=2; break; }
+    [[ "$n" == "$r"/* ]] && ok=1
+  done
+  [[ $ok -eq 1 ]] || { [[ $ok -eq 2 ]] || { echo "REFUSED: 不在 allowed_worktree_roots 底下: $p" >&2; fail=1; }; continue; }
+  hit=0
+  for pr in "${PROT[@]}"; do
+    pr="$(realpath -m -- "$pr")"
+    if [[ "$n" == "$pr" || "$n" == "$pr"/* ]]; then echo "REFUSED: 命中保護名單 $pr: $p" >&2; fail=1; hit=1; break; fi
+  done
+  [[ $hit -eq 0 ]] || continue
+  if ! git -C "$n" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "REFUSED: 不是 git worktree: $p" >&2; fail=1; continue
+  fi
+  b="$(git -C "$n" symbolic-ref --short -q HEAD || true)"
+  [[ -n "$b" ]] || { echo "REFUSED: detached HEAD,不知道分支: $p" >&2; fail=1; continue; }
+  bad="$(git -C "$n" status --porcelain --untracked-files=all | grep -vE "$HANDOFF_RE" || true)"
+  if [[ -n "$bad" ]]; then
+    echo "REFUSED: porcelain 有交接檔以外的東西: $p" >&2; echo "$bad" | sed 's/^/    /' >&2; fail=1; continue
+  fi
+  if ! git -C "$MAIN" rev-parse -q --verify "refs/tags/archive/$b" >/dev/null; then
+    echo "REFUSED: 還沒打 archive/$b tag: $p" >&2; fail=1; continue
+  fi
+  if [[ "$(git -C "$MAIN" rev-parse "refs/tags/archive/$b^{commit}")" != "$(git -C "$MAIN" rev-parse "$b")" ]]; then
+    echo "REFUSED: archive/$b 指的不是 $b 現在的 tip(分支名重用過?改用 archive/$b-<日期> 前先問顧問): $p" >&2; fail=1; continue
+  fi
+  if [[ -n "$(git -C "$MAIN" log --no-merges --format=%h "$b" --not main)" ]]; then
+    echo "REFUSED: 分支 $b 還有 main 沒有的 commit: $p" >&2; fail=1; continue
+  fi
+  # (at) 第 1 條:分支「自己的」commit 已進 main。剛從 main 開、沒有自己 commit 的分支,tip 會落在 main 的
+  # first-parent 鏈上;協調者一律 merge --no-ff,真的合進去的分支 tip 不會在 first-parent 鏈上。
+  tip="$(git -C "$MAIN" rev-parse "$b")"
+  if git -C "$MAIN" rev-list --first-parent main | grep -qx "$tip"; then
+    echo "REFUSED: $b 的 tip 在 main first-parent 鏈上(沒有自己的 commit,或被 fast-forward)——不是 (at) 第 1 條,人工判: $p" >&2; fail=1; continue
+  fi
+  NORM+=("$n"); BRANCH+=("$b")
+done
+
+[[ $fail -eq 0 ]] || { echo "整批拒絕,沒有任何 worktree 被刪。" >&2; exit 1; }
+
+echo "計畫筆數: ${#NORM[@]}"
+if [[ $DRY -eq 1 ]]; then printf '  would remove: %s\n' "${NORM[@]}"; echo "dry-run:沒有刪任何東西"; exit 0; fi
+for i in "${!NORM[@]}"; do
+  n="${NORM[$i]}"; b="${BRANCH[$i]}"
+  echo "--- $n ($b) porcelain:"; git -C "$n" status --porcelain --untracked-files=all | sed 's/^/    /'
+  orca-ide worktree rm --worktree "path:$n" --force --json
+  echo "removed: $n ($b, tag archive/$b)"
+done

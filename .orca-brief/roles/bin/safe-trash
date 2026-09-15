@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# safe-trash <plan-file>
+#
+# 改自 AI_KM-briefs/bin/safe-trash(ai-km-a7,顧問 ai-km-e3 兩輪補洞後的版本),只換 trash 根目錄。
+#   - 每行必須是絕對路徑,不含 /../ 或 /./ 字面字串(擋路徑穿越掩護)
+#   - 拒絕 symlink(擋「連結指向保護目錄之外」的間接繞過)
+#   - 用 realpath -m 正規化後才比對允許根目錄與保護名單(擋 ../ 之類字串層級繞過)
+#   - 保護名單分兩種:protected_path_exact_or_prefix(等於或以 <值>/ 開頭,避免同前綴兄弟目錄誤擋)
+#     與 protected_path_substrings(無法用固定路徑表達的名稱,用寬鬆 regex)
+#   - 全部通過才 mv,任何一行不過 → exit 非 0,整批不動
+#   - mv 到 trash/<日期>/,並寫 manifest.json 記錄原路徑→新路徑
+set -euo pipefail
+
+POLICY="$(dirname "$0")/safety-policy.json"
+PLAN="${1:-}"
+
+if [[ -z "$PLAN" ]]; then
+  echo "用法: safe-trash <plan-file>" >&2
+  exit 2
+fi
+if [[ ! -f "$POLICY" ]]; then
+  echo "FATAL: 找不到 policy 檔 $POLICY" >&2
+  exit 2
+fi
+if [[ ! -f "$PLAN" ]]; then
+  echo "FATAL: 找不到計畫檔 $PLAN" >&2
+  exit 2
+fi
+
+if [[ -d /data/python/dev-paradigm-briefs ]]; then
+  TRASH_BASE="/data/python/dev-paradigm-briefs/trash"
+else
+  echo "FATAL: 找不到已知的 trash 根目錄慣例(/data/python/dev-paradigm-briefs 不存在)" >&2
+  exit 2
+fi
+
+mapfile -t RAW_PATHS < <(grep -vE '^\s*(#.*)?$' "$PLAN")
+PLAN_COUNT=${#RAW_PATHS[@]}
+if [[ "$PLAN_COUNT" -eq 0 ]]; then
+  echo "REFUSED: 計畫檔沒有任何有效路徑行" >&2
+  exit 1
+fi
+
+mapfile -t ROOTS < <(jq -r '.allowed_trash_roots[]' "$POLICY")
+mapfile -t PROTECTED_PREFIX < <(jq -r '.protected_path_exact_or_prefix[]' "$POLICY")
+mapfile -t PROTECTED_SUBSTR < <(jq -r '.protected_path_substrings[]' "$POLICY")
+
+fail=0
+NORM_PATHS=()
+for p in "${RAW_PATHS[@]}"; do
+  if [[ "$p" != /* ]]; then
+    echo "REFUSED: 非絕對路徑: $p" >&2
+    fail=1
+    continue
+  fi
+  # 字面字串就先擋路徑穿越,不等 realpath 正規化才發現
+  if [[ "$p" == *'/../'* || "$p" == *'/./'* || "$p" == *'/..' || "$p" == *'/.' ]]; then
+    echo "REFUSED: 路徑含 /../ 或 /./ 字面字串,不准: $p" >&2
+    fail=1
+    continue
+  fi
+  if [[ -L "$p" ]]; then
+    echo "REFUSED: 路徑是 symlink,不准(可能指向保護目錄之外): $p" >&2
+    fail=1
+    continue
+  fi
+  norm="$(realpath -m -- "$p")"
+  NORM_PATHS+=("$norm")
+
+  under_root=0
+  for root in "${ROOTS[@]}"; do
+    norm_root="$(realpath -m -- "$root")"
+    if [[ "$norm" == "$norm_root" ]]; then
+      echo "REFUSED: 路徑等於允許根目錄本身,不准整個根一起搬: $p" >&2
+      fail=1
+      under_root=1
+      break
+    fi
+    if [[ "$norm" == "$norm_root"/* ]]; then
+      under_root=1
+    fi
+  done
+  if [[ "$under_root" -eq 0 ]]; then
+    echo "REFUSED: 路徑(正規化後 $norm)不在任何 allowed_trash_roots 底下: $p" >&2
+    fail=1
+    continue
+  fi
+
+  for prefix in "${PROTECTED_PREFIX[@]}"; do
+    norm_prefix="$(realpath -m -- "$prefix")"
+    if [[ "$norm" == "$norm_prefix" || "$norm" == "$norm_prefix"/* ]]; then
+      echo "REFUSED: 路徑(正規化後 $norm)命中保護名單(等於或位於 $norm_prefix 底下): $p" >&2
+      fail=1
+      break
+    fi
+  done
+  for pat in "${PROTECTED_SUBSTR[@]}"; do
+    if [[ "$norm" =~ $pat ]]; then
+      echo "REFUSED: 路徑(正規化後 $norm)命中保護名單樣式 '$pat': $p" >&2
+      fail=1
+      break
+    fi
+  done
+done
+
+if [[ "$fail" -ne 0 ]]; then
+  echo "整批拒絕,沒有任何檔案被搬動。" >&2
+  exit 1
+fi
+
+DATE_DIR="$TRASH_BASE/$(date +%F)"
+mkdir -p "$DATE_DIR"
+MANIFEST="$DATE_DIR/manifest-$(date +%H%M%S).json"
+
+echo "[" > "$MANIFEST"
+first=1
+for i in "${!RAW_PATHS[@]}"; do
+  p="${RAW_PATHS[$i]}"
+  norm="${NORM_PATHS[$i]}"
+  base="$(basename "$norm")"
+  ts="$(date +%s)"
+  dest="$DATE_DIR/${base}.${ts}"
+  mv "$norm" "$dest"
+  if [[ "$first" -eq 1 ]]; then first=0; else echo "," >> "$MANIFEST"; fi
+  printf '  {"original": %s, "trashed_to": %s, "at": %s}' \
+    "$(printf '%s' "$p" | jq -R .)" \
+    "$(printf '%s' "$dest" | jq -R .)" \
+    "$(date -Iseconds | jq -R .)" >> "$MANIFEST"
+  echo "moved: $p -> $dest"
+done
+echo "" >> "$MANIFEST"
+echo "]" >> "$MANIFEST"
+echo "manifest: $MANIFEST"

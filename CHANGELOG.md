@@ -4,6 +4,40 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
+## 1.9.0 — 2026-09-14(已進 main,尚未發布)
+
+**minor。** 使用者 2026-09-14 在技術顧問 session 親口選 A(`DECISIONS_NEEDED.md` 已批示 25②),
+批准 `ADR-018 · 四常駐角色與「決定下一棒 ≠ 執行下一棒」`(修 ADR-016 條件 2,不推翻)。
+**已 commit 進 main;未打 `npx-v1.9.0` tag、未發布**——發布時機由協調者另定,發布前 README 安裝指令維持 `npx-v1.8.0`。
+
+**新增四常駐角色**(協調者/技術顧問/接線 agent/整合清樹 agent),原則是「決定下一棒 ≠ 執行下一棒」:
+協調者保有全部排程決定權,只把「鏈內接棒」與「清 worktree」的**執行**交給新的兩個角色,
+兩者遇到工單鏈規格沒寫的狀況一律停下回報,不自行判斷。**這是規模到了才需要的選項**,單人或單
+session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-agile-workflow.md` 原本的角色分工
+沒有被取代。
+
+- **`docs/02-decision-map.md`**:新增 ADR-018;ADR-016 Status 行加註「條件 2 由 ADR-018 補充(不推翻)」。
+- **`CLAUDE.md`**「做決定時」表:第一列協調者措辭加註排程決定權不變;新增「接線 agent」「整合/清樹 agent」
+  兩列角色定義。
+- **`docs/03-agile-workflow.md`、`README.md`** 角色分工表同步加兩列(接線 agent、整合/清樹 agent),兩處措辭一致。
+- **`docs/05-parallel-and-integration.md`** 新增「多 session 分工(ADR-018)」段:拓撲表、通訊規則、
+  cron 時段範例、在製品上限、**鏈規格格式**(照 `.orca-brief/TASK.md.template` 的「當場取數」原則,
+  不寫死 ADR / DECISIONS_NEEDED 編號、不寫死鏈長度)。
+- **新增 `docs/session-prompts/`**:`README.md` + 四份可直接貼進新 session 的啟動 prompt
+  (`coordinator.md`、`advisor.md`、`wiring.md`、`integrator.md`),已登記進
+  `package/payload-manifest.json` 出貨清單。
+- **`.claude/skills/autopilot/SKILL.md`**:「清 worktree」改「通知整合/清樹 agent 依 ledger 清 worktree(ADR-018)」;
+  §1「自己決的」補一句「鏈內接棒與清樹的執行交接線／整合清樹 agent,決定仍是你的」。
+- **`.orca-brief/TASK.md.template`**:檔尾新增「鏈規格(協調者填,接線 agent 只照此執行)」段與 yaml 範例,
+  單人模式忽略這節。
+- **`DECISIONS_NEEDED.md`**:#25 從「待批示」搬到「已批示」(25②),第①部分維持記在 1.8.0 已批示列,
+  第②部分本版裁決。
+- **技術顧問規則層掃描修正**(commit 前):ADR-018 與 `docs/05` 原寫「協調者推 origin」,跟 `CLAUDE.md`/`docs/03`/autopilot「技術顧問 push」矛盾 → 統一為顧問 push;
+  autopilot 的「通知整合/清樹 agent」改成只在開了四常駐角色時才適用(單人模式仍自己照 (at) 清);cron 分鐘標為範例;
+  README 安裝指令在發布前維持 `npx-v1.8.0`。
+- **不出貨的內部檔**:`.orca-brief/roles/`(已登記 `scripts/shipping-coverage.test.ts` NOT_SHIPPED)——dev-paradigm 自己跑四常駐 CLI 的啟動 prompt 與護欄腳本(`safe-worktree-rm`、`safe-trash`、接線偵測)。
+- **矛盾清單與自檢結果**:見 `.orca-brief/ORG-4ROLES-REPORT.md`。
+
 ## 1.8.0 — 2026-09-14
 
 **minor。** 使用者 2026-09-14 批准(`DECISIONS_NEEDED.md` 已批示 12·17·25①·26)。

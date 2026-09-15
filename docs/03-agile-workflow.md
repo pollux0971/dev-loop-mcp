@@ -16,6 +16,8 @@
 | **開發 worker**(dev) | 只寫實作 | **不新增不修改 `*.test.ts` 與 `features/steps/**`**,可以跑測試但不能改;不 push;共用檔不動,需求寫進自己 `FEATURE.md` 的「待協調」段 |
 | **審核 agent**(reviewer) | 負責**所有測試**:照 `.feature` 寫步驟檔與單元測試、跑變異測試(嚴格級看檔案級分數)、跑單獨執行、交叉比對真實呼叫路徑、UI 親自起 dev server。可與 dev 同時在同一 worktree 工作(檔案不重疊) | 不寫實作程式碼;每一輪的發現寫進 `.orca-brief/REVIEW.md`(gitignored,worktree 專屬,不是根目錄的追蹤檔——PITFALLS P-78)(抓到什麼、退回理由、下一輪要重看什麼),**不要依賴 session 記憶**——多數 agent 平台無法可靠地把下一輪接回同一個 session |
 | **debug session**(debug) | 審核 agent 抓到問題時,在**同一個 worktree** 生成,只修實作;修完交回同一個審核 agent 續測 | 不碰測試檔(碰了一樣退回);不合併 |
+| **接線 agent**(wiring,ADR-018) | 偵測 worker 交件(讀終端結論行與 `.report`/`.review` 檔,不用 mailbox),只照工單鏈規格開下一棒;卡互動選單就解除或回報 | 不決定鏈的內容、不排序、不合併、不清樹、不改鏈規格 |
+| **整合/清樹 agent**(integrator,ADR-018) | 把候選分支合到最新 main 的臨時樹跑全 gate + 觸及資料夾所有 done phase,紅就隔離是哪一支;照 `docs/07-practices.md` (at) 清閒置 worktree,刪前打 archive tag | 不派工、不合併、不 push、不改任何分支內容 |
 
 技術顧問對現況、對其他 repo、對「應該一樣」這類宣稱,一律標**【驗】**(親手重跑過、附得出原始
 輸出)/ **【推】**(推測,沒驗證過)/ **【未驗】**(還沒查證,不能當前提用);沒標記的宣稱,協調者

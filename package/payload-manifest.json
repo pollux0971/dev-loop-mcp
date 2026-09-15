@@ -155,6 +155,13 @@
       "purpose": "【驗】README 與 roadmap 引用的平行／整合流程。"
     },
     {
+      "root": "docs/session-prompts/",
+      "include": [
+        "**/*"
+      ],
+      "purpose": "【驗】ADR-018 四常駐角色(協調者/技術顧問/接線 agent/整合清樹 agent)的可貼式啟動 prompt。"
+    },
+    {
       "root": "docs/06-brownfield.md",
       "include": [
         "docs/06-brownfield.md"
