@@ -246,6 +246,25 @@ describe('check-next-gates:引用解析(各種形狀)', () => {
     expect(output).toContain('gate=next-gates result=PASS scanned=1');
   }, SPAWN_TIMEOUT_MS);
 
+  it('phase 參照新增寫法:反引號包資料夾名後接 phase-N(先寫紅)', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [{ n: 2, status: 'todo' }]);
+    writeFeature(root, '02-bar', [{ n: 3, status: 'done' }]);
+    writeNext(
+      root,
+      '01-foo',
+      ['## 下一個 phase 的 gate', '', '**phase-2** 需要:', '- [ ] `02-bar` phase-3 `done`'].join('\n'),
+    );
+    commitAll(root, 'backtick folder phase reference');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).not.toContain('引用不存在');
+    expect(output).toContain('✓ 全部 gate 宣告都有能解析的引用');
+    expect(output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
   it('phase 參照解析失敗(資料夾存在,但沒有那個 phase 列)→ FAIL', () => {
     const root = makeRepo();
     writeFeature(root, '01-foo', [{ n: 1, status: 'done' }]);
@@ -333,6 +352,84 @@ describe('check-next-gates:header 解析回歸 fixture(先寫紅)', () => {
       expect(output).toContain('gate=next-gates result=PASS scanned=1');
     }, SPAWN_TIMEOUT_MS);
   }
+});
+
+describe('check-next-gates:防靜默 checklist 警告範圍(先寫紅)', () => {
+  it('下一個 phase 的 gate 節裡的 orphan checklist 印正確檔名行號,但不改變 exit', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [{ n: 1, status: 'done' }, { n: 2, status: 'todo' }]);
+    const body = [
+      '## 下一個 phase 的 gate',
+      '',
+      '**phase-2** 需要:phase-1 `done`',
+      '- [ ] 這條 checklist 沒有被任何 gate header 收進來',
+    ].join('\n');
+    writeNext(root, '01-foo', body);
+    commitAll(root, 'orphan checklist warning');
+
+    const { code, output } = run(root);
+    const orphanLine = 2 + body.split('\n').findIndex((line) => line.startsWith('- [ ]')) + 1;
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      `⚠ 警告 features/01-foo/NEXT.md: 第 ${orphanLine} 行的 checklist 沒有被任何 gate header 收進 gate`,
+    );
+    expect(output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('同一份 fixture 修好 gate 引用後,orphan 警告仍印但 result=PASS、exit=0', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [{ n: 1, status: 'done' }, { n: 2, status: 'todo' }]);
+    const invalidGate = [
+      '## 下一個 phase 的 gate',
+      '',
+      '**phase-2** 需要:等待外部裁示',
+      '- [ ] 這條 checklist 沒有被任何 gate header 收進來',
+    ].join('\n');
+    writeNext(root, '01-foo', invalidGate);
+    commitAll(root, 'orphan checklist with invalid gate');
+
+    const before = run(root);
+    const orphanLine = 2 + invalidGate.split('\n').findIndex((line) => line.startsWith('- [ ]')) + 1;
+    const warning = `⚠ 警告 features/01-foo/NEXT.md: 第 ${orphanLine} 行的 checklist 沒有被任何 gate header 收進 gate`;
+    expect(before.code).toBe(1);
+    expect(before.output).toContain(warning);
+    expect(before.output).toContain('gate=next-gates result=FAIL scanned=1');
+
+    const validGate = invalidGate.replace('等待外部裁示', 'phase-1 `done`');
+    writeNext(root, '01-foo', validGate);
+    const after = run(root);
+
+    expect(after.code).toBe(0);
+    expect(after.output).toContain(warning);
+    expect(after.output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('目前/完成後節裡的 orphan checklist 不印警告(先寫紅)', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [{ n: 1, status: 'done' }, { n: 2, status: 'todo' }]);
+    const body = [
+      '## 目前',
+      '- [ ] 目前的 DoD 清單,不是 gate',
+      '',
+      '## 下一個 phase 的 gate',
+      '',
+      '**phase-2** 需要:phase-1 `done`',
+      '',
+      '## 完成後',
+      '- [ ] 完成後的 DoD 清單,不是 gate',
+    ].join('\n');
+    writeNext(root, '01-foo', body);
+    commitAll(root, 'ignore non-gate checklist warnings');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).not.toContain('目前的 DoD 清單');
+    expect(output).not.toContain('完成後的 DoD 清單');
+    expect(output).not.toContain('⚠ 警告 features/01-foo/NEXT.md');
+    expect(output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
 });
 
 describe('check-next-gates:nextGates.mode', () => {

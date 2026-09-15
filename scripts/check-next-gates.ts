@@ -11,12 +11,13 @@
  *     找得到對應的 `## N. ...` 標題。
  *   - 整合點 `I<N>`,要在 `docs/01-roadmap.md` 的 `## I<N> · ...` 標題出現,或
  *     `docs/integration/` 底下任何檔名前綴是 `i<N>`(大小寫不拘)的檔案。
- *   - phase 參照,三種寫法都算(取每個 features 資料夾底下 NEXT.md 實際觀察到的寫法,
+ *   - phase 參照,四種寫法都算(取每個 features 資料夾底下 NEXT.md 實際觀察到的寫法,
  *     不是憑空只認一種):
  *       1. `<NN-name>/phase-N`(完整資料夾名,規格明講的形式)
  *       2. `NN phase-N`(只寫兩位數字,不寫完整資料夾名——這是實際最常見的寫法,
  *          例如「01 phase-2 與 phase-3 done」「跨資料夾:03 phase-2 done」)
- *       3. 單獨的 `phase-N`(前面沒有任何資料夾字首)——視為「自身」,指這份 NEXT.md
+ *       3. `` `NN-name` phase-N ``(資料夾名包在反引號裡,後面接 phase-N)
+ *       4. 單獨的 `phase-N`(前面沒有任何資料夾字首)——視為「自身」,指這份 NEXT.md
  *          所屬的那個資料夾自己的 phase(例如「自身:phase-1 done」)
  *     不管哪種寫法,都要求對到的 `features/<folder>/FEATURE.md` 存在,且它的 Phase
  *     表(唯一狀態來源)有那個 phase 的表格列。
@@ -222,6 +223,8 @@ export function collectFeatureFolders(root: string): string[] {
 const HEADER_RE = /^\*\*phase-(\d+)(?:\s*\([^\)\r\n]*\))?\*\*\s*需要(?:\s*全部滿足)?\s*[：:]?\s*(.*)$/;
 const BULLET_RE = /^-\s*\[([ xX])\]\s*(.*)$/;
 const CONTINUATION_RE = /^\s{2,}\S/;
+const NEXT_GATE_SECTION_RE = /^##\s+下一個 phase 的 gate\s*$/;
+const SECTION_HEADING_RE = /^#{1,2}(?:\s|$)/;
 
 interface GateExtraction {
   gateLines: GateLine[];
@@ -271,9 +274,9 @@ function extractGateLinesWithCoverage(folder: string, relFile: string, content: 
       continue;
     }
     // 空的 header(只有「**phase-N** 需要:」,沒有接內容):後面接 checklist,
-    // 逐條收集連續的 `- [ ]` / `- [x]` 行,容許中間夾一行空白(只要空白之後緊接著
-    // 還是 bullet,不然就當這個段落結束了)。模板的長 checklist 可能在下一行用縮排
-    // 續寫;續行屬於前一個 bullet,不能因此讓後面的 checklist 靜默漏收。
+    // 逐條收集連續的 `- [ ]` / `- [x]` 行,容許中間夾一行空白(空白後接 bullet
+    // 或縮排續行)。模板的長 checklist 可能在下一行用縮排續寫;續行屬於前一個
+    // bullet,不能因此讓後面的 checklist 靜默漏收。
     let j = i + 1;
     while (j < lines.length) {
       const jTrimmed = (lines[j] ?? '').trim();
@@ -294,9 +297,17 @@ function extractGateLinesWithCoverage(folder: string, relFile: string, content: 
           out.push(gate);
         }
         j++;
-        while (j < lines.length && CONTINUATION_RE.test(lines[j] ?? '')) {
-          if (gate) gate.text = `${gate.text} ${(lines[j] ?? '').trim()}`;
-          j++;
+        while (j < lines.length) {
+          if (CONTINUATION_RE.test(lines[j] ?? '')) {
+            if (gate) gate.text = `${gate.text} ${(lines[j] ?? '').trim()}`;
+            j++;
+            continue;
+          }
+          if ((lines[j] ?? '').trim() === '' && CONTINUATION_RE.test(lines[j + 1] ?? '')) {
+            j++;
+            continue;
+          }
+          break;
         }
         continue;
       }
@@ -318,13 +329,44 @@ export function extractGateLines(folder: string, relFile: string, content: strin
   return extractGateLinesWithCoverage(folder, relFile, content).gateLines;
 }
 
+/**
+ * 找出「## 下一個 phase 的 gate」節裡的 checklist 行。
+ *
+ * 找不到這個標題時回傳 undefined,讓呼叫端維持舊行為(全檔掃描)；標題存在時
+ * 只保留該節(直到下一個 H1/H2),避免把「目前」「完成後」等文件清單誤當成 gate。
+ */
+function findNextGateSectionChecklistLines(content: string): Set<number> | undefined {
+  const lines = content.split('\n');
+  const lineNos = new Set<number>();
+  let inNextGateSection = false;
+  let foundNextGateSection = false;
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (NEXT_GATE_SECTION_RE.test(trimmed)) {
+      inNextGateSection = true;
+      foundNextGateSection = true;
+      continue;
+    }
+    if (SECTION_HEADING_RE.test(trimmed)) {
+      inNextGateSection = false;
+      continue;
+    }
+    if (inNextGateSection && BULLET_RE.test(trimmed)) lineNos.add(index + 1);
+  }
+
+  return foundNextGateSection ? lineNos : undefined;
+}
+
 /** 找出 NEXT.md 中沒有被任何空 header 的 checklist 段落收進的 checklist 行。 */
 function findOrphanChecklistLines(content: string, capturedChecklistLineNos: Set<number>): number[] {
+  const scopedLineNos = findNextGateSectionChecklistLines(content);
   return content
     .split('\n')
     .flatMap((line, index) => {
       const lineNo = index + 1;
-      return BULLET_RE.test(line.trim()) && !capturedChecklistLineNos.has(lineNo) ? [lineNo] : [];
+      const inScope = scopedLineNos === undefined || scopedLineNos.has(lineNo);
+      return BULLET_RE.test(line.trim()) && inScope && !capturedChecklistLineNos.has(lineNo) ? [lineNo] : [];
     });
 }
 
@@ -396,6 +438,17 @@ export function parseGateReferences(
     references.push({
       kind: 'phase',
       token: `${folderName}/phase-${phaseNum}`,
+      folder: folderName,
+      phaseNum,
+      resolved: phaseRowExists(root, folderName, phaseNum),
+    });
+    return ' '.repeat(m.length);
+  });
+
+  working = working.replace(/`(\d{2}-[A-Za-z0-9-]+)`[ \t]+phase-(\d+)\b/g, (m, folderName: string, phaseNum: string) => {
+    references.push({
+      kind: 'phase',
+      token: m,
       folder: folderName,
       phaseNum,
       resolved: phaseRowExists(root, folderName, phaseNum),
