@@ -269,6 +269,21 @@
 
 ---
 
+## ADR-019 · 迭代原則:先 spec、再分區 MVP、再整合 MVP;最終目標先切階段;phase DAG 決定平行度
+
+- **Status**: accepted · 2026-09-15 · 來源:範式
+- **Context**: 【驗】使用者 2026-09-15 在技術顧問 session 親口說(原話):「bmad-method是將一個專題切分成數個epic story，而我的想法是先將專案的spec寫好，定義每個區塊的mvp功能，以及整合後的mvp功能，然後可以無限增加feature和gherkin code，就可以一直迭代，如果已經有最終目標，也要先切分成數個階段的gherkin code」,接著選 A(寫進範式),並補一句「設計dag才能平行開發與加速」。範式裡這些機制原本就分散存在(ADR-003 契約凍結、ADR-004 Wave 0 平行、ADR-007 整合點可用、ADR-008 NEXT.md gate、ADR-015 epic/story 映射列),但沒有一條把它們串成「迭代的順序」,「開發 DAG」一詞在 ADR-016 與 `product-pm`/`feature-triage` 出現卻沒有定義。
+- **Decision**:
+  1. **順序**:① 先寫 spec——`contracts/types.md` 凍結(ADR-003);② 每個能力資料夾的 `phase-1.feature` 是**該區塊的 MVP**,Wave 0 平行做(ADR-004);③ `docs/integration/i1.feature` 是**整合後的 MVP**,`@e2e` 由使用者親手確認(ADR-007、ADR-017);④ 之後**只靠加 gherkin 迭代**:既有能力加 `phase-N+1.feature`,新能力加 `features/NN-name/`,一律經 `/feature` 且先有 `.feature` 再寫程式(ADR-001)。迭代沒有上限,每一輪的完成定義都是可執行的場景。
+  2. **有最終目標也先切階段**:不寫一份一次到位的大 feature。先在 `docs/01-roadmap.md` 把最終目標切成 `I1 → I2 → … → IN`,每一階段標題寫「使用者做得到什麼」,每一階段有自己的 `docs/integration/i<N>.feature`;各能力的 phase 對應到它服務的整合點。後面的階段可以先只有標題與場景大綱,輪到時再經 `/feature` 補完。
+  3. **phase DAG 是平行度的權威**:節點 = 每個 phase 與每個整合點;邊 = `NEXT.md` gate 裡可解析的 phase 參照與 `I<N>`(`scripts/check-next-gates.ts` 已要求可解析);gate 裡的 `ADR-NNN`/`§N`/commit 是外部阻擋,不是邊。圖必須**無環**。ready 集合 = 所有入邊都已 `done` 且外部阻擋已解的 `todo` phase,協調者只從 ready 集合派工(`/sprint` 已照此算)。**設計 DAG 的目標是把邊砍到只剩真依賴**:需要別人的能力時用 contract 介面 + stub 切斷邊(ADR-004),不要為了「順序看起來合理」加 gate——多一條不必要的邊就少一份平行度。
+  4. **BMAD epic/story 不當權威單位**:epic 大致對應一個整合階段或一個能力資料夾,story 對應 phase 裡的場景;進 DAG、被派工、被驗收的單位只有 phase(與 ADR-015 `bmad-create-epics-and-stories` 列「映射為 capability folder 與 phase」一致)。
+- **Alternatives**: 照 BMAD 切 epic/story 當工作單位(story 是「要做的事」不是「可執行的驗收」,完成定義回到憑感覺,且 story 之間的依賴不在任何可檢查的檔案裡);最終目標寫成單一大 feature 一次做完(沒有中途可用的系統,違反 ADR-007,也無法平行);依賴只寫在 roadmap 文字裡不進 NEXT.md(ready 無法機械計算,平行度靠人記)。
+- **Consequences**: 迭代的每一步都有「可執行的完成定義」,加功能不需要重新規劃整體;平行度變成可以量的東西(DAG 的寬度),協調者派工與 ADR-018 的鏈都有明確的輸入。代價:寫 NEXT.md gate 時要刻意分辨「真依賴」與「順序偏好」;後期階段的場景先只有大綱,輪到時要再走一次 `/feature`。**尚未落地**(另案):`check-next-gates.ts` 目前只驗引用可解析,**不驗無環**,也沒有輸出 DAG 分層(哪些 phase 可同時開);要不要加 `check:dag` 由使用者決定(新增模板能力)。
+- **Related**: ADR-001, ADR-003, ADR-004, ADR-007, ADR-008, ADR-015, ADR-016(「L3 才能進開發 DAG」的 DAG 即本條定義), ADR-017, ADR-018, `docs/01-roadmap.md`, `docs/05-parallel-and-integration.md`, `scripts/check-next-gates.ts`, `.claude/skills/sprint-planning/SKILL.md`
+
+---
+
 ## 待決(不影響開工)
 
 | 項目 | 需在何時前決定 | 阻擋什麼 |

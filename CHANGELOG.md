@@ -35,6 +35,8 @@ session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-ag
 - **技術顧問規則層掃描修正**(commit 前):ADR-018 與 `docs/05` 原寫「協調者推 origin」,跟 `CLAUDE.md`/`docs/03`/autopilot「技術顧問 push」矛盾 → 統一為顧問 push;
   autopilot 的「通知整合/清樹 agent」改成只在開了四常駐角色時才適用(單人模式仍自己照 (at) 清);cron 分鐘標為範例;
   README 安裝指令在發布前維持 `npx-v1.8.0`。
+- **`docs/02-decision-map.md` 新增 ADR-019**(2026-09-15,使用者親口):迭代原則——先 spec、再分區 MVP(phase-1)、再整合 MVP(I1)、之後只靠加 gherkin 迭代;
+  有最終目標也先切成 I1…IN 階段;phase DAG(NEXT.md gate 為邊、必須無環)決定平行度;BMAD epic/story 不當權威單位。`check:dag`(驗無環、輸出分層)尚未做,待使用者決定。
 - **不出貨的內部檔**:`.orca-brief/roles/`(已登記 `scripts/shipping-coverage.test.ts` NOT_SHIPPED)——dev-paradigm 自己跑四常駐 CLI 的啟動 prompt 與護欄腳本(`safe-worktree-rm`、`safe-trash`、接線偵測)。
 - **矛盾清單與自檢結果**:見 `.orca-brief/ORG-4ROLES-REPORT.md`。
 
