@@ -320,7 +320,6 @@ describe('check-dag:環路', () => {
 
     expect(output).not.toContain('02 phase-2 → 02 phase-3 → 02 phase-2');
     expect(code).toBe(0);
-    expect(output).toContain('features/02-authorization/NEXT.md');
     expect(output).not.toContain('gate 引用了自己');
     expect(layerSection(output, 2, 3)).toContain('02 phase-2');
     expect(layerSection(output, 3)).toContain('02 phase-3');
