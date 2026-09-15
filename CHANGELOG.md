@@ -43,6 +43,16 @@ session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-ag
   `npm run check:dag`;零輸入(只有 `features/_template/`)印「沒有 phase」、`exit 0`;`scripts/zero-input.gates.test.ts` 涵蓋。
   本 repo 這條是走 ADR-018 四角色鏈(test→dev→非作者審核)落地的第一條,審核棒獨立合併到臨時樹重做反向驗證
   (環路 fixture 必紅、拿掉一條真依賴分層必變),結論 PASS;merge commit bcfc58a。
+- **修 `check-next-gates.ts` 既有 bug:三種 header 句型解析錯誤**(2026-09-15,fix-forward,不 revert check-dag)。
+  技術顧問重驗 `check-dag` 時另外造 fixture 發現:模板自己出貨的 `**phase-N** 需要全部滿足:`——「全部滿足:」
+  被誤判成 gate 內容,底下整段 `- [ ]` checklist **靜默漏收**;全形冒號「：」不收;`**phase-N(說明)**` 帶括號時
+  **整段 gate 消失**。三種都不是 `check-dag` 引入的,是既有 bug——三棒都沒抓到的原因是 test fixture 當初寫成
+  parser 吃得下的簡化句型,不是模板實際出貨的句型(教訓已寫進 `.orca-brief/TASK.md.template`)。
+  修法收在同一次 `HEADER_RE` 與周邊解析邏輯調整,既有 `check-next-gates.test.ts` 全部維持綠;同時新增
+  「NEXT.md 有 checklist 行卻沒被任何 header 收」的防靜默警告(warn,不改 exit code——升級成硬擋前要等至少
+  一個 consumer 實跑過、確認全是真漏收無誤報)。審核棒獨立重做:換回舊 parser 證明三種句型真的會重現 bug、
+  換回新版確認抓到;merge commit dd53cb0。**待辦**(不擋這次合併):防靜默警告缺自動化測試,另開
+  `gate-header-warn-test` 工單,排隊中。
 - **不出貨的內部檔**:`.orca-brief/roles/`(已登記 `scripts/shipping-coverage.test.ts` NOT_SHIPPED)——dev-paradigm 自己跑四常駐 CLI 的啟動 prompt 與護欄腳本(`safe-worktree-rm`、`safe-trash`、接線偵測)。
 - **矛盾清單與自檢結果**:見 `.orca-brief/ORG-4ROLES-REPORT.md`。
 
