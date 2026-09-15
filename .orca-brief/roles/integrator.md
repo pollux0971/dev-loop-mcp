@@ -83,6 +83,9 @@ npm ci                                                # 新樹沒有 node_module
 1. 分支**自己的** commit 已進 main(不是「分支是 main 的祖先」——剛開的分支也是祖先);
 2. 它所有終端 `lastOutputAt` ≥ 60 分鐘沒輸出,也沒有 spinner/選單/等輸入;而且沒有**終端以外**的工作行程 cwd 在那個目錄
    (`for p in /proc/[0-9]*; do [ "$(readlink $p/cwd 2>/dev/null)" = "<路徑>" ] && echo "$p $(tr '\0' ' ' < $p/cmdline)"; done`,不要用 `ps | grep`)。
+   **顧問裁 2026-09-16**:agent TUI(`agentIdentity` 是 `claude` 等)的狀態列每秒重繪,`lastOutputAt` 永遠接近 0 分,**不能當有輸出的證據**。
+   這種終端改用三條一起判:① 連續兩輪以上、相隔 ≥60 分的快照裡,`ListAgents` 都顯示那個 session `idle`;② 交件檔
+   (`.orca-brief/<worktree名>-REPORT.md` 或 `REVIEW.md`)已印 `REVIEW VERDICT` 且 mtime ≥60 分;③ 下一句的工作行程檢查沒有東西。一般 shell 終端照舊看 `lastOutputAt`。
    **顧問裁 2026-09-15**:終端自己的 shell 與裡面閒置的 agent(`bash`/`zsh`/`codex`/`claude` 及其 node 本體)在所有終端都閒置 ≥60 分時**不算**——
    終端存在就一定有它們,`orca-ide worktree rm --force` 會一起收掉。**算**的是 `npm`/`npx`/`vitest`/`tsc`/`tsx`/`cucumber`/`stryker`/`git`(非 status)這類在跑的工作;有一個就不清。拿不準的行程 → 列出 cmdline 問顧問;
 3. `git status --porcelain --untracked-files=all` 只剩交接檔(`.orca-brief/<名>-REPORT|BRIEF|REVIEW.md`);

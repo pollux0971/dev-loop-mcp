@@ -78,6 +78,35 @@ def main():
                     f"idle={idle:.1f}m, handle={handle})\n    {tail}")
         new_keys.append(key)
 
+    # agent TUI(尤其 claude)的狀態列每秒重繪,lastOutputAt 永遠是 0 分、preview 只剩狀態列——
+    # 用終端判斷會永遠抓不到 claude 審核棒交件(2026-09-15 實測)。改用交件檔當第二訊號:
+    # worker lane 裡 .orca-brief/<worktree名>-REPORT.md(或 worker 誤寫的 REVIEW.md)含 REVIEW VERDICT
+    # 且檔案 ≥3 分鐘沒再改 → DONE。key 用 path|mtime,檔案再改會再報一次。
+    lane = WORKER_LANE.rstrip("/")
+    try:
+        names = sorted(os.listdir(lane))
+    except FileNotFoundError:
+        names = []
+    for name in names:
+        if name in PROTECTED_NAMES:
+            continue
+        for fname in (f"{name}-REPORT.md", "REVIEW.md"):
+            rp = os.path.join(lane, name, ".orca-brief", fname)
+            try:
+                st = os.stat(rp)
+                with open(rp, encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            verdicts = [l.strip() for l in text.splitlines() if "REVIEW VERDICT" in l]
+            if not verdicts or (now_ms / 1000 - st.st_mtime) / 60 < IDLE_MIN:
+                continue
+            key = f"{rp}|{int(st.st_mtime)}"
+            if key in seen:
+                continue
+            rows.append(f"[DONE] {name} (report={rp}, idle={(now_ms / 1000 - st.st_mtime) / 60:.1f}m)\n    {verdicts[-1][-260:]}")
+            new_keys.append(key)
+
     if rows:
         print(f"=== wiring-scan {time.strftime('%H:%M:%S')} — {len(rows)} new item(s) ===")
         print("\n".join(rows))
