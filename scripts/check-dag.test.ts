@@ -96,6 +96,25 @@ function layerSection(output: string, layer: number, nextLayer?: number): string
   return outputSection(output, `第 ${layer} 層`, nextLayer === undefined ? '目前 ready 集合' : `第 ${nextLayer} 層`);
 }
 
+const HEADER_FIXTURES = [
+  {
+    name: '模板原句「需要全部滿足:」',
+    header: (phase: number) => `**phase-${phase}** 需要全部滿足:`,
+  },
+  {
+    name: '全形冒號',
+    header: (phase: number) => `**phase-${phase}** 需要：`,
+  },
+  {
+    name: 'phase 號後帶括號說明',
+    header: (phase: number) => `**phase-${phase}(接進 apps/api composition root)** 需要全部滿足:`,
+  },
+] as const;
+
+function checklistGate(header: string, dependency: string): string {
+  return `${header}\n\n- [ ] ${dependency}`;
+}
+
 afterEach(() => {
   while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
 });
@@ -187,6 +206,24 @@ describe('check-dag:環路', () => {
     expect(output).toContain('01 phase-1 → 02 phase-1 → 01 phase-1');
     expect(output).toContain('gate=dag result=FAIL scanned=2');
   }, SPAWN_TIMEOUT_MS);
+
+  for (const fixture of HEADER_FIXTURES) {
+    it(`${fixture.name} 也必須抓到環路依賴`, () => {
+      const root = makeRepo();
+      writeFeature(root, '01-alpha', [{ n: 1, status: 'todo' }]);
+      writeFeature(root, '02-beta', [{ n: 1, status: 'todo' }]);
+      writeNext(root, '01-alpha', checklistGate(fixture.header(1), '02 phase-1'));
+      writeNext(root, '02-beta', checklistGate(fixture.header(1), '01 phase-1'));
+      commitAll(root, `cycle: ${fixture.name}`);
+
+      const { code, output } = run(root);
+
+      expect(code).toBe(1);
+      expect(output).toContain('環');
+      expect(output).toContain('01 phase-1 → 02 phase-1 → 01 phase-1');
+      expect(output).toContain('gate=dag result=FAIL scanned=2');
+    }, SPAWN_TIMEOUT_MS);
+  }
 });
 
 describe('check-dag:依賴反向驗證', () => {
@@ -215,4 +252,31 @@ describe('check-dag:依賴反向驗證', () => {
     expect(layerSection(after.output, 2)).toContain('03 phase-1');
     expect(after.output).toContain('gate=dag result=PASS scanned=3');
   }, SPAWN_TIMEOUT_MS);
+
+  for (const fixture of HEADER_FIXTURES) {
+    it(`${fixture.name} 拿掉一條真依賴後 phase 會換層`, () => {
+      const root = makeRepo();
+      writeFeature(root, '01-alpha', [{ n: 1, status: 'done' }]);
+      writeFeature(root, '02-beta', [{ n: 1, status: 'todo' }]);
+      writeFeature(root, '03-gamma', [{ n: 1, status: 'todo' }]);
+      writeNext(root, '01-alpha', '**phase-1**:無 gate。');
+      writeNext(root, '02-beta', checklistGate(fixture.header(1), '01 phase-1 `done`'));
+      writeNext(root, '03-gamma', '**phase-1** 需要:01 phase-1 `done`');
+      commitAll(root, `dependency present: ${fixture.name}`);
+
+      const before = run(root);
+      expect(before.code).toBe(0);
+      expect(layerSection(before.output, 1, 2)).not.toContain('02 phase-1');
+      expect(layerSection(before.output, 2)).toContain('02 phase-1');
+
+      writeNext(root, '02-beta', checklistGate(fixture.header(1), '無'));
+      const after = run(root);
+
+      expect(after.code).toBe(0);
+      expect(layerSection(after.output, 1, 2)).toContain('02 phase-1');
+      expect(layerSection(after.output, 2)).not.toContain('02 phase-1');
+      expect(layerSection(after.output, 2)).toContain('03 phase-1');
+      expect(after.output).toContain('gate=dag result=PASS scanned=3');
+    }, SPAWN_TIMEOUT_MS);
+  }
 });
