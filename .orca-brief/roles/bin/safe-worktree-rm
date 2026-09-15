@@ -58,7 +58,8 @@ for p in "${RAW[@]}"; do
     echo "REFUSED: porcelain 有交接檔以外的東西: $p" >&2; echo "$bad" | sed 's/^/    /' >&2; fail=1; continue
   fi
   # gitignored 的交接檔(.orca-brief/REVIEW.md 依 P-17 是 ignored)不會出現在一般 porcelain,worktree 一刪就沒了。
-  # 2026-09-15 npx-init-a 實例:17KB 的 REVIEW.md 差點跟著刪。要求 archive/<worktree名>/<同相對路徑> 有一模一樣的拷貝。
+  # (2026-09-15 更正:npx-init-a 那份 REVIEW.md 其實是 tracked、已在 main 歷史裡,不是實例;這條防的是真的 ignored 的情況。)
+  # 要求 archive/<worktree名>/<同相對路徑> 有一模一樣的拷貝。
   wt="$(basename "$n")"
   miss=""
   while IFS= read -r rel; do
