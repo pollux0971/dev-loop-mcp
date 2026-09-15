@@ -84,6 +84,37 @@ function run(root: string, ...extra: string[]): { code: number; output: string }
   return { code: r.status ?? -1, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
+// 逐字照抄 features/_template/NEXT.md 的 gate checklist；只把模板的 N、
+// 「無」佔位符換成這個臨時 repo 能解析的 phase/I/ADR，保留實際出貨的句型與措辭。
+const TEMPLATE_GATE_CHECKLIST_SOURCE = [
+  '- [ ] 自身:phase-(N-1) 狀態為 `done`',
+  '- [ ] 整合:`IN` 已通過(**I1 之前的 phase 這一格留空 = 無 gate**,不要寫「無」以外的話搪塞;',
+  '      I1 之後才需要真的填一個整合點編號)',
+  '- [ ] 契約:(某個待決事項已決定,或「無」;延後的功能寫成一個人的決定,例:「使用者決定裝本機模型」,見 docs/03「延後一個功能」)',
+].join('\n');
+
+const TEMPLATE_GATE_CHECKLIST = TEMPLATE_GATE_CHECKLIST_SOURCE
+  .replace('phase-(N-1)', 'phase-1')
+  .replace(
+    '某個待決事項已決定,或「無」',
+    '某個待決事項已決定,ADR-123',
+  );
+
+const HEADER_FIXTURES = [
+  {
+    name: '模板原句「需要全部滿足:」',
+    header: '**phase-2** 需要全部滿足:',
+  },
+  {
+    name: '全形冒號',
+    header: '**phase-2** 需要：',
+  },
+  {
+    name: 'phase 號後帶括號說明',
+    header: '**phase-2(接進 apps/api composition root)** 需要全部滿足:',
+  },
+] as const;
+
 afterEach(() => {
   while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
 });
@@ -279,6 +310,29 @@ describe('check-next-gates:引用解析(各種形狀)', () => {
     expect(output).toContain('掃到 0 條 gate 宣告');
     expect(output).toContain('gate=next-gates result=PASS scanned=1');
   }, SPAWN_TIMEOUT_MS);
+});
+
+describe('check-next-gates:header 解析回歸 fixture(先寫紅)', () => {
+  for (const fixture of HEADER_FIXTURES) {
+    it(`${fixture.name} 收進模板 gate checklist 的三條宣告`, () => {
+      const root = makeRepo();
+      writeDecisionMap(root, ['123']);
+      writeRoadmap(root, [1]);
+      writeFeature(root, '01-foo', [
+        { n: 1, status: 'done' },
+        { n: 2, status: 'todo' },
+      ]);
+      writeNext(root, '01-foo', `${fixture.header}\n\n${TEMPLATE_GATE_CHECKLIST}`);
+      commitAll(root, 'header fixture');
+
+      const { code, output } = run(root);
+
+      expect(code).toBe(0);
+      expect(output).toContain('next-gates: 掃到 3 條 gate 宣告');
+      expect(output).toContain('✓ 全部 gate 宣告都有能解析的引用');
+      expect(output).toContain('gate=next-gates result=PASS scanned=1');
+    }, SPAWN_TIMEOUT_MS);
+  }
 });
 
 describe('check-next-gates:nextGates.mode', () => {
