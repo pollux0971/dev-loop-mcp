@@ -61,6 +61,18 @@ session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-ag
   清單本來就不是 gate。審核棒獨立重做全部反向驗證,額外拿 AI_KM 真實 repo(唯讀)驗證過修復有效、多抓到
   3 個工單沒提到的案例,順手發現 AI_KM 自己一個無關的真環(未處理,留給 AI_KM 自行判斷);merge commit
   `0949af1`。
+- **修 `check:dag` 最後一個已知假環誤報**(2026-09-16,fix-forward 第三輪)。根因:第一輪(`fix-gate-header`)
+  的 dev 棒自己加了工單沒要求的「bullet 縮排續行合併進 gate」邏輯,審核棒當時只驗工單寫的驗收條件,沒抓到
+  這個多出來的行為——AI_KM `02-authorization/NEXT.md` 裡一句縮排續行的說明文字(「deny 來源留到 phase-3」)
+  因此被解析成一條邊,跟同檔案裡真實的 `phase-3 需要 phase-2` 依賴湊成 `02-2 → 02-3 → 02-2` 假環。
+  修法:`check:dag` 的邊只從 bullet **第一行**取,縮排續行一律不產生邊也不產生「引用了自己」警告;
+  `check:next-gates` 的引用檢查行為不變(續行裡的可解析引用照樣算數)。過程中一棒 RETURN:test 棒寫出
+  互相矛盾的斷言(同時要求 PASS 輸出含檔名、又要求不含自我引用警告文字,但那個檔名只會在警告裡出現),
+  dev 棒沒有硬湊、原樣退回,技術顧問裁決是測試寫錯,補一棒只刪那一行矛盾斷言。審核棒獨立重做全部反向
+  驗證,確認 dev 棒當初 RETURN 是正確行為、沒有多做任何工單外的事;merge commit `0cd5c5e`。
+  同時把「審核棒要列出工單外行為」這條規則寫進 `.orca-brief/TASK.md.template`(commit `89fbdef`)——
+  這條規則保護的正是這輪修的問題本身。
+  **至此三輪已知誤報全數修完,`npx-v1.9.0` 可以打 tag。**
 - **`.orca-brief/TASK.md.template` 交接檔分清楚兩種模式**:四角色鏈模式的交件一律 `<worktree名>-REPORT.md`,
   REVIEW.md 只用於單人模式——上面兩輪 fix-forward 都撞過同一條鏈裡棒次寫錯檔名的問題。
 - **`.orca-brief/roles/` 清樹判準修正**:agent 終端狀態列會讓 `lastOutputAt` 永遠顯示 0 分(claude 審核棒的
