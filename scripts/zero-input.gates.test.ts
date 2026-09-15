@@ -69,6 +69,10 @@ const NO_ROOT_FLAG: Record<string, string> = {
     '沒有 --root 旗標;一律用 _root.ts 推定的 git 頂層 ROOT,腳本裡完全沒有 argv 解析 --root 的邏輯。',
 };
 
+/** `check-dag.ts` 的零輸入語意不同於既有掃描器:只有 `_template`-only repo PASS。
+ * 它放在專屬 describe，不硬套下面既有 gate 的「空目錄必 FAIL + malformed config」探針。 */
+const SPECIAL_ZERO_INPUT_GATE_FILES = ['check-dag.ts'];
+
 /** `scripts/` 底下所有 `check-*.ts`(不含 `.test.ts`)——目錄列舉,不是手抄清單,
  *  新增一支 gate 檔案這裡自動看得到。 */
 function listGateFiles(): string[] {
@@ -236,10 +240,14 @@ const GATE_SPECS: GateSpec[] = [
 
 describe('模板自己的零輸入清單:新增的 check-*.ts 一定要進這份清單(P-84)', () => {
   it('scripts/ 底下每一支 check-*.ts / check-all.ts 都在 GATE_SPECS 或 NO_ROOT_FLAG 裡', () => {
-    const known = new Set([...GATE_SPECS.map((s) => s.file), ...Object.keys(NO_ROOT_FLAG)]);
+    const known = new Set([
+      ...GATE_SPECS.map((s) => s.file),
+      ...Object.keys(NO_ROOT_FLAG),
+      ...SPECIAL_ZERO_INPUT_GATE_FILES,
+    ]);
     const actual = listGateFiles();
     const missing = actual.filter((f) => !known.has(f));
-    expect(missing, `新守門沒進零輸入清單:${missing.join(', ')}——把它加進這支測試的 GATE_SPECS(支援 --root)或 NO_ROOT_FLAG(不支援,附理由)`).toEqual([]);
+    expect(missing, `新守門沒進零輸入清單:${missing.join(', ')}——把它加進這支測試的 GATE_SPECS、SPECIAL_ZERO_INPUT_GATE_FILES 或 NO_ROOT_FLAG(不支援,附理由)`).toEqual([]);
   });
 
   it('GATE_SPECS 跟 NO_ROOT_FLAG 沒有重疊,也沒有列出不存在的檔案', () => {
@@ -259,6 +267,27 @@ describe('模板自己的零輸入清單:新增的 check-*.ts 一定要進這份
       const src = readFileSync(join(SCRIPTS_DIR, file), 'utf8');
       expect(src.includes("'--root'"), `${file} 原始碼裡有 '--root' 字樣,看起來其實支援 --root,不該在 NO_ROOT_FLAG`).toBe(false);
     }
+  });
+});
+
+describe('check-dag 的零輸入語意', () => {
+  it('專屬 zero-input 清單中的檔案存在', () => {
+    for (const file of SPECIAL_ZERO_INPUT_GATE_FILES) {
+      expect(existsSync(join(SCRIPTS_DIR, file)), `SPECIAL_ZERO_INPUT_GATE_FILES 列了不存在的檔案:${file}`).toBe(true);
+    }
+  });
+
+  it('只有 features/_template/ 的全新 repo → 印「沒有 phase」、exit 0', () => {
+    const root = makeTempDir('lc-zero-input-dag-template-');
+    writeRaw(root, 'features/_template/FEATURE.md', '# template\n');
+    writeRaw(root, 'features/_template/NEXT.md', '# template next\n');
+
+    const { code, output } = run('check-dag.ts', root);
+
+    expect(code).toBe(0);
+    expect(output).toContain('沒有 phase');
+    expect(output).toContain('gate=dag result=PASS scanned=0');
+    assertNoBareStack(output);
   });
 });
 
