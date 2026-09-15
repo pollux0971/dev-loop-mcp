@@ -156,6 +156,16 @@ function integrationReferenceTarget(reference: GateReference): string | undefine
   return integrationId(reference.integrationId);
 }
 
+function dagGateText(lines: string[], gate: GateLine): string {
+  if (gate.checked === undefined) return gate.text;
+
+  // extractGateLines() 合併了 checklist bullet 的縮排續行，供 check:next-gates
+  // 檢查整條 gate。DAG 的語意不同：邊只能來自 bullet 的第一行，所以回到
+  // GateLine.lineNo 取原始行，不能把已合併的 gate.text 拿來解析。
+  const bullet = /^-\s*\[[ xX]\]\s*(.*)$/.exec((lines[gate.lineNo - 1] ?? '').trim());
+  return bullet?.[1] ?? '';
+}
+
 function buildDag(root: string, folders: string[], nodes: Map<string, Node>, resolvers: Resolvers): Dag {
   const dag: Dag = {
     nodes,
@@ -172,12 +182,13 @@ function buildDag(root: string, folders: string[], nodes: Map<string, Node>, res
     if (!existsSync(nextPath)) continue;
     const content = readFileSync(nextPath, 'utf8');
     const gateLines = extractGateLines(folder, `features/${folder}/NEXT.md`, content);
+    const lines = content.split('\n');
 
     for (const gate of gateLines) {
       const target = phaseId(folder, gate.phaseNum);
       if (!dag.nodes.has(target)) continue;
 
-      const references = parseGateReferences(root, folder, gate.text, resolvers);
+      const references = parseGateReferences(root, folder, dagGateText(lines, gate), resolvers);
       for (const reference of references) {
         const source = phaseReferenceTarget(reference) ?? integrationReferenceTarget(reference);
         if (source !== undefined) {

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const CHECK_DAG_TS = resolve(import.meta.dirname, 'check-dag.ts');
+const CHECK_NEXT_GATES_TS = resolve(import.meta.dirname, 'check-next-gates.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
 
 const tmpDirs: string[] = [];
@@ -85,6 +86,16 @@ function run(root: string): { code: number; output: string } {
   return { code: r.status ?? -1, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
+function runNextGates(root: string): { code: number; output: string } {
+  const r = spawnSync('npx', ['tsx', CHECK_NEXT_GATES_TS, '--root', root], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: SPAWN_TIMEOUT_MS,
+    env: { ...process.env, GATES_CONFIG_DIR: join(root, 'scripts') },
+  });
+  return { code: r.status ?? -1, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+
 function outputSection(output: string, startMarker: string, endMarker?: string): string {
   const start = output.indexOf(startMarker);
   if (start < 0) return '';
@@ -115,9 +126,10 @@ function checklistGate(header: string, dependency: string): string {
   return `${header}\n\n- [ ] ${dependency}`;
 }
 
-// 逐字照抄 /data/python/AI_KM/features/02-authorization/NEXT.md 的第 17–67 行:
-// 「## 下一個 phase 的 gate」到 phase-2 checklist 結束,包含會觸發假環的
-// `` `06-retrieval` phase-2 `` 續行。這個 fixture 固定在測試裡,不依賴外部 repo。
+// 逐字照抄 /data/python/AI_KM/features/02-authorization/NEXT.md 的第 17–73 行:
+// 「## 下一個 phase 的 gate」到 phase-3 checklist 結束,包含會觸發假環的
+// 「deny 來源留到 phase-3」續行與 phase-3 的真實 phase-2 依賴。這個 fixture
+// 固定在測試裡,不依賴外部 repo。
 const AI_KM_AUTHORIZATION_PHASE_2_GATE = [
   '## 下一個 phase 的 gate',
   '',
@@ -170,6 +182,11 @@ const AI_KM_AUTHORIZATION_PHASE_2_GATE = [
   '      4/4 綠、`deny.test.ts` 4/4 綠、`pnpm turbo run test` 40/40。',
   '      這不代表 gate 已滿足:2a(identity 轉換,裁定 1 的 id 缺口)仍是紅,I2 仍是',
   '      todo,phase-2 IMPLEMENT 收尾要等兩者都解除。',
+  '',
+  '**phase-3(群組 → scopeKeys 的變更即時生效)** 需要:',
+  '',
+  '- [ ] 自身:phase-2 `done`',
+  '- [ ] 整合:I6(admin 的部門／群組頁接真 API)',
 ].join('\n');
 
 afterEach(() => {
@@ -282,11 +299,12 @@ describe('check-dag:環路', () => {
     }, SPAWN_TIMEOUT_MS);
   }
 
-  it('AI_KM 02-authorization phase-2 真實段落不應形成自身假環(先寫紅)', () => {
+  it('AI_KM 02-authorization phase-2 真實段落不應形成續行假環(先寫紅)', () => {
     const root = makeRepo();
     writeFeature(root, '02-authorization', [
       { n: 1, status: 'done' },
       { n: 2, status: 'todo' },
+      { n: 3, status: 'todo' },
     ]);
     writeFeature(root, '03-conversation', [{ n: 4, status: 'done' }]);
     writeFeature(root, '06-retrieval', [{ n: 2, status: 'done' }]);
@@ -300,11 +318,46 @@ describe('check-dag:環路', () => {
 
     const { code, output } = run(root);
 
+    expect(output).not.toContain('02 phase-2 → 02 phase-3 → 02 phase-2');
     expect(code).toBe(0);
-    expect(output).not.toContain('02 phase-2 → 02 phase-2');
-    expect(output).toContain('features/02-authorization/NEXT.md');
-    expect(output).toContain('gate 引用了自己(phase-2),已忽略');
+    expect(output).not.toContain('gate 引用了自己');
+    expect(layerSection(output, 2, 3)).toContain('02 phase-2');
+    expect(layerSection(output, 3)).toContain('02 phase-3');
     expect(output).toContain('gate=dag result=PASS');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('獨立人造 fixture 只把 bullet 第一行算成邊,但 next-gates 仍看續行引用(先寫紅)', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-alpha', [
+      { n: 1, status: 'done' },
+      { n: 2, status: 'todo' },
+      { n: 3, status: 'todo' },
+    ]);
+    const body = [
+      '## 下一個 phase 的 gate',
+      '',
+      '**phase-3** 需要全部滿足:',
+      '',
+      '- [ ] 整合:phase-1 done',
+      '      之後 phase-2 會處理這個。',
+      '- [ ] 這條 gate 的第一行只是說明:',
+      '      參照 phase-2 的完成結果。',
+    ].join('\n');
+    writeNext(root, '01-alpha', body);
+    commitAll(root, 'continuation text is not a DAG edge');
+
+    const nextGates = runNextGates(root);
+    expect(nextGates.code).toBe(0);
+    expect(nextGates.output).toContain('next-gates: 掃到 2 條 gate 宣告');
+    expect(nextGates.output).toContain('✓ 全部 gate 宣告都有能解析的引用');
+    expect(nextGates.output).toContain('gate=next-gates result=PASS scanned=1');
+
+    const dag = run(root);
+    expect(dag.code).toBe(0);
+    expect(layerSection(dag.output, 2)).toContain('01 phase-3');
+    const ready = outputSection(dag.output, '目前 ready 集合', '被外部阻擋卡住的 phase');
+    expect(ready).toContain('01 phase-3');
+    expect(dag.output).toContain('gate=dag result=PASS scanned=3');
   }, SPAWN_TIMEOUT_MS);
 
   it('獨立人造的自身:phase-2 也只印忽略警告,不形成自身假環(先寫紅)', () => {
