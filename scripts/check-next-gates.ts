@@ -52,6 +52,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig, requireRootDir } from './_root.js';
 
 /** 三支掃描器共用的那句話(這支也共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
@@ -67,7 +68,6 @@ function argValue(name: string): string | undefined {
 
 const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
-requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 
 // ---------------------------------------------------------------------------
 // gates.config.json:nextGates.mode——委派給 `_root.ts` 的 `lookupConfig`(S14,
@@ -94,20 +94,32 @@ function loadMode(): NextGatesMode {
 
 // ---------------------------------------------------------------------------
 // FEATURE.md 的 Phase 表(唯一狀態來源)——跟 check-standalone.ts 的 pending 解析
-// 同一套邏輯,各自獨立一份:sync-gates.sh 把每支 check-*.ts 當獨立檔案複製,不共用
-// helper(除了 _root.ts)。
+// 同一套基本格式；這裡也匯出給 check-dag 使用，避免兩支 gate 各自解析 phase 表。
 // ---------------------------------------------------------------------------
 
-function phaseRowExists(root: string, folder: string, phaseNum: string): boolean {
+export interface FeaturePhaseRow {
+  phase: string;
+  status: string;
+}
+
+/** 讀出 FEATURE.md 的 phase 表，供引用解析與 DAG 狀態判斷共用。 */
+export function readFeaturePhaseRows(root: string, folder: string): FeaturePhaseRow[] {
   const featurePath = join(root, 'features', folder, 'FEATURE.md');
-  if (!existsSync(featurePath)) return false;
+  if (!existsSync(featurePath)) return [];
   const content = readFileSync(featurePath, 'utf8');
+  const rows: FeaturePhaseRow[] = [];
   for (const line of content.split('\n')) {
     if (!line.trim().startsWith('|')) continue;
     const cells = line.split('|').map((c) => c.trim());
-    if (cells[1] === phaseNum) return true;
+    if (cells[1] === undefined) continue;
+    const status = cells.find((cell) => /^(?:todo|ready|in-progress|done|blocked)(?:\s|$)/i.test(cell.replace(/[`*_]/g, '').trim())) ?? cells[4] ?? '';
+    rows.push({ phase: cells[1], status });
   }
-  return false;
+  return rows;
+}
+
+function phaseRowExists(root: string, folder: string, phaseNum: string): boolean {
+  return readFeaturePhaseRows(root, folder).some((row) => row.phase === phaseNum);
 }
 
 function findFolderByPrefix(root: string, prefix: string): string | undefined {
@@ -122,13 +134,13 @@ function findFolderByPrefix(root: string, prefix: string): string | undefined {
 // 引用來源的索引:ADR / 契約章節 / 整合點,一次讀好,後面每條 gate 宣告重複查表。
 // ---------------------------------------------------------------------------
 
-interface Resolvers {
+export interface Resolvers {
   adrIds: Set<string>;
   contractSections: Set<string>;
   integrationPoints: Set<string>;
 }
 
-function loadAdrIds(root: string): Set<string> {
+export function loadAdrIds(root: string): Set<string> {
   const p = join(root, 'docs', '02-decision-map.md');
   const ids = new Set<string>();
   if (!existsSync(p)) return ids;
@@ -138,7 +150,7 @@ function loadAdrIds(root: string): Set<string> {
 }
 
 /** 標題形如 `## 1. 識別碼與基本型別` / `## 11b. 寫入保證(硬約定)`——抓 "." 前面那個 token。 */
-function loadContractSections(root: string): Set<string> {
+export function loadContractSections(root: string): Set<string> {
   const p = join(root, 'contracts', 'types.md');
   const ids = new Set<string>();
   if (!existsSync(p)) return ids;
@@ -147,7 +159,7 @@ function loadContractSections(root: string): Set<string> {
   return ids;
 }
 
-function loadIntegrationPoints(root: string): Set<string> {
+export function loadIntegrationPoints(root: string): Set<string> {
   const ids = new Set<string>();
   const roadmap = join(root, 'docs', '01-roadmap.md');
   if (existsSync(roadmap)) {
@@ -162,6 +174,14 @@ function loadIntegrationPoints(root: string): Set<string> {
     }
   }
   return ids;
+}
+
+export function loadResolvers(root: string): Resolvers {
+  return {
+    adrIds: loadAdrIds(root),
+    contractSections: loadContractSections(root),
+    integrationPoints: loadIntegrationPoints(root),
+  };
 }
 
 function commitExists(root: string, sha: string): boolean {
@@ -180,14 +200,17 @@ function commitExists(root: string, sha: string): boolean {
 // 掃 features/*/NEXT.md,抓出每一條 gate 宣告的行。
 // ---------------------------------------------------------------------------
 
-interface GateLine {
+export interface GateLine {
   folder: string;
   file: string; // 相對 ROOT
   lineNo: number;
+  phaseNum: string;
   text: string;
+  /** checklist gate 是 `[x]` 還是 `[ ]`; header 直接帶內容時沒有這個欄位。 */
+  checked?: boolean;
 }
 
-function collectFeatureFolders(root: string): string[] {
+export function collectFeatureFolders(root: string): string[] {
   const dir = join(root, 'features');
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((name) => {
@@ -197,7 +220,7 @@ function collectFeatureFolders(root: string): string[] {
 }
 
 const HEADER_RE = /^\*\*phase-(\d+)\*\*\s*需要[::]?\s*(.*)$/;
-const BULLET_RE = /^-\s*\[[ xX]\]\s*(.*)$/;
+const BULLET_RE = /^-\s*\[([ xX])\]\s*(.*)$/;
 
 /**
  * 「這個維度沒有依賴」的宣告(例如「跨資料夾:無」「整合:無(它提供 LearningFs,
@@ -215,7 +238,7 @@ const BULLET_RE = /^-\s*\[[ xX]\]\s*(.*)$/;
 // 見這支腳本的單元測試。
 const NO_DEPENDENCY_RE = /^(?:[^:：]{0,20}[:：]\s*)?無/;
 
-function extractGateLines(folder: string, relFile: string, content: string): GateLine[] {
+export function extractGateLines(folder: string, relFile: string, content: string): GateLine[] {
   const lines = content.split('\n');
   const out: GateLine[] = [];
   let i = 0;
@@ -234,7 +257,7 @@ function extractGateLines(folder: string, relFile: string, content: string): Gat
       // phase 號碼也一起塞進去比對——不然「單獨的 phase-N」規則會把宣告自己的編號
       // 誤判成一條(永遠會解析成功、沒有意義的)自身引用,稀釋掉真正該檢查的內容。
       if (!NO_DEPENDENCY_RE.test(tail)) {
-        out.push({ folder, file: relFile, lineNo: i + 1, text: tail });
+        out.push({ folder, file: relFile, lineNo: i + 1, phaseNum: header[1]!, text: tail });
       }
       i++;
       continue;
@@ -247,9 +270,16 @@ function extractGateLines(folder: string, relFile: string, content: string): Gat
       const jTrimmed = (lines[j] ?? '').trim();
       const bullet = BULLET_RE.exec(jTrimmed);
       if (bullet) {
-        const bulletText = (bullet[1] ?? '').trim();
+        const bulletText = (bullet[2] ?? '').trim();
         if (!NO_DEPENDENCY_RE.test(bulletText)) {
-          out.push({ folder, file: relFile, lineNo: j + 1, text: bulletText });
+          out.push({
+            folder,
+            file: relFile,
+            lineNo: j + 1,
+            phaseNum: header[1]!,
+            text: bulletText,
+            checked: (bullet[1] ?? '').toLowerCase() === 'x',
+          });
         }
         j++;
         continue;
@@ -272,64 +302,98 @@ function extractGateLines(folder: string, relFile: string, content: string): Gat
 // 一條 gate 宣告的文字裡,找有沒有能解析的引用。
 // ---------------------------------------------------------------------------
 
-interface CitationCheck {
+export type GateReferenceKind = 'adr' | 'contract' | 'integration' | 'phase' | 'commit';
+
+/** NEXT.md 一條 gate 裡找到的引用；check-next-gates 與 check-dag 共用這個結果。 */
+export interface GateReference {
+  kind: GateReferenceKind;
+  token: string;
+  resolved: boolean;
+  /** phase 引用的目標；phase 未解析成功時仍保留候選值，供診斷使用。 */
+  folder?: string;
+  phaseNum?: string;
+  /** integration 引用的數字部分。 */
+  integrationId?: string;
+}
+
+export interface CitationCheck {
   found: boolean; // 有沒有找到任何「長得像引用」的 token
   resolved: boolean; // 至少一個 token 真的解析成功
   badTokens: string[]; // 長得像引用、但解析失敗的 token(給「引用不存在」訊息用)
 }
 
-function checkCitations(root: string, folder: string, text: string, resolvers: Resolvers): CitationCheck {
+/**
+ * 解析 NEXT.md gate 引用。
+ *
+ * 這是原本 check-next-gates 的唯一 parser；check-dag 只消費它的分類結果，
+ * 不另外維護一套 phase / I<N> / 外部阻擋的正規表示式。
+ */
+export function parseGateReferences(
+  root: string,
+  folder: string,
+  text: string,
+  resolvers: Resolvers,
+): GateReference[] {
   let working = text;
-  let found = false;
-  let resolved = false;
-  const badTokens: string[] = [];
+  const references: GateReference[] = [];
 
   // 每一輪比對到的片段用等長空白蓋掉,避免後面幾輪的正則不小心重複吃到同一段文字
   // (最典型的例子:抓完 `<NN-name>/phase-N` 之後,不能讓最後那條「單獨的 phase-N」
   // 規則又把同一個 phase-N 再算一次)。
 
   working = working.replace(/ADR-(\d+)/g, (m, id: string) => {
-    found = true;
-    if (resolvers.adrIds.has(id)) resolved = true;
-    else badTokens.push(`ADR-${id}`);
+    references.push({ kind: 'adr', token: `ADR-${id}`, resolved: resolvers.adrIds.has(id) });
     return ' '.repeat(m.length);
   });
 
   working = working.replace(/§([0-9]+[a-zA-Z]?(?:\.[0-9]+)?)/g, (m, sec: string) => {
-    found = true;
     const base = (/^[0-9]+[a-zA-Z]?/.exec(sec) ?? [''])[0].toLowerCase();
-    if (resolvers.contractSections.has(base)) resolved = true;
-    else badTokens.push(`§${sec}`);
+    references.push({ kind: 'contract', token: `§${sec}`, resolved: resolvers.contractSections.has(base) });
     return ' '.repeat(m.length);
   });
 
   working = working.replace(/\bI(\d+)\b/g, (m, n: string) => {
-    found = true;
-    if (resolvers.integrationPoints.has(n)) resolved = true;
-    else badTokens.push(`I${n}`);
+    references.push({
+      kind: 'integration',
+      token: `I${n}`,
+      integrationId: n,
+      resolved: resolvers.integrationPoints.has(n),
+    });
     return ' '.repeat(m.length);
   });
 
   working = working.replace(/\b(\d{2}-[A-Za-z0-9-]+)\/phase-(\d+)\b/g, (m, folderName: string, phaseNum: string) => {
-    found = true;
-    if (phaseRowExists(root, folderName, phaseNum)) resolved = true;
-    else badTokens.push(`${folderName}/phase-${phaseNum}`);
+    references.push({
+      kind: 'phase',
+      token: `${folderName}/phase-${phaseNum}`,
+      folder: folderName,
+      phaseNum,
+      resolved: phaseRowExists(root, folderName, phaseNum),
+    });
     return ' '.repeat(m.length);
   });
 
   working = working.replace(/\b(\d{2})\s+phase-(\d+)\b/g, (m, prefix: string, phaseNum: string) => {
-    found = true;
     const target = findFolderByPrefix(root, prefix);
-    if (target && phaseRowExists(root, target, phaseNum)) resolved = true;
-    else badTokens.push(`${prefix} phase-${phaseNum}`);
+    references.push({
+      kind: 'phase',
+      token: `${prefix} phase-${phaseNum}`,
+      folder: target ?? prefix,
+      phaseNum,
+      resolved: target !== undefined && phaseRowExists(root, target, phaseNum),
+    });
     return ' '.repeat(m.length);
   });
 
   // 剩下沒被上面兩條吃掉的、單獨的 phase-N:視為「自身」,指這份 NEXT.md 所屬的資料夾。
   working = working.replace(/\bphase-(\d+)\b/g, (m, phaseNum: string) => {
-    found = true;
-    if (phaseRowExists(root, folder, phaseNum)) resolved = true;
-    else badTokens.push(`phase-${phaseNum}(自身:${folder})`);
+    references.push({
+      kind: 'phase',
+      token: `phase-${phaseNum}(自身:${folder})`,
+      folder,
+      phaseNum,
+      resolved: phaseRowExists(root, folder, phaseNum),
+    });
     return ' '.repeat(m.length);
   });
 
@@ -337,19 +401,27 @@ function checkCitations(root: string, folder: string, text: string, resolvers: R
   // commit sha」的片段蓋成空白,減少誤判(ADR 編號、章節數字本來就可能是純數字,
   // 純數字也是合法的 hex 字元)。
   working = working.replace(/(?<![0-9a-fA-F])([0-9a-f]{7,40})(?![0-9a-fA-F])/g, (m, sha: string) => {
-    found = true;
-    if (commitExists(root, sha)) resolved = true;
-    else badTokens.push(sha);
+    references.push({ kind: 'commit', token: sha, resolved: commitExists(root, sha) });
     return ' '.repeat(m.length);
   });
   void working; // 已經沒有後續規則要讀 working 了,保留賦值只是為了風格一致(每輪都蓋掉已讀過的片段)。
 
-  return { found, resolved, badTokens: [...new Set(badTokens)] };
+  return references;
+}
+
+function checkCitations(root: string, folder: string, text: string, resolvers: Resolvers): CitationCheck {
+  const references = parseGateReferences(root, folder, text, resolvers);
+  return {
+    found: references.length > 0,
+    resolved: references.some((reference) => reference.resolved),
+    badTokens: [...new Set(references.filter((reference) => !reference.resolved).map((reference) => reference.token))],
+  };
 }
 
 // ---------------------------------------------------------------------------
 
 function main(): void {
+  requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
   const mode = loadMode();
   const folders = collectFeatureFolders(ROOT);
   const nextFiles = folders
@@ -369,11 +441,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const resolvers: Resolvers = {
-    adrIds: loadAdrIds(ROOT),
-    contractSections: loadContractSections(ROOT),
-    integrationPoints: loadIntegrationPoints(ROOT),
-  };
+  const resolvers = loadResolvers(ROOT);
 
   const allGateLines: GateLine[] = [];
   for (const f of nextFiles) {
@@ -409,4 +477,4 @@ function main(): void {
   process.exit(1);
 }
 
-main();
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) main();
