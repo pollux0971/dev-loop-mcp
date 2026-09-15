@@ -104,7 +104,7 @@ git log --no-merges --name-only --format= <branch> --not main | sort -u
 
 - session ↔ session:SendMessage。第一行寫「dev-paradigm / <節點或分支> / 一句話」。
 - 禁止 session 互相 `terminal wait`。
-- worker → session:**不用** mailbox、不用 orchestration。worker 只 commit + 在終端最後印一行
+- worker → session:**不用** mailbox、不用 orchestration。worker 只 commit(**審核棒不 commit**,報告留未追蹤)+ 在終端最後印一行
   `REVIEW VERDICT: PASS <報告路徑>` 或 `REVIEW VERDICT: RETURN <報告路徑>`(每一棒都印,不只審核棒)。
 - `orca-ide terminal send` 一定帶 `--enter`。Linux 用 `orca-ide`,不要用 `orca`。
 - worker 禁 `git push`(每張工單都寫)。**push origin 只有技術顧問**(CLAUDE.md「做決定時」表:顧問在 main 跑完整檢查、通過後 push)。

@@ -70,7 +70,7 @@ chain:
     worktree: <節點>-review
     base: <節點>-dev
     command: claude --model sonnet --effort max --dangerously-skip-permissions
-    allowed_paths: []          # 審核只寫報告,不改碼
+    allowed_paths: []          # 審核只寫報告、**不 commit**(報告留未追蹤,清樹時歸檔);commit 了分支會永遠 ahead,清不掉
     done_when: "把分支 merge 進最新 main 的臨時狀態跑全 gate + 觸及資料夾所有 done phase;獨立重做反向驗證,不採信前棒宣稱"
     on_pass: coordinator       # = 通知協調者收批
     on_return: leg 2           # 實作缺口 → 接線 agent 開 <節點>-dev-r2;涉及介面/架構 → 寫 advisor
@@ -80,7 +80,7 @@ priority: normal               # now | normal | low;接線 agent 排隊照這個
 規則:
 - **測試棒和開發棒一定分開**,再小的任務也一樣(改 `scripts/*.ts` 行為就要有 test 棒先紅)。
 - 純 md 的節點可以是 `doc → review` 兩棒,但 `done_when` 必須寫一個會失敗的檢查(README §6)。
-- 每棒 `allowed_paths` 逐條列。工單正文寫:「禁 `git push`;交件只 commit + 終端最後一行印 `REVIEW VERDICT: PASS|RETURN <報告路徑>`;報告寫 `.orca-brief/<worktree名>-REPORT.md`」。
+- 每棒 `allowed_paths` 逐條列。工單正文寫:「禁 `git push`;交件只 commit + 終端最後一行印 `REVIEW VERDICT: PASS|RETURN <報告路徑>`;報告寫 `.orca-brief/<worktree名>-REPORT.md`」;審核棒另加一句「報告不准 `git add`/`commit`」。
 - 派工前確認要改的檔在 base 上**真的存在、是最新的**(`git show <base>:<path> | head`),不要只信 sha。
 - 派工前 `git rev-list --count <base>..main`;> 30 就先決定要不要讓 base 同步 main(用 merge,不用 rebase)。
 

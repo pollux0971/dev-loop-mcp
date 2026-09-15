@@ -20,6 +20,7 @@
    - `orca-ide terminal read --terminal <handle>` 看最後一行有沒有 `REVIEW VERDICT: PASS|RETURN <報告路徑>`;
    - 報告檔存在且非空(`test -s`);
    - `git -C <worktree路徑> log -1 --format='%H %s'` 有這一棒的 commit(審核棒例外,審核只寫報告)。
+   - 審核棒如果**有** commit(`git log <branch> --not <base>` 非空)→ 照樣接棒/轉交,但 SendMessage 協調者一行「<worktree> 審核棒違規 commit 了報告」,清樹時要走顧問的單次授權。
    - 三樣缺一樣 → 不接棒。終端還在動就等下一輪;停住了就 SendMessage 協調者「<worktree> 停住但沒交件」。
 4. **PASS → 照 `on_pass` 接棒**:
    - `on_pass: leg <N>` → 先做「開棒前檢查」,再開:
