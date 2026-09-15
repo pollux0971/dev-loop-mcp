@@ -13,10 +13,13 @@
 
 | 角色 | ListAgents 名(會變,啟動時重認) | prompt 檔 | cron(分) |
 |---|---|---|---|
-| 協調者 ARIA | `dev-paradigm-08` | `coordinator.md` | 6,21,36,51 |
-| 技術顧問 | `dev-paradigm-de` | (本 session,不需要檔) | 2,22,42 |
-| 接線 agent | `dev-paradigm-ff`(使用者 2026-09-15 指定) | `wiring.md` | Monitor 150 秒 + 巡檢 10,25,40,55 |
-| 整合/清樹 agent | `dev-paradigm-cb`(使用者 2026-09-15 指定) | `integrator.md` | 13,28,43,58 |
+| 協調者 ARIA | 重啟就換名,用 ListAgents 認 | `coordinator.md` | 6,21,36,51 |
+| 技術顧問 | 重啟就換名,用 ListAgents 認 | (本 session,不需要檔) | 2,22,42 |
+| 接線 agent | 重啟就換名,用 ListAgents 認 | `wiring.md` | Monitor 150 秒 + 巡檢 10,25,40,55 |
+| 整合/清樹 agent | 重啟就換名,用 ListAgents 認 | `integrator.md` | 13,28,43,58 |
+
+**名字每次重啟都會變**(實測 2026-09-15:一輪重啟後全部四個名字都換了)。認人一律 `ListAgents` 看新 session + SendMessage 問「你是哪個角色」,
+由對方自報;**不要把名字寫進任何檔案當固定值**,包括這張表。角色的權威是這幾份 prompt 檔,不是名字。
 
 分鐘數故意跟 AI_KM 那組(4/19/34/49、11/26/41/56、8/23/38/53、17/37/57)錯開 2 分——同一台開發機,
 不要跟 AI_KM 同時跑 gate。
