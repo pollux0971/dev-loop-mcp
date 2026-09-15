@@ -219,8 +219,15 @@ export function collectFeatureFolders(root: string): string[] {
   });
 }
 
-const HEADER_RE = /^\*\*phase-(\d+)\*\*\s*需要[::]?\s*(.*)$/;
+const HEADER_RE = /^\*\*phase-(\d+)(?:\s*\([^\)\r\n]*\))?\*\*\s*需要(?:\s*全部滿足)?\s*[：:]?\s*(.*)$/;
 const BULLET_RE = /^-\s*\[([ xX])\]\s*(.*)$/;
+const CONTINUATION_RE = /^\s{2,}\S/;
+
+interface GateExtraction {
+  gateLines: GateLine[];
+  /** 所有已被某個空 header 的 checklist 段落消費的 checklist 行(含「無」行)。 */
+  capturedChecklistLineNos: Set<number>;
+}
 
 /**
  * 「這個維度沒有依賴」的宣告(例如「跨資料夾:無」「整合:無(它提供 LearningFs,
@@ -238,9 +245,10 @@ const BULLET_RE = /^-\s*\[([ xX])\]\s*(.*)$/;
 // 見這支腳本的單元測試。
 const NO_DEPENDENCY_RE = /^(?:[^:：]{0,20}[:：]\s*)?無/;
 
-export function extractGateLines(folder: string, relFile: string, content: string): GateLine[] {
+function extractGateLinesWithCoverage(folder: string, relFile: string, content: string): GateExtraction {
   const lines = content.split('\n');
   const out: GateLine[] = [];
+  const capturedChecklistLineNos = new Set<number>();
   let i = 0;
   while (i < lines.length) {
     const raw = lines[i] ?? '';
@@ -264,24 +272,32 @@ export function extractGateLines(folder: string, relFile: string, content: strin
     }
     // 空的 header(只有「**phase-N** 需要:」,沒有接內容):後面接 checklist,
     // 逐條收集連續的 `- [ ]` / `- [x]` 行,容許中間夾一行空白(只要空白之後緊接著
-    // 還是 bullet,不然就當這個段落結束了)。
+    // 還是 bullet,不然就當這個段落結束了)。模板的長 checklist 可能在下一行用縮排
+    // 續寫;續行屬於前一個 bullet,不能因此讓後面的 checklist 靜默漏收。
     let j = i + 1;
     while (j < lines.length) {
       const jTrimmed = (lines[j] ?? '').trim();
       const bullet = BULLET_RE.exec(jTrimmed);
       if (bullet) {
+        capturedChecklistLineNos.add(j + 1);
         const bulletText = (bullet[2] ?? '').trim();
+        let gate: GateLine | undefined;
         if (!NO_DEPENDENCY_RE.test(bulletText)) {
-          out.push({
+          gate = {
             folder,
             file: relFile,
             lineNo: j + 1,
             phaseNum: header[1]!,
             text: bulletText,
             checked: (bullet[1] ?? '').toLowerCase() === 'x',
-          });
+          };
+          out.push(gate);
         }
         j++;
+        while (j < lines.length && CONTINUATION_RE.test(lines[j] ?? '')) {
+          if (gate) gate.text = `${gate.text} ${(lines[j] ?? '').trim()}`;
+          j++;
+        }
         continue;
       }
       if (jTrimmed === '') {
@@ -295,7 +311,21 @@ export function extractGateLines(folder: string, relFile: string, content: strin
     }
     i = j;
   }
-  return out;
+  return { gateLines: out, capturedChecklistLineNos };
+}
+
+export function extractGateLines(folder: string, relFile: string, content: string): GateLine[] {
+  return extractGateLinesWithCoverage(folder, relFile, content).gateLines;
+}
+
+/** 找出 NEXT.md 中沒有被任何空 header 的 checklist 段落收進的 checklist 行。 */
+function findOrphanChecklistLines(content: string, capturedChecklistLineNos: Set<number>): number[] {
+  return content
+    .split('\n')
+    .flatMap((line, index) => {
+      const lineNo = index + 1;
+      return BULLET_RE.test(line.trim()) && !capturedChecklistLineNos.has(lineNo) ? [lineNo] : [];
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -444,12 +474,21 @@ function main(): void {
   const resolvers = loadResolvers(ROOT);
 
   const allGateLines: GateLine[] = [];
+  const orphanChecklistWarnings: Array<{ file: string; lineNos: number[] }> = [];
   for (const f of nextFiles) {
     const content = readFileSync(f.absFile, 'utf8');
-    allGateLines.push(...extractGateLines(f.folder, f.relFile, content));
+    const extraction = extractGateLinesWithCoverage(f.folder, f.relFile, content);
+    allGateLines.push(...extraction.gateLines);
+    const orphanLineNos = findOrphanChecklistLines(content, extraction.capturedChecklistLineNos);
+    if (orphanLineNos.length > 0) orphanChecklistWarnings.push({ file: f.relFile, lineNos: orphanLineNos });
   }
 
   console.log(`next-gates: 掃到 ${allGateLines.length} 條 gate 宣告`);
+  for (const warning of orphanChecklistWarnings) {
+    console.log(
+      `⚠ 警告 ${warning.file}: 第 ${warning.lineNos.join('、')} 行的 checklist 沒有被任何 gate header 收進 gate`,
+    );
+  }
 
   let failures = 0;
   for (const g of allGateLines) {
