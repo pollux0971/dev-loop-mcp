@@ -51,8 +51,20 @@ session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-ag
   修法收在同一次 `HEADER_RE` 與周邊解析邏輯調整,既有 `check-next-gates.test.ts` 全部維持綠;同時新增
   「NEXT.md 有 checklist 行卻沒被任何 header 收」的防靜默警告(warn,不改 exit code——升級成硬擋前要等至少
   一個 consumer 實跑過、確認全是真漏收無誤報)。審核棒獨立重做:換回舊 parser 證明三種句型真的會重現 bug、
-  換回新版確認抓到;merge commit dd53cb0。**待辦**(不擋這次合併):防靜默警告缺自動化測試,另開
-  `gate-header-warn-test` 工單,排隊中。
+  換回新版確認抓到;merge commit dd53cb0。
+- **修 `check:dag` 假環 + 補解析寫法 + 收窄防靜默警告範圍**(2026-09-16,fix-forward 第二輪,併入上一輪排隊的
+  防靜默警告自動測試補丁)。技術顧問拿 AI_KM 真實 12 份 `NEXT.md` 實測(scratchpad 一次性 repo,沒碰
+  AI_KM 本體)抓到:①gate 指向自己所屬 phase(如「`06-retrieval` phase-2 已 done」這類續行說明文字掉進
+  「自身」解析規則)被誤判成環,現在丟掉這條自我引用邊並印警告,**真正兩個以上節點的環照舊要紅**;
+  ②補 `` `NN-name` phase-N `` (反引號包資料夾名)這種解析寫法,避免掉進①的假環;③防靜默警告收窄成只對
+  `## 下一個 phase 的 gate` 那一節發——AI_KM 12 份裡 9 份曾誤報共 60 多行,幾乎都是 DoD/現況這類其他章節的
+  清單本來就不是 gate。審核棒獨立重做全部反向驗證,額外拿 AI_KM 真實 repo(唯讀)驗證過修復有效、多抓到
+  3 個工單沒提到的案例,順手發現 AI_KM 自己一個無關的真環(未處理,留給 AI_KM 自行判斷);merge commit
+  `0949af1`。
+- **`.orca-brief/TASK.md.template` 交接檔分清楚兩種模式**:四角色鏈模式的交件一律 `<worktree名>-REPORT.md`,
+  REVIEW.md 只用於單人模式——上面兩輪 fix-forward 都撞過同一條鏈裡棒次寫錯檔名的問題。
+- **`.orca-brief/roles/` 清樹判準修正**:agent 終端狀態列會讓 `lastOutputAt` 永遠顯示 0 分(claude 審核棒的
+  已知現象),清樹與接線偵測改看「idle 連續多輪 + 交件檔 VERDICT + mtime」,不再只信狀態列。
 - **不出貨的內部檔**:`.orca-brief/roles/`(已登記 `scripts/shipping-coverage.test.ts` NOT_SHIPPED)——dev-paradigm 自己跑四常駐 CLI 的啟動 prompt 與護欄腳本(`safe-worktree-rm`、`safe-trash`、接線偵測)。
 - **矛盾清單與自檢結果**:見 `.orca-brief/ORG-4ROLES-REPORT.md`。
 
