@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { extractGateLines } from './check-next-gates.js';
 
 const CHECK_NEXT_GATES_TS = resolve(import.meta.dirname, 'check-next-gates.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -115,6 +116,26 @@ const HEADER_FIXTURES = [
   },
 ] as const;
 
+// 逐字照抄 /data/python/AI_KM/features/05-ingestion/NEXT.md 的第 40–52 行:
+// 這是 phase-2b 回歸 fixture；舊 header parser 會把整段靜默當成普通文字。
+const AI_KM_INGESTION_PHASE_2B_GATE = [
+  '## phase-2b 的 gate(2026-09-05 新增,顧問裁決)',
+  '',
+  '**phase-2b(`pnpm dev` 起來時 fixture 已在索引裡)** 需要:',
+  '',
+  '- [x] 自身:phase-2 `done`(2026-09-05)',
+  '- [x] 方向已裁:**旗標 seeder**(`AI_KM_DEV_SEED_FIXTURE=1`,由 `apps/api` 的 `dev` script 帶)。',
+  '      顧問否決了另外兩條:**HTTP 上傳是 I4 的交付**(`knowledge.yaml`、`08` phase-2),',
+  '      拉進 I2 就是跳整合點;**sqlite-vec(`06-retrieval/phase-3`)拉前面**才是真的「一條 CLI」,',
+  '      但它同時改變「第二個 server 是空的」的語意(檔案共享),**那是 06 phase-3 自己該重寫的場景**,',
+  '      不在 I2 中途做。',
+  '- [x] 實作約束(顧問指定):seeder **必須走與測試步驟同一條 `app.ingestion` 路徑**,',
+  '      不另開程式碼路徑;啟動時 **log 印出索引了哪份文件、幾個 chunk**,讓使用者看得到 store 不是空的;',
+  '      `NODE_ENV=production` 加旗標 → **拒絕啟動**,照 `apps/api/src/config.ts` 既有',
+  '      `AI_KM_DEV_TRIGGERS`/`AI_KM_TEST_SANDBOX` 的形狀與措辭,理由寫',
+  '      「**它把固定 fixture 塞進生產索引**」。',
+].join('\n');
+
 afterEach(() => {
   while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
 });
@@ -134,6 +155,17 @@ describe('check-next-gates:0 份 NEXT.md 一律 FAIL', () => {
 });
 
 describe('check-next-gates:引用解析(各種形狀)', () => {
+  it('AI_KM 05-ingestion phase-2b 真實 gate 的三條 checklist 會被收進來(先寫紅)', () => {
+    const gates = extractGateLines(
+      '05-ingestion',
+      'features/05-ingestion/NEXT.md',
+      AI_KM_INGESTION_PHASE_2B_GATE,
+    );
+
+    expect(gates).toHaveLength(3);
+    expect(gates.map((gate) => gate.phaseNum)).toEqual(['2b', '2b', '2b']);
+  }, SPAWN_TIMEOUT_MS);
+
   it('ADR 引用存在 → PASS', () => {
     const root = makeRepo();
     writeDecisionMap(root, ['037']);
