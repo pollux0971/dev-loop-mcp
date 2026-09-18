@@ -48,7 +48,7 @@ npm ci                                                # 新樹沒有 node_module
 5. **全 gate**(README §5):合完如果 `git diff --name-only main HEAD` 有 `package-lock.json`,先 `npm ci`。再 `cat /proc/loadavg`,1 分鐘負載 > 16 就這輪不跑,下一輪再來。
    ```bash
    D=/data/python/dev-paradigm-briefs/integrate/gate-<時間>
-   nice -n 10 setsid nohup bash -c 'cd ~/orca/workspaces/dev-paradigm/integrate && { npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot; echo "core=$?"; npm run lint:docs; echo "docs=$?"; } ; echo done > '"$D"'.done' </dev/null > "$D".log 2>&1 & disown
+   nice -n 10 setsid nohup bash -c 'cd ~/orca/workspaces/dev-paradigm/integrate && { npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot && (cd package && npm test) && bash scripts/sync-gates.test.sh; echo "core=$?"; npm run lint:docs; echo "docs=$?"; } ; echo done > '"$D"'.done' </dev/null > "$D".log 2>&1 & disown
    ```
    用 Monitor 等 `$D.done` 出現。上一輪的 gate 還沒跑完就不重開。
    判讀:`core=0`,而且 `lint:docs` 的失敗**恰好**是 `docs/01-roadmap.md:41`、`:42` 兩條 → 綠。其他都是紅。

@@ -63,7 +63,8 @@
 ## 5. 本 repo 的「全 gate」與已知紅
 
 ```bash
-npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot; npm run lint:docs
+npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot \
+  && (cd package && npm test) && bash scripts/sync-gates.test.sh; npm run lint:docs
 ```
 
 - **新 worktree 沒有 `node_modules`**(本 repo 沒有 `orca.yaml` setup hook):跑 gate 前先在那棵樹 `npm ci`
@@ -71,6 +72,8 @@ npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot; 
 - `lint:docs` **已知紅恰好 2 條**:`docs/01-roadmap.md:41`、`:42` 的 `{{FEATURE_01}}`/`{{FEATURE_02}}`。
   多一條、少一條、換了行號都算紅。
 - `npm test` 印 `No test files found` 且 exit 0 是正常(模板沒有 packages/apps)。
+- **`cd package && npm test` 一定要跑**:它是出貨產物的黑箱 gate(placeholder 登記、init 實跑)。
+  2026-09-19 發布前才發現 ADR-018 新增的 `{{ACTIVE_AGENT_CAP}}` 沒登記進 CHECKLIST,四條鏈與每次重驗都沒跑它。
 - 長跑一律:`nice -n 10 setsid nohup bash -c '<指令>; echo $? > <done檔>' </dev/null > <log> 2>&1 & disown`,
   用 Monitor 等 done 檔。一般 `run_in_background` 會被 session 記憶體管理砍掉。
 - 同一台機器**同時只跑一個全 gate**。跑前 `cat /proc/loadavg`,1 分鐘負載 > 16 就這輪不跑。
