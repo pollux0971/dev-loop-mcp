@@ -12,7 +12,7 @@
  *   - 整合點 `I<N>`,要在 `docs/01-roadmap.md` 的 `## I<N> · ...` 標題出現,或
  *     `docs/integration/` 底下任何檔名前綴是 `i<N>`(大小寫不拘)的檔案。
  *   - phase 參照,四種寫法都算(取每個 features 資料夾底下 NEXT.md 實際觀察到的寫法,
- *     不是憑空只認一種):
+ *     不是憑空只認一種);phase 編號可帶一個小寫字母後綴,例如 `phase-2b`:
  *       1. `<NN-name>/phase-N`(完整資料夾名,規格明講的形式)
  *       2. `NN phase-N`(只寫兩位數字,不寫完整資料夾名——這是實際最常見的寫法,
  *          例如「01 phase-2 與 phase-3 done」「跨資料夾:03 phase-2 done」)
@@ -22,7 +22,7 @@
  *     不管哪種寫法,都要求對到的 `features/<folder>/FEATURE.md` 存在,且它的 Phase
  *     表(唯一狀態來源)有那個 phase 的表格列。
  *
- * gate 的形狀:每份 NEXT.md 用 `**phase-N** 需要:` 開一個 gate 段落。段落開頭那一行
+ * gate 的形狀:每份 NEXT.md 用 `**phase-N**` 或 `**phase-Na**` 需要:開一個 gate 段落。段落開頭那一行
  * 後面可能緊接著內容(一整行就是一條 gate 宣告,例如「**phase-4** 需要:phase-3
  * `done`、05 phase-3 `done`、**I4 通過**」),也可能是空的、後面接一串 `- [ ]` /
  * `- [x]` checklist(checklist 每一項各自是一條 gate 宣告)。已經打勾(`[x]`)、已經寫
@@ -113,7 +113,7 @@ export function readFeaturePhaseRows(root: string, folder: string): FeaturePhase
     if (!line.trim().startsWith('|')) continue;
     const cells = line.split('|').map((c) => c.trim());
     if (cells[1] === undefined) continue;
-    const status = cells.find((cell) => /^(?:todo|ready|in-progress|done|blocked)(?:\s|$)/i.test(cell.replace(/[`*_]/g, '').trim())) ?? cells[4] ?? '';
+    const status = cells.find((cell) => /^(?:todo|ready|in-progress|done|blocked)(?:\s|\(|$)/i.test(cell.replace(/[`*_]/g, '').trim())) ?? cells[4] ?? '';
     rows.push({ phase: cells[1], status });
   }
   return rows;
@@ -220,7 +220,7 @@ export function collectFeatureFolders(root: string): string[] {
   });
 }
 
-const HEADER_RE = /^\*\*phase-(\d+)(?:\s*\([^\)\r\n]*\))?\*\*\s*需要(?:\s*全部滿足)?\s*[：:]?\s*(.*)$/;
+const HEADER_RE = /^\*\*phase-(\d+[a-z]?)(?:\s*\([^\)\r\n]*\))?\*\*\s*需要(?:\s*全部滿足)?\s*[：:]?\s*(.*)$/;
 const BULLET_RE = /^-\s*\[([ xX])\]\s*(.*)$/;
 const CONTINUATION_RE = /^\s{2,}\S/;
 const NEXT_GATE_SECTION_RE = /^##\s+下一個 phase 的 gate\s*$/;
@@ -434,7 +434,7 @@ export function parseGateReferences(
     return ' '.repeat(m.length);
   });
 
-  working = working.replace(/\b(\d{2}-[A-Za-z0-9-]+)\/phase-(\d+)\b/g, (m, folderName: string, phaseNum: string) => {
+  working = working.replace(/\b(\d{2}-[A-Za-z0-9-]+)\/phase-(\d+[a-z]?)\b/g, (m, folderName: string, phaseNum: string) => {
     references.push({
       kind: 'phase',
       token: `${folderName}/phase-${phaseNum}`,
@@ -445,7 +445,7 @@ export function parseGateReferences(
     return ' '.repeat(m.length);
   });
 
-  working = working.replace(/`(\d{2}-[A-Za-z0-9-]+)`[ \t]+phase-(\d+)\b/g, (m, folderName: string, phaseNum: string) => {
+  working = working.replace(/`(\d{2}-[A-Za-z0-9-]+)`[ \t]+phase-(\d+[a-z]?)\b/g, (m, folderName: string, phaseNum: string) => {
     references.push({
       kind: 'phase',
       token: m,
@@ -456,7 +456,7 @@ export function parseGateReferences(
     return ' '.repeat(m.length);
   });
 
-  working = working.replace(/\b(\d{2})\s+phase-(\d+)\b/g, (m, prefix: string, phaseNum: string) => {
+  working = working.replace(/\b(\d{2})\s+phase-(\d+[a-z]?)\b/g, (m, prefix: string, phaseNum: string) => {
     const target = findFolderByPrefix(root, prefix);
     references.push({
       kind: 'phase',
@@ -469,7 +469,7 @@ export function parseGateReferences(
   });
 
   // 剩下沒被上面兩條吃掉的、單獨的 phase-N:視為「自身」,指這份 NEXT.md 所屬的資料夾。
-  working = working.replace(/\bphase-(\d+)\b/g, (m, phaseNum: string) => {
+  working = working.replace(/\bphase-(\d+[a-z]?)\b/g, (m, phaseNum: string) => {
     references.push({
       kind: 'phase',
       token: `phase-${phaseNum}(自身:${folder})`,
