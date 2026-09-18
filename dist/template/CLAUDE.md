@@ -92,7 +92,7 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 
 | 類別 | 誰定 | 怎麼留痕 |
 |---|---|---|
-| 派工順序、合併順序、worktree、審核回合 | 協調者(唯一 session/worktree scheduler) | commit / `.orca-brief/REVIEW.md` |
+| 派工順序、合併順序、worktree、審核回合 | 協調者(唯一排程者;鏈內接棒與清樹的**執行**依 ADR-018 交接線／整合清樹 agent,決定權不變) | commit / `.orca-brief/REVIEW.md` |
 | 需求訪談、brainstorm／party 主持、L0/L1 綜整、`/feature` L2 提案 | 產品 PM | 保留使用者原話與【驗／推／未驗】；L0/L1 產物 + L2 提案 |
 | 技術取捨:資料結構、介面、規格措辭、gate 例外、重跑與否、變異存活分類 | 技術顧問({{ADVISOR_SESSION}}) | `/decide` 記 ADR |
 | 觀感／品質判定(`@manual and not @e2e`) | 技術顧問 | phase 驗收報告或 `IN-REVIEW.md` 寫依據與發現 |
@@ -102,6 +102,8 @@ phase 驗收的核心檢查(見 `docs/03-agile-workflow.md` Definition of Done �
 | 當日付費 API 花費超過 `{{DAILY_CAP_ENV}}` | **使用者** | 同上 |
 | 技術顧問 session 的角色定義 | 做設計判斷、回答協調者的問題、在 main 跑完整檢查、通過後 push;**不**直接改 worker 的分支、不能單方面替使用者做決定 | 本表本身 + `docs/03-agile-workflow.md` 角色段 |
 | 產品 PM session 的角色定義 | 使用者的產品入口；保管產品意圖、主持探索與 `/feature`，可向協調者提出探索請求；**不**自行啟動 worker、不做技術裁決、不批准新功能 | 本表本身 + `docs/02-decision-map.md` ADR-016 |
+| 接線 agent 的角色定義 | 偵測 worker 交件(讀終端結論行與 `.report`/`.review` 檔),**只照協調者工單尾的鏈規格**開下一棒；卡互動選單就解除或回報；**不**決定鏈的內容、不排序、不合併、不清樹、不改鏈規格,鏈規格沒寫的情況一律回報協調者 | 本表本身 + ADR-018 |
+| 整合/清樹 agent 的角色定義 | 把候選分支合到最新 main 的臨時樹跑全 gate + 觸及資料夾所有 done phase,紅就隔離是哪一支;照 `docs/07-practices.md` (at) 清閒置 worktree,刪前打 archive tag；**不**派工、不合併、不 push、不改任何分支內容 | 本表本身 + ADR-018 |
 
 **產品路由優先權**:`product-pm` 是新功能、需求調整、產品想法與 `/feature` 的唯一使用者入口；
 `feature-triage` 是 PM 呼叫的內部 workflow。兩者同時命中時只啟動 `product-pm`，不得讓模型自行選擇或平行產生兩份提案。

@@ -200,7 +200,7 @@
 
 ## ADR-016 · 開發模式的組織架構與 dispatch mode 邊界
 
-- **Status**: accepted · 2026-09-10
+- **Status**: accepted · 2026-09-10 · 條件 2 由 ADR-018 補充(不推翻)
 - **Context**: 【驗】使用者在 `DECISIONS_NEEDED.md` #2 批准四條組織架構條件：使用者只需透過產品 PM 處理產品需求、透過技術顧問處理開發決策；其餘 session/worktree 由協調者統一管理。若 PM、協調者、技術顧問與開發 session 都能自行批准需求或建立 worker，會出現多個排程者與互相矛盾的權威；若「分區開發／分區整合／全局整合」被設成三個新的決策角色，也會讓一次派工同時攜帶不清楚的權限。
 - **Decision**:
   1. **產品入口與批准權**：產品 PM 是使用者的產品入口，負責訪談、需求探索、整理產品意圖與主持 `/feature`；新功能、新需求、產品範圍變更與既有產品決策衝突仍由使用者批准。技術顧問是使用者的開發決策入口，負責技術取捨、介面、gate 例外與 main 上的最終複驗。
@@ -225,7 +225,7 @@
      L2→L3 的唯一界線是 `/feature` 的確認 gate：A 類既有範圍且不改契約可由技術顧問確認；B 類新 capability／新功能、C 類推翻既有決策與 E 類硬約定必須由使用者批准。D 類先拆分後逐項重新判定。
 - **Alternatives**: 讓 PM 自行開 agent team（會形成第二個 scheduler，且探索結論可能繞過 `/feature`）；把三種 mode 建成三個有獨立裁決權的 persona（同一問題可能得到三份不相容決定）；允許分區整合直接修改來源分區（失敗時無法區分整合錯誤與分區退化）；讓 party 產物直接成為 `.feature`（會略過產品與契約批准）。
 - **Consequences**: 使用者只需維持產品 PM 與技術顧問兩個對話入口，所有執行 session 都有單一 scheduler、可追蹤工單與明確寫入邊界；探索能充分展開而不會暗中改變正式需求，整合失敗也能依責任區域退回。代價是 ARIA 會成為排程瓶頸；PM 發起探索後需多一次移交；分區整合發現來源缺陷時不能就地修復，會增加一輪工單；全局整合預設只驗證，修復鏈較長；每張 dispatch 都必須維護 allowlist、證據與回報 envelope。
-- **Related**: ADR-001, ADR-004, ADR-007, ADR-015, DECISIONS_NEEDED #2
+- **Related**: ADR-001, ADR-004, ADR-007, ADR-015, ADR-018, DECISIONS_NEEDED #2
 
 ---
 
@@ -241,6 +241,46 @@
 - **Alternatives**: 所有人工場景都交使用者(會把觀感／品質檢查變成使用者的日常負擔)；所有人工場景都交技術顧問(會讓技術角色代替使用者判斷端到端是否真的可用)；只用「觀感」與「端到端」的自然語意分流、不定 tag 優先權(雙重命中時仍會產生歧義)。
 - **Consequences**: `@e2e` 保留使用者對完整可用性的最終決定權，日常觀感／品質檢查則由技術顧問承接並留下證據；協調者可直接用 tag 算出確認者，不必臨場猜測。代價是規格作者必須正確標記場景，四處規則文字需同步維護；人工確認未完成前仍不能把 phase 或整合點標成完成。
 - **Related**: ADR-001, ADR-007, ADR-016, DECISIONS_NEEDED #4, `.claude/skills/phase-acceptance/SKILL.md`, `.claude/skills/integration-check/SKILL.md`
+
+---
+
+## ADR-018 · 四常駐角色與「決定下一棒 ≠ 執行下一棒」
+
+- **Status**: accepted · 2026-09-14
+- **Context**: 【驗】使用者 2026-09-14 選 A(`DECISIONS_NEEDED.md` #25 第②部分);來源 AI_KM 實測(ai-km-e3 回覆,素材 `.orca-brief/proposals/multi-session-roles.md`)。ADR-016 條件 2「ARIA 是唯一可建立、分派、監督與回收 session/worktree 的協調者」若照字面延伸,新增的接線 agent(鏈內接棒)與整合/清樹 agent(清 worktree、代為同步)會分別變成第二、第三個排程者,與條件 2 的精神直接衝突。DECISIONS_NEEDED #25 第①部分(有實測、不需要新角色的做法)已在 1.8.0 收進 practices/PITFALLS/工單樣板;本條只處理第②部分(兩個新角色)。
+- **Decision**:
+  1. **拓撲**:開 4 個常駐 session(名字以 ListAgents 為準,重啟會變):
+
+     | 角色 | 職責 | 不做 |
+     |---|---|---|
+     | 協調者(ARIA) | 唯一排程者、唯一 merger:寫工單並在工單尾**寫死鏈規格**(每棒角色/模型/完成條件/下一棒觸發條件)、決定派誰、組批、`merge --no-ff` 進 main(**不 push**,push 仍是技術顧問,見 CLAUDE.md「做決定時」表) | 鏈內接棒的執行、清樹的執行、技術裁決 |
+     | 技術顧問 | 裁決(契約/介面/gate 例外/`@manual and not @e2e`)、合併後在自己 worktree 對 main 獨立重跑全 gate、通過後 push origin、merge 證據抽查、WIP/漂移監督、規則層變更的執行者 | 不寫實作、不改 worker 分支、不派工 |
+     | 接線 agent(新) | 偵測 worker 交件(讀終端結論行與 `.report`/`.review` 檔,不用 mailbox),**只照工單鏈規格**開下一棒(測試紅→開發→非作者審核→通知協調者可收批);卡互動選單就解除或回報 | 不決定鏈的內容、不排序、不合併、不清樹、不改鏈規格;鏈規格沒寫的情況一律回報協調者 |
+     | 整合/清樹 agent(新) | 把候選分支合到最新 main 的**臨時樹**跑全 gate + 觸及資料夾所有 done phase(`setsid nohup` + done 檔),紅就隔離是哪一支;列分支落後 main 顆數;**照 `docs/07-practices.md` (at)** 清閒置 worktree,刪前打 `archive/<branch>` tag | 不派工、不合併、不 push、不改任何分支內容;ledger 之外的 worktree 不動 |
+
+  2. **原則**:「**決定下一棒 ≠ 執行下一棒**」。協調者保有全部排程**決定權**(ADR-016 條件 2 不變其精神),接線與整合/清樹只執行協調者事先寫死的決定;兩者遇到鏈規格未涵蓋的情況一律停下回報,不得自行判斷。接線 agent **只接棒不合併**;末棒 PASS 就通知協調者來 merge。
+  3. **產品 PM 不另開常駐 session**:`product-pm` 仍是 skill 入口,使用者要提產品需求時在技術顧問 session 或任一對話 session 呼叫 `/product-pm`;ADR-016 條件 1「兩個對話入口」語意保留(PM 是入口,不必是 session)。**前端顧問不設**。
+  4. **通訊**:session↔session 用 SendMessage;worker→session 不用 mailbox/orchestration,worker 只 commit + 終端印 `REVIEW VERDICT: PASS|RETURN <報告路徑>`;禁 session 互相 terminal wait;worker 禁 `git push origin`。
+  5. **迴圈**:各常駐 session 自建 CronCreate 錯開(分鐘數是範例,同機器多專案要再錯開;協調者 :04/:19/:34/:49、整合/清樹 :11/:26/:41/:56、接線 Monitor 2–3 分 + 巡檢 :08/:23/:38/:53、技術顧問 :17/:37/:57),不用 `/loop`。
+  6. **在製品上限**:活躍 agent ≤ `{{ACTIVE_AGENT_CAP}}`(預設 12);未合入交付物 > `{{UNMERGED_CAP}}`(預設 10)就停派新節點、產能轉整合。
+- **Alternatives**: B 整包收,並修訂 ADR-016 允許多個排程角色(會讓一次派工同時攜帶不清楚的權限,且「決定」與「執行」混在一起,回不去單一排程決策點);C 不收,先試「協調者改用事件驅動收件」看能不能不加角色就解決瓶頸(【推,提案方量的旁證】瓶頸多發生在協調者本身在長操作裡——解合併衝突、補 merge 證據、處理 revert——事件驅動只解決輪詢間隔,不解決排程者被長操作卡住這件事,所以判定不夠)。**不抄**:AI_KM 把裁決委給顧問的做法、AI_KM 的環境細節(機器/模型選擇由接線 agent 自己決定)、協調者親自墊共用檔 chore、無護欄的刪除/推送(AI_KM 一次開到 51 個 worktree 且清樹曾誤刪)——本 ADR 的接線與整合/清樹 agent 都不落地任何一條。
+- **Consequences**: 接棒延遲不再被協調者的長操作卡住(長操作改派給 worker,不是協調者自己做);清 worktree 有專責 agent 盯 ledger,降低漂移與誤殺風險。代價是多兩個常駐 session 要監督(WIP、漂移仍是協調者與技術顧問的責任,見 CLAUDE.md「做決定時」表新增兩列);鏈規格必須在工單寫死,協調者派工的前置成本上升;接線與整合/清樹遇到規格外狀況只能停下回報,不能像人一樣臨場判斷,短期內可能因此多幾輪來回。
+- **Related**: ADR-016(條件 2 由本條補充,不推翻), ADR-017, DECISIONS_NEEDED #25, `.orca-brief/proposals/multi-session-roles.md`, `docs/05-parallel-and-integration.md`, `docs/session-prompts/`, `docs/07-practices.md` (at)
+
+---
+
+## ADR-019 · 迭代原則:先 spec、再分區 MVP、再整合 MVP;最終目標先切階段;phase DAG 決定平行度
+
+- **Status**: accepted · 2026-09-15 · 來源:範式
+- **Context**: 【驗】使用者 2026-09-15 在技術顧問 session 親口說(原話):「bmad-method是將一個專題切分成數個epic story，而我的想法是先將專案的spec寫好，定義每個區塊的mvp功能，以及整合後的mvp功能，然後可以無限增加feature和gherkin code，就可以一直迭代，如果已經有最終目標，也要先切分成數個階段的gherkin code」,接著選 A(寫進範式),並補一句「設計dag才能平行開發與加速」。範式裡這些機制原本就分散存在(ADR-003 契約凍結、ADR-004 Wave 0 平行、ADR-007 整合點可用、ADR-008 NEXT.md gate、ADR-015 epic/story 映射列),但沒有一條把它們串成「迭代的順序」,「開發 DAG」一詞在 ADR-016 與 `product-pm`/`feature-triage` 出現卻沒有定義。
+- **Decision**:
+  1. **順序**:① 先寫 spec——`contracts/types.md` 凍結(ADR-003);② 每個能力資料夾的 `phase-1.feature` 是**該區塊的 MVP**,Wave 0 平行做(ADR-004);③ `docs/integration/i1.feature` 是**整合後的 MVP**,`@e2e` 由使用者親手確認(ADR-007、ADR-017);④ 之後**只靠加 gherkin 迭代**:既有能力加 `phase-N+1.feature`,新能力加 `features/NN-name/`,一律經 `/feature` 且先有 `.feature` 再寫程式(ADR-001)。迭代沒有上限,每一輪的完成定義都是可執行的場景。
+  2. **有最終目標也先切階段**:不寫一份一次到位的大 feature。先在 `docs/01-roadmap.md` 把最終目標切成 `I1 → I2 → … → IN`,每一階段標題寫「使用者做得到什麼」,每一階段有自己的 `docs/integration/i<N>.feature`;各能力的 phase 對應到它服務的整合點。後面的階段可以先只有標題與場景大綱,輪到時再經 `/feature` 補完。
+  3. **phase DAG 是平行度的權威**:節點 = 每個 phase 與每個整合點;邊 = `NEXT.md` gate 裡可解析的 phase 參照與 `I<N>`(`scripts/check-next-gates.ts` 已要求可解析);gate 裡的 `ADR-NNN`/`§N`/commit 是外部阻擋,不是邊。圖必須**無環**。ready 集合 = 所有入邊都已 `done` 且外部阻擋已解的 `todo` phase,協調者只從 ready 集合派工(`/sprint` 已照此算)。**設計 DAG 的目標是把邊砍到只剩真依賴**:需要別人的能力時用 contract 介面 + stub 切斷邊(ADR-004),不要為了「順序看起來合理」加 gate——多一條不必要的邊就少一份平行度。
+  4. **BMAD epic/story 不當權威單位**:epic 大致對應一個整合階段或一個能力資料夾,story 對應 phase 裡的場景;進 DAG、被派工、被驗收的單位只有 phase(與 ADR-015 `bmad-create-epics-and-stories` 列「映射為 capability folder 與 phase」一致)。
+- **Alternatives**: 照 BMAD 切 epic/story 當工作單位(story 是「要做的事」不是「可執行的驗收」,完成定義回到憑感覺,且 story 之間的依賴不在任何可檢查的檔案裡);最終目標寫成單一大 feature 一次做完(沒有中途可用的系統,違反 ADR-007,也無法平行);依賴只寫在 roadmap 文字裡不進 NEXT.md(ready 無法機械計算,平行度靠人記)。
+- **Consequences**: 迭代的每一步都有「可執行的完成定義」,加功能不需要重新規劃整體;平行度變成可以量的東西(DAG 的寬度),協調者派工與 ADR-018 的鏈都有明確的輸入。代價:寫 NEXT.md gate 時要刻意分辨「真依賴」與「順序偏好」;後期階段的場景先只有大綱,輪到時要再走一次 `/feature`。**尚未落地**(另案):`check-next-gates.ts` 目前只驗引用可解析,**不驗無環**,也沒有輸出 DAG 分層(哪些 phase 可同時開);要不要加 `check:dag` 由使用者決定(新增模板能力)。
+- **Related**: ADR-001, ADR-003, ADR-004, ADR-007, ADR-008, ADR-015, ADR-016(「L3 才能進開發 DAG」的 DAG 即本條定義), ADR-017, ADR-018, `docs/01-roadmap.md`, `docs/05-parallel-and-integration.md`, `scripts/check-next-gates.ts`, `.claude/skills/sprint-planning/SKILL.md`
 
 ---
 

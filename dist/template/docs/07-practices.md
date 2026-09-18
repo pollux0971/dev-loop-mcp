@@ -1059,8 +1059,9 @@ B 額外的反向建議值得記在這裡:**「機制要量不要讀」這句話
 
 **做法**:以下**全部**成立才清:
 1. 這條分支**自己的 commit 已經進了 main**(不是「分支是 main 的祖先」——剛開的分支沒有自己的 commit,這條天然不成立,所以不會誤殺);
-2. 它的終端機 **≥ 60 分鐘沒有輸出**;
-3. `git status --porcelain` 只剩已歸檔的交接檔(brief/report/review);
+2. 它的終端機 **≥ 60 分鐘沒有輸出**(agent TUI 的狀態列會一直重繪、讓「最後輸出時間」永遠是剛剛,這種終端要改看 session 是否持續閒置與交件檔的時間;若另外檢查「有沒有行程 cwd 在那個目錄」,要**排除終端自己的 shell 與閒置 agent**——終端存在就一定有它們;只有在跑的工作行程如 npm/vitest/tsc 才算);
+3. `git status --porcelain` 只剩已歸檔的交接檔(brief/report/review);**gitignored 的交接檔(例如 `.orca-brief/REVIEW.md`)一般 porcelain 看不到**,
+   要另外用 `git status --porcelain --ignored` 找出來先歸檔,不然 worktree 一刪就跟著沒了;
 4. 不在 in-progress 清單、不在保護名單。
 
 清的時候**先打 archive tag(`archive/<分支名>`)再刪分支**,只用 `git branch -d`(不用 `-D`)——要回來只要從 tag 開回去。

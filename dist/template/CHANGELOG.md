@@ -4,6 +4,83 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
+## 1.9.0 — 2026-09-19(已發布)
+
+**minor。** 使用者 2026-09-14 在技術顧問 session 親口選 A(`DECISIONS_NEEDED.md` 已批示 25②),
+批准 `ADR-018 · 四常駐角色與「決定下一棒 ≠ 執行下一棒」`(修 ADR-016 條件 2,不推翻)。
+`check:dag`(ADR-019 落地)三輪已知誤報修完,AI_KM 12 份真實 `NEXT.md` 實測 PASS。
+發布本身:使用者 2026-09-19 在技術顧問 session 親口「繼續吧」批准(`DECISIONS_NEEDED.md` 已批示 #28)。
+
+**新增四常駐角色**(協調者/技術顧問/接線 agent/整合清樹 agent),原則是「決定下一棒 ≠ 執行下一棒」:
+協調者保有全部排程決定權,只把「鏈內接棒」與「清 worktree」的**執行**交給新的兩個角色,
+兩者遇到工單鏈規格沒寫的狀況一律停下回報,不自行判斷。**這是規模到了才需要的選項**,單人或單
+session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-agile-workflow.md` 原本的角色分工
+沒有被取代。
+
+- **`docs/02-decision-map.md`**:新增 ADR-018;ADR-016 Status 行加註「條件 2 由 ADR-018 補充(不推翻)」。
+- **`CLAUDE.md`**「做決定時」表:第一列協調者措辭加註排程決定權不變;新增「接線 agent」「整合/清樹 agent」
+  兩列角色定義。
+- **`docs/03-agile-workflow.md`、`README.md`** 角色分工表同步加兩列(接線 agent、整合/清樹 agent),兩處措辭一致。
+- **`docs/05-parallel-and-integration.md`** 新增「多 session 分工(ADR-018)」段:拓撲表、通訊規則、
+  cron 時段範例、在製品上限、**鏈規格格式**(照 `.orca-brief/TASK.md.template` 的「當場取數」原則,
+  不寫死 ADR / DECISIONS_NEEDED 編號、不寫死鏈長度)。
+- **新增 `docs/session-prompts/`**:`README.md` + 四份可直接貼進新 session 的啟動 prompt
+  (`coordinator.md`、`advisor.md`、`wiring.md`、`integrator.md`),已登記進
+  `package/payload-manifest.json` 出貨清單。
+- **`.claude/skills/autopilot/SKILL.md`**:「清 worktree」改「通知整合/清樹 agent 依 ledger 清 worktree(ADR-018)」;
+  §1「自己決的」補一句「鏈內接棒與清樹的執行交接線／整合清樹 agent,決定仍是你的」。
+- **`.orca-brief/TASK.md.template`**:檔尾新增「鏈規格(協調者填,接線 agent 只照此執行)」段與 yaml 範例,
+  單人模式忽略這節。
+- **`DECISIONS_NEEDED.md`**:#25 從「待批示」搬到「已批示」(25②),第①部分維持記在 1.8.0 已批示列,
+  第②部分本版裁決。
+- **技術顧問規則層掃描修正**(commit 前):ADR-018 與 `docs/05` 原寫「協調者推 origin」,跟 `CLAUDE.md`/`docs/03`/autopilot「技術顧問 push」矛盾 → 統一為顧問 push;
+  autopilot 的「通知整合/清樹 agent」改成只在開了四常駐角色時才適用(單人模式仍自己照 (at) 清);cron 分鐘標為範例;
+  README 安裝指令在發布前維持 `npx-v1.8.0`。
+- **`docs/02-decision-map.md` 新增 ADR-019**(2026-09-15,使用者親口):迭代原則——先 spec、再分區 MVP(phase-1)、再整合 MVP(I1)、之後只靠加 gherkin 迭代;
+  有最終目標也先切成 I1…IN 階段;phase DAG(NEXT.md gate 為邊、必須無環)決定平行度;BMAD epic/story 不當權威單位。
+- **`scripts/check-dag.ts`**(2026-09-15,`DECISIONS_NEEDED` #27,使用者選 A):ADR-019 第 3 點落地為機械檢查。
+  重用 `check-next-gates.ts` 既有解析(private 函式改 export、回傳值重組),沒有另寫平行 parser。
+  有環 → `exit 1` 印出完整環路;無環 → 印拓撲分層(平行寬度)、ready 集合、被外部阻擋(ADR/§/sha)卡住的 phase 另列。
+  `npm run check:dag`;零輸入(只有 `features/_template/`)印「沒有 phase」、`exit 0`;`scripts/zero-input.gates.test.ts` 涵蓋。
+  本 repo 這條是走 ADR-018 四角色鏈(test→dev→非作者審核)落地的第一條,審核棒獨立合併到臨時樹重做反向驗證
+  (環路 fixture 必紅、拿掉一條真依賴分層必變),結論 PASS;merge commit bcfc58a。
+- **修 `check-next-gates.ts` 既有 bug:三種 header 句型解析錯誤**(2026-09-15,fix-forward,不 revert check-dag)。
+  技術顧問重驗 `check-dag` 時另外造 fixture 發現:模板自己出貨的 `**phase-N** 需要全部滿足:`——「全部滿足:」
+  被誤判成 gate 內容,底下整段 `- [ ]` checklist **靜默漏收**;全形冒號「：」不收;`**phase-N(說明)**` 帶括號時
+  **整段 gate 消失**。三種都不是 `check-dag` 引入的,是既有 bug——三棒都沒抓到的原因是 test fixture 當初寫成
+  parser 吃得下的簡化句型,不是模板實際出貨的句型(教訓已寫進 `.orca-brief/TASK.md.template`)。
+  修法收在同一次 `HEADER_RE` 與周邊解析邏輯調整,既有 `check-next-gates.test.ts` 全部維持綠;同時新增
+  「NEXT.md 有 checklist 行卻沒被任何 header 收」的防靜默警告(warn,不改 exit code——升級成硬擋前要等至少
+  一個 consumer 實跑過、確認全是真漏收無誤報)。審核棒獨立重做:換回舊 parser 證明三種句型真的會重現 bug、
+  換回新版確認抓到;merge commit dd53cb0。
+- **修 `check:dag` 假環 + 補解析寫法 + 收窄防靜默警告範圍**(2026-09-16,fix-forward 第二輪,併入上一輪排隊的
+  防靜默警告自動測試補丁)。技術顧問拿 AI_KM 真實 12 份 `NEXT.md` 實測(scratchpad 一次性 repo,沒碰
+  AI_KM 本體)抓到:①gate 指向自己所屬 phase(如「`06-retrieval` phase-2 已 done」這類續行說明文字掉進
+  「自身」解析規則)被誤判成環,現在丟掉這條自我引用邊並印警告,**真正兩個以上節點的環照舊要紅**;
+  ②補 `` `NN-name` phase-N `` (反引號包資料夾名)這種解析寫法,避免掉進①的假環;③防靜默警告收窄成只對
+  `## 下一個 phase 的 gate` 那一節發——AI_KM 12 份裡 9 份曾誤報共 60 多行,幾乎都是 DoD/現況這類其他章節的
+  清單本來就不是 gate。審核棒獨立重做全部反向驗證,額外拿 AI_KM 真實 repo(唯讀)驗證過修復有效、多抓到
+  3 個工單沒提到的案例,順手發現 AI_KM 自己一個無關的真環(未處理,留給 AI_KM 自行判斷);merge commit
+  `0949af1`。
+- **修 `check:dag` 最後一個已知假環誤報**(2026-09-16,fix-forward 第三輪)。根因:第一輪(`fix-gate-header`)
+  的 dev 棒自己加了工單沒要求的「bullet 縮排續行合併進 gate」邏輯,審核棒當時只驗工單寫的驗收條件,沒抓到
+  這個多出來的行為——AI_KM `02-authorization/NEXT.md` 裡一句縮排續行的說明文字(「deny 來源留到 phase-3」)
+  因此被解析成一條邊,跟同檔案裡真實的 `phase-3 需要 phase-2` 依賴湊成 `02-2 → 02-3 → 02-2` 假環。
+  修法:`check:dag` 的邊只從 bullet **第一行**取,縮排續行一律不產生邊也不產生「引用了自己」警告;
+  `check:next-gates` 的引用檢查行為不變(續行裡的可解析引用照樣算數)。過程中一棒 RETURN:test 棒寫出
+  互相矛盾的斷言(同時要求 PASS 輸出含檔名、又要求不含自我引用警告文字,但那個檔名只會在警告裡出現),
+  dev 棒沒有硬湊、原樣退回,技術顧問裁決是測試寫錯,補一棒只刪那一行矛盾斷言。審核棒獨立重做全部反向
+  驗證,確認 dev 棒當初 RETURN 是正確行為、沒有多做任何工單外的事;merge commit `0cd5c5e`。
+  同時把「審核棒要列出工單外行為」這條規則寫進 `.orca-brief/TASK.md.template`(commit `89fbdef`)——
+  這條規則保護的正是這輪修的問題本身。
+  **至此三輪已知誤報全數修完,`npx-v1.9.0` 可以打 tag。**
+- **`.orca-brief/TASK.md.template` 交接檔分清楚兩種模式**:四角色鏈模式的交件一律 `<worktree名>-REPORT.md`,
+  REVIEW.md 只用於單人模式——上面兩輪 fix-forward 都撞過同一條鏈裡棒次寫錯檔名的問題。
+- **`.orca-brief/roles/` 清樹判準修正**:agent 終端狀態列會讓 `lastOutputAt` 永遠顯示 0 分(claude 審核棒的
+  已知現象),清樹與接線偵測改看「idle 連續多輪 + 交件檔 VERDICT + mtime」,不再只信狀態列。
+- **不出貨的內部檔**:`.orca-brief/roles/`(已登記 `scripts/shipping-coverage.test.ts` NOT_SHIPPED)——dev-paradigm 自己跑四常駐 CLI 的啟動 prompt 與護欄腳本(`safe-worktree-rm`、`safe-trash`、接線偵測)。
+- **矛盾清單與自檢結果**:見 `.orca-brief/ORG-4ROLES-REPORT.md`。
+
 ## 1.8.0 — 2026-09-14
 
 **minor。** 使用者 2026-09-14 批准(`DECISIONS_NEEDED.md` 已批示 12·17·25①·26)。
