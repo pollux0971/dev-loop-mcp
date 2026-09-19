@@ -286,6 +286,31 @@ describe('check-next-gates:引用解析(各種形狀)', () => {
     expect(logs.some((message) => message.includes('features/unknown-status/FEATURE.md: 第 7 行 phase-7 的狀態「mystery」不是已知值'))).toBe(true);
   }, SPAWN_TIMEOUT_MS);
 
+  it('同一個未知狀態 phase 被三條 gate 引用時,舊程式碼會重複印警告(先寫紅)', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [{ n: 7, status: 'mystery' }]);
+    writeNext(
+      root,
+      '01-foo',
+      [
+        '## Gate',
+        '',
+        '**phase-2** 需要:phase-7',
+        '**phase-3** 需要:phase-7',
+        '**phase-4** 需要:phase-7',
+      ].join('\n'),
+    );
+    commitAll(root, 'duplicate unknown phase warning fixture');
+
+    const { code, output } = run(root);
+    const warning = '⚠ 警告 features/01-foo/FEATURE.md: 第 7 行 phase-7 的狀態「mystery」不是已知值(done/todo/in-progress/blocked/ready)';
+    const warningCount = output.split(warning).length - 1;
+
+    expect(code).toBe(0);
+    expect(output).toContain('next-gates: 掃到 3 條 gate 宣告');
+    expect(warningCount).toBe(1);
+  }, SPAWN_TIMEOUT_MS);
+
   it('phase 表中夾兩張無關表後仍讀到 phase-4 的 done 狀態', () => {
     const root = makeRepo();
     write(root, 'features/11-app-shell/FEATURE.md', AI_KM_APP_SHELL_INTERLEAVED_PHASE_TABLE);

@@ -103,8 +103,28 @@ export interface FeaturePhaseRow {
   status: string;
 }
 
+interface PhaseWarningContext {
+  emittedKeys: Set<string>;
+}
+
+// `check-dag.ts` imports the phase parser and calls it without a run context,
+// so keep a compatibility context for those calls. `check-next-gates` passes
+// a fresh context from its own main() instead; the two scanners therefore
+// cannot suppress one another's warnings when loaded in the same process.
+const defaultPhaseWarningContext: PhaseWarningContext = { emittedKeys: new Set() };
+
+function emitPhaseWarning(context: PhaseWarningContext, key: string, message: string): void {
+  if (context.emittedKeys.has(key)) return;
+  context.emittedKeys.add(key);
+  console.log(message);
+}
+
 /** 讀出 FEATURE.md 的 phase 表，供引用解析與 DAG 狀態判斷共用。 */
-export function readFeaturePhaseRows(root: string, folder: string): FeaturePhaseRow[] {
+export function readFeaturePhaseRows(
+  root: string,
+  folder: string,
+  context: PhaseWarningContext = defaultPhaseWarningContext,
+): FeaturePhaseRow[] {
   const featurePath = join(root, 'features', folder, 'FEATURE.md');
   if (!existsSync(featurePath)) return [];
   const content = readFileSync(featurePath, 'utf8');
@@ -198,8 +218,12 @@ export function readFeaturePhaseRows(root: string, folder: string): FeaturePhase
     const status = statusMatch ? statusMatch[1]!.toLowerCase() : statusCell;
     if (!statusMatch) {
       const displayedStatus = statusValue || '空白';
-      console.log(
-        `⚠ 警告 ${fileLabel}: 第 ${lineNo} 行 phase-${phase} 的狀態「${displayedStatus}」不是已知值(done/todo/in-progress/blocked/ready)`,
+      const message =
+        `⚠ 警告 ${fileLabel}: 第 ${lineNo} 行 phase-${phase} 的狀態「${displayedStatus}」不是已知值(done/todo/in-progress/blocked/ready)`;
+      emitPhaseWarning(
+        context,
+        `${fileLabel}:${lineNo}:${message}`,
+        message,
       );
     }
 
@@ -215,16 +239,25 @@ export function readFeaturePhaseRows(root: string, folder: string): FeaturePhase
 
   for (const [phase, lineNos] of rowLineNos) {
     if (lineNos.length < 2) continue;
-    console.log(
-      `⚠ 警告 ${fileLabel}: phase-${phase} 重複,出現在第 ${lineNos.join('、')} 行;取第 ${lineNos[0]} 行`,
+    const message =
+      `⚠ 警告 ${fileLabel}: phase-${phase} 重複,出現在第 ${lineNos.join('、')} 行;取第 ${lineNos[0]} 行`;
+    emitPhaseWarning(
+      context,
+      `${fileLabel}:${lineNos[0]}:${message}`,
+      message,
     );
   }
 
   return rows;
 }
 
-function phaseRowExists(root: string, folder: string, phaseNum: string): boolean {
-  return readFeaturePhaseRows(root, folder).some((row) => row.phase === phaseNum);
+function phaseRowExists(
+  root: string,
+  folder: string,
+  phaseNum: string,
+  context: PhaseWarningContext,
+): boolean {
+  return readFeaturePhaseRows(root, folder, context).some((row) => row.phase === phaseNum);
 }
 
 function findFolderByPrefix(root: string, prefix: string): string | undefined {
@@ -509,6 +542,7 @@ export function parseGateReferences(
   folder: string,
   text: string,
   resolvers: Resolvers,
+  context: PhaseWarningContext = defaultPhaseWarningContext,
 ): GateReference[] {
   let working = text;
   const references: GateReference[] = [];
@@ -544,7 +578,7 @@ export function parseGateReferences(
       token: `${folderName}/phase-${phaseNum}`,
       folder: folderName,
       phaseNum,
-      resolved: phaseRowExists(root, folderName, phaseNum),
+      resolved: phaseRowExists(root, folderName, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
@@ -555,7 +589,7 @@ export function parseGateReferences(
       token: m,
       folder: folderName,
       phaseNum,
-      resolved: phaseRowExists(root, folderName, phaseNum),
+      resolved: phaseRowExists(root, folderName, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
@@ -567,7 +601,7 @@ export function parseGateReferences(
       token: `${prefix} phase-${phaseNum}`,
       folder: target ?? prefix,
       phaseNum,
-      resolved: target !== undefined && phaseRowExists(root, target, phaseNum),
+      resolved: target !== undefined && phaseRowExists(root, target, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
@@ -579,7 +613,7 @@ export function parseGateReferences(
       token: `phase-${phaseNum}(自身:${folder})`,
       folder,
       phaseNum,
-      resolved: phaseRowExists(root, folder, phaseNum),
+      resolved: phaseRowExists(root, folder, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
@@ -596,8 +630,14 @@ export function parseGateReferences(
   return references;
 }
 
-function checkCitations(root: string, folder: string, text: string, resolvers: Resolvers): CitationCheck {
-  const references = parseGateReferences(root, folder, text, resolvers);
+function checkCitations(
+  root: string,
+  folder: string,
+  text: string,
+  resolvers: Resolvers,
+  context: PhaseWarningContext,
+): CitationCheck {
+  const references = parseGateReferences(root, folder, text, resolvers, context);
   return {
     found: references.length > 0,
     resolved: references.some((reference) => reference.resolved),
@@ -629,6 +669,7 @@ function main(): void {
   }
 
   const resolvers = loadResolvers(ROOT);
+  const warningContext: PhaseWarningContext = { emittedKeys: new Set() };
 
   const allGateLines: GateLine[] = [];
   const orphanChecklistWarnings: Array<{ file: string; lineNos: number[] }> = [];
@@ -649,7 +690,7 @@ function main(): void {
 
   let failures = 0;
   for (const g of allGateLines) {
-    const check = checkCitations(ROOT, g.folder, g.text, resolvers);
+    const check = checkCitations(ROOT, g.folder, g.text, resolvers, warningContext);
     if (!check.found) {
       failures++;
       console.log(`✗ ${g.file}:${g.lineNo}  gate 沒有引用 ADR/commit/§/IN/phase:${g.text}`);

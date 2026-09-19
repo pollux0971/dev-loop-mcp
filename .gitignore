@@ -8,3 +8,4 @@ package/dist/
 # .orca-brief/REVIEW.md 是 worktree 專屬的進行中交接檔,依 P-17/P-78 必須 gitignored。
 # 1.6.7 前模板自己把它追蹤了(npx 階段 C 合併時帶進來的)——模板違反自己訂的規則,第六次。
 .orca-brief/REVIEW.md
+.orca-brief/*-REPORT.md
