@@ -168,16 +168,11 @@ sha256_stdin() {
   else shasum -a 256 | awk '{print $1}'; fi
 }
 
-# $1=回流去向 → 0 = 非空且不是佔位字元;1 = 格式不合法。
-# 不綁死單一工單系統;新格式另要求後面還要有非空理由,用來拒絕舊的日期+單一理由字串。
+# $1=回流去向 → 0 = 符合白名單格式;1 = 格式不合法。
+# 新格式另要求後面還要有非空理由,用來拒絕舊的日期+單一理由字串。
 is_valid_hotfix_route() {
   local route="$1"
-  case "$route" in
-    ""|"-"|"--"|"_"|"__"|"."|".."|"?"|"??"|"..."|"TBD"|"tbd"|"TODO"|"todo"|"TBA"|"tba"|"N/A"|"n/a"|"NA"|"na"|"NONE"|"none"|"NULL"|"null"|"PLACEHOLDER"|"placeholder"|*"<"*">"*)
-      return 1
-      ;;
-  esac
-  return 0
+  [[ "$route" =~ ^(#[0-9]+|[A-Za-z][A-Za-z0-9_]*[-#][0-9]+)$ ]]
 }
 
 # --check 尾端的 HOTFIX 報表。這是資訊性輸出,不改變 exit code。
