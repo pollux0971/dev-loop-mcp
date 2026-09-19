@@ -84,11 +84,10 @@
  *       不該被報(ADR 檔排除)。
  *   (c) `--self-test` 對出貨的黑名單跑一次 → 每條規則都命中自己的探針。
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import {
-  DEFAULT_SKIP_DIRS,
   ROOT as GIT_ROOT,
   loadGatesConfig,
   lookupConfig,
