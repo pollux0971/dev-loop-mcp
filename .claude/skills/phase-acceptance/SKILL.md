@@ -1,12 +1,12 @@
 ---
 name: phase-acceptance
-description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完了、可以收了,或問「這樣算完成了嗎」時使用,跑測試、跑單獨執行指令、跑嚴格級變異測試、列出人工確認清單。防止「感覺做完了」就標記完成。也在使用者直接要求 /phase-done 時使用。
+description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完了、可以收了,或問「這樣算完成了嗎」時使用,跑測試、跑單獨執行指令、跑嚴格級變異測試、列出人工確認清單。防止「感覺做完了」就標記完成。也在使用者直接要求 phase 驗收時使用。
 ---
 
-# /phase-done — 驗收
+# phase-acceptance — 驗收
 
 **這是互動用的最小集,不是唯一驗收強度。** 派工(協調者對 worker、審核 agent 對 dev)驗收用
-`.orca-brief/TASK.md.template` 這類工單模板——工單可以要求反向驗證、逐項列前提各自實測、
+`docs/templates/TASK.md.template` 這類工單模板——工單可以要求反向驗證、逐項列前提各自實測、
 審核輪重跑對照表宣稱的守門,這些都比這支 skill 的預設步驟嚴。單人互動、或還沒有工單機制時,
 跑這支 skill 本身就夠;有工單機制在跑時,不要因為這支 skill「跑過」就覺得驗收已經到位
 (來源:專案 A 協調者的實戰記錄,見 `docs/07-practices.md`「來自專案 A 協調者的做法」)。
@@ -26,7 +26,11 @@ description: 驗收一個 phase。當使用者說某個 phase 做完了、寫完
   `fix_in` **不准**是佔位值——一個「之後再修」的標記不能拿來把硬規則的違規合法化,那跟「用 gate 代替修」是
   同一族問題(見 `docs/07-practices.md` (y))。
 
-目標:`$ARGUMENTS`
+目標:使用者給的輸入
+
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
+<!-- CLAUDE-ONLY-END -->
 
 ## 第一步:定位
 
@@ -121,7 +125,7 @@ decision-record 記一筆。
 | 標準 | 跑其中一種。未達**回報但不擋**,問使用者要不要處理 |
 | 寬鬆 | 跳過 |
 
-**嚴格級的整支 `/phase-done` 由另一個 session 執行**(來源 AI_KM):不是只有變異測試那一步換人審,是這次
+**嚴格級的整支 phase 驗收由另一個 session 執行**(來源 AI_KM):不是只有變異測試那一步換人審,是這次
 驗收整體換一個沒有寫過這個 phase 實作的 session 來跑。而且**這個 session 的第一步就是本步驟(變異 / 定向
 反向驗證)**,不是照本 skill 從第一步「定位」依序做到第六步才做——先確認測試真的守得住宣稱要守的行為,
 不成立的話後面幾步(單獨執行、@manual 確認)都沒有意義。**證據是炸掉那條斷言的失敗訊息原文,逐字貼進驗收
@@ -177,7 +181,7 @@ npm run mutate -- --mutate "<該 phase 的原始碼路徑>"
    重新評估下一個 phase 的三類 gate,把已滿足的打勾
 3. 檢查其他資料夾的 `NEXT.md`,有哪些 phase 因此 gate 滿足了 → 列出來
 4. 檢查是否所有 phase 都 done → 更新 `features/README.md` 索引
-5. 檢查該階段(Wave 0 或某個 IN)的所有 phase 是否都 done → 若是,提示可以跑 `/integrate`
+5. 檢查該階段(Wave 0 或某個 IN)的所有 phase 是否都 done → 若是,提示可以進行整合驗收
 6. 建議 `git tag <NN-name>/phase-<N>`
 7. 回報:
    ```
@@ -201,7 +205,7 @@ npm run mutate -- --mutate "<該 phase 的原始碼路徑>"
 用 Grep 找 `TODO` `FIXME` `HACK` `provisional`(或你專案自己標記「暫時性」的字眼),
 列出並問要處理還是留著。留著就寫進 FEATURE.md 開放問題。
 
-問:「這個 phase 有沒有做什麼取捨還沒記進 decision map?」有就提示 `/decide`。
+問:「這個 phase 有沒有做什麼取捨還沒記進 decision map?」有就提示使用 decision-record。
 
 ## 禁止事項
 

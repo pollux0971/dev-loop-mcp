@@ -33,7 +33,7 @@
 | Wave 0 | 所有資料夾的 phase-1,完全平行,無跨資料夾依賴。 |
 | Integration / I1–IN | 整合點。每個通過時系統都是完整可用的。 |
 | gate | `NEXT.md` 定義的三類條件:自身 phase、整合點、契約待決事項。 |
-| standalone | 該 phase 能用一行指令單獨跑起來。`/phase-done` 會實際執行。 |
+| standalone | 該 phase 能用一行指令單獨跑起來。phase-acceptance 會實際執行。 |
 | sprint | 一週的工作單位,2–4 個 phase。 |
 | ADR | Architecture Decision Record,一筆決策。 |
 | DoR / DoD / DoI | Definition of Ready / Done / Integrated。 |

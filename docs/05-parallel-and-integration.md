@@ -92,7 +92,7 @@ Wave 0 期間會有幾份重複的東西——每個需要外部依賴的功能�
 
 | 角色 | 職責 | 不做 |
 |---|---|---|
-| 協調者(ARIA) | 唯一排程者、唯一 merger:寫工單並在工單尾**寫死鏈規格**、決定派誰、組批、`merge --no-ff` 進 main(**不 push**,push 仍是技術顧問,見 CLAUDE.md「做決定時」表) | 鏈內接棒的執行、清樹的執行、技術裁決 |
+| 協調者(ARIA) | 唯一排程者、唯一 merger:寫工單並在工單尾**寫死鏈規格**、決定派誰、組批、`merge --no-ff` 進 main(**不 push**,push 仍是技術顧問,見 AGENTS.md「做決定時」表) | 鏈內接棒的執行、清樹的執行、技術裁決 |
 | 技術顧問 | 裁決(契約/介面/gate 例外/`@manual and not @e2e`)、合併後在自己 worktree 對 main 獨立重跑全 gate、通過後 push origin、merge 證據抽查、WIP/漂移監督、規則層變更的執行者 | 不寫實作、不改 worker 分支、不派工 |
 | 接線 agent | 偵測 worker 交件(讀終端結論行與 `.report`/`.review` 檔,不用 mailbox),**只照工單鏈規格**開下一棒;卡互動選單就解除或回報 | 不決定鏈的內容、不排序、不合併、不清樹、不改鏈規格;鏈規格沒寫的情況一律回報協調者 |
 | 整合/清樹 agent | 把候選分支合到最新 main 的**臨時樹**跑全 gate + 觸及資料夾所有 done phase(`setsid nohup` + done 檔),紅就隔離是哪一支;**照 `docs/07-practices.md` (at)** 清閒置 worktree,刪前打 `archive/<branch>` tag | 不派工、不合併、不 push、不改任何分支內容;ledger 之外的 worktree 不動 |
@@ -101,14 +101,14 @@ Wave 0 期間會有幾份重複的東西——每個需要外部依賴的功能�
 
 ### 通訊規則
 
-session↔session 用 SendMessage;worker→session 不用 mailbox/orchestration,worker 只 commit + 終端印
-`REVIEW VERDICT: PASS|RETURN <報告路徑>`;禁 session 互相 terminal wait;worker 禁 `git push origin`。
+session↔session 用平台提供的訊息機制;worker→session 不依賴平台信箱或協調 API,worker 只 commit + 終端印
+`REVIEW VERDICT: PASS|RETURN <報告路徑>`;禁止 session 互相阻塞等待;worker 禁 `git push origin`。
 接線 agent **只接棒不合併**——末棒 PASS 就通知協調者來 merge。
 
 ### 迴圈時段(範例,各專案自行錯開)
 
-各常駐 session 自建 `CronCreate`,不用 `/loop`:協調者 :04/:19/:34/:49、整合/清樹 :11/:26/:41/:56、
-接線 Monitor 2–3 分 + 巡檢 :08/:23/:38/:53、技術顧問 :17/:37/:57。
+各常駐 session 使用平台排程能力,不用特定介面:協調者 :04/:19/:34/:49、整合/清樹 :11/:26/:41/:56、
+接線 agent 以監控機制每 2–3 分鐘巡檢 + :08/:23/:38/:53、技術顧問 :17/:37/:57。
 
 ### 在製品上限
 
@@ -116,7 +116,7 @@ session↔session 用 SendMessage;worker→session 不用 mailbox/orchestration,
 
 ### 鏈規格格式(協調者填在工單尾,接線 agent 只照此執行)
 
-鏈規格跟 `.orca-brief/TASK.md.template` 的「當場取數」原則一致:**不寫死 ADR / DECISIONS_NEEDED 編號、
+鏈規格跟 `docs/templates/TASK.md.template` 的「當場取數」原則一致:**不寫死 ADR / DECISIONS_NEEDED 編號、
 不寫死鏈長度**,只寫「取數的方法」——下一個編號、下一棒是誰,永遠在寫入的那一刻現算,不在排程的那一刻算。
 
 ```yaml
