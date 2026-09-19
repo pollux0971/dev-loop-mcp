@@ -19,6 +19,26 @@
   (`U+0000`),`grep` 把整支檔案當二進位靜默跳過匹配——不是協調者下錯指令,是那支檔案本身的
   怪異之處。範圍已更正,那兩個函式維持不動(它們確實有用,只是舊版的 phase 表解析,已知要另案
   換掉,見下一輪待辦);merge commit `c58afab`。
+- **零輸入一律保持 FAIL,只把訊息改清楚**(`DECISIONS_NEEDED.md` #31,取代 #30)。範式通則是
+  「0 個目標一律 FAIL,不是 PASS」(空集合恆真,見 `docs/07-practices.md` 陽性對照段、
+  `PITFALLS.md` P-44/P-70)。技術顧問先前建議讓某些零輸入情況改印 PASS(#30),自己發現違反這條
+  通則、撤回並修正(#31):`check:next-gates` 三種零輸入情況全部維持 FAIL/exit 1,只在「真的是
+  新專案、一個 NN-name 資料夾都沒有」這種情況換一句更清楚的訊息;`check:dag` 的零輸入行為也一併
+  修正——1.9.0 規格把它設計成 PASS/exit 0 是技術顧問寫錯的方向,這次改成跟 `check:next-gates`
+  同一種做法(FAIL,但訊息清楚),並比照拆成三種情況(`--root` 指錯 / 新專案沒有任何 NN-name
+  資料夾 / 有資料夾但讀不到 phase)分別給訊息,不再三種情況共用同一句話誤導使用者。
+  **過程記兩件事,協調者自己的失誤**:①第一版工單(#30 方向)已開工但還沒 commit 就被技術顧問
+  自己推翻,協調者清掉未提交的改動重寫,沒有浪費任何 commit;②`check:dag` 的第一輪修法(fix
+  `next-gates-new-project`)只把 PASS 改成 FAIL,沒有比照 `check:next-gates` 拆三種情況,技術顧問
+  重驗時親自造三個一次性 repo 抓到「--root 指錯」跟「有資料夾但沒 phase」兩種情況被誤判成「新
+  專案剛完成初始化」——協調者確認後另開 `dag-zero-input-message` fix-forward 補上,merge commit
+  `66eb2dd`(前一輪 next-gates-new-project 的 merge commit 是 `0b9ddbc`)。
+  審核棒額外記錄:`check-dag`/`check-next-gates` 判斷「零輸入」用的量尺不同(phase 節點數 vs.
+  NEXT.md 檔案數),混合情境下可能不同步進入零輸入分支,留給之後動 `check-next-gates.ts` 的人
+  參考,非本輪範圍。
+  **本 repo 自己**(只有 `features/_template/`)的 `check:dag`/`check:next-gates` 因此從「已知綠/
+  已知紅各一支」變成「兩支都是已知紅」,直到有第一個真的 `features/01-xxx/` 為止——這是刻意的
+  行為變更,不是回歸。
 
 ## 1.10.0 — 2026-09-19(已發布)
 
