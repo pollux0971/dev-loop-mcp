@@ -284,6 +284,24 @@
 
 ---
 
+## ADR-020 · 同一份規則給 Claude Code 與 Codex:AGENTS.md 正本、skill 雙目錄鏡像、非守門檔共用安裝紀錄
+
+- **Status**: accepted · 2026-09-19 · 來源:範式
+- **Context**: 【驗】使用者 2026-09-19 在技術顧問 session 親口說「我希望可以在claude和codex使用」,並在 A/B 兩案中選 A(`DECISIONS_NEEDED.md` #32)。【驗】技術顧問在一次性 repo 實測 codex-cli 0.155.1:會讀專案根的 `AGENTS.md`、會讀 `.agents/skills/<name>/SKILL.md`(frontmatter 格式與 Claude skill 相同)。模板原本只有 `CLAUDE.md` 與 `.claude/skills/`,Codex 兩者都不讀。盤點(`claude-codex-survey`,worker 報告,147 處 `CLAUDE.md` 引用逐條分類)另外發現:#23 的「sync 送不了非守門檔」是同一件事的另一面——`.agents/skills/` 也是非守門檔;且 `scripts/shipping-coverage.test.ts` 把兩個出貨管道取聯集,「npx 有、sync 沒有」的檔會被判成已出貨。
+- **Decision**:
+  1. **規則正本是 `AGENTS.md`**(Codex 讀)。`CLAUDE.md` 只留兩件事:第一行 `@AGENTS.md`(Claude Code 的檔案引用,載入時展開)+ 一段「Claude 專用」:斜線指令別名表、Claude 工具名稱的對照。placeholder(`{{...}}`)跟著正文搬進 `AGENTS.md`。規則層定義改為:`AGENTS.md`、`CLAUDE.md`、`.claude/skills/`、`.agents/skills/`、`.claude/commands/`。
+  2. **skill 正本是 `.claude/skills/`,`.agents/skills/` 是逐位元組一樣的鏡像**,**進版控**(repo 自己在 Codex 下也能用、審核看得到 diff),不用 symlink(npm pack 與 Windows 不可靠),也不在 build 時才產生(審核看不到)。新增一支檢查:兩個目錄的檔案集合與每個檔的 sha256 必須完全相同;不同就紅,並印出重新產生鏡像的指令。
+  3. **平台專用段落用標記圈起來**:`<!-- CLAUDE-ONLY-BEGIN -->` … `<!-- CLAUDE-ONLY-END -->`。鏡像保持逐位元組相同(不裁掉),`AGENTS.md` 寫明「標記內的段落只在 Claude Code 有效,其他 agent 跳過」。正文用平台中立的動作描述(「通知技術顧問並等回覆」),具體工具名(SendMessage、ListAgents、ScheduleWakeup、Orca 指令)只出現在標記內。`$ARGUMENTS` 改寫成「使用者給的輸入(Claude Code 會以 `$ARGUMENTS` 帶入)」。
+  4. **非守門的受管檔不加 SOURCE 標頭**(`.md` 有 YAML frontmatter,標頭插在前面會壞掉 skill 載入)。改用**安裝紀錄**判斷所有權:沿用 npx init 已經寫的 `.npx-init-manifest.json`(每個檔的 sha256),`sync-gates.sh` 對非守門受管檔**讀寫同一份紀錄**,語意跟 init 一致——不存在就建、內容等於紀錄就可替換、被使用者改過就衝突且一個字都不寫、內容相同就不動。現有 scripts 的 SOURCE 標頭契約**不變**。受管的非守門檔範圍:`.claude/skills/**`、`.agents/skills/**`、工單樣板、`scripts/py/.gitignore`。`AGENTS.md`/`CLAUDE.md` **不是**受管檔(consumer 會填 placeholder、會改),sync 不碰。
+  5. **出貨覆蓋改成分管道**:`shipping-coverage` 對每個該出貨的檔,分別斷言 npx 有沒有、sync 有沒有;兩邊都該有卻只有一邊 → 紅。已知缺口改成分管道登記。
+  6. **工單樣板搬家**:`.orca-brief/TASK.md.template` → `docs/templates/TASK.md.template`(`.orca-brief/` 在上游是協調紀錄、在 consumer 是 gitignored 工作區,P-95);規則層引用由技術顧問同批改。
+  7. **ADR-018 四常駐角色**(cron、Monitor、SendMessage、ListAgents)短期**只在 Claude Code 跑**;worker 本來就是 Codex,不受影響。`docs/session-prompts/` 裡的平台專用段落同樣用第 3 點的標記。
+- **Alternatives**: B 只加一份指向 `CLAUDE.md` 的短 `AGENTS.md`(Codex 要自己去讀,不保證每次都讀,且拿不到 skill;漏讀時沒有任何東西會紅)。`CLAUDE.md` 當正本、`AGENTS.md` 引用它(Codex 不展開 `@` 引用,等於 Codex 讀到空殼)。skill 用 symlink(npm pack 丟棄、Windows 需要權限)。skill 在 build 時才產生(審核與 repo 本身看不到 Codex 會讀到什麼)。對 `.md` 硬套 SOURCE 標頭(破壞 frontmatter)。
+- **Consequences**: 一份規則、兩個平台;Codex 使用者第一次拿到完整規則與 skill;#23 一起解掉。代價:改 `.claude/skills/` 必須同時更新鏡像(有檢查兜底);`sync-gates.sh` 多一類受管檔與安裝紀錄的讀寫,是 consumer 介面的擴充(不改既有 SOURCE 契約);147 處引用中活的那些要改指向 `AGENTS.md`,歷史紀錄(CHANGELOG、PITFALLS、MAILBOX、dispatch、已批示)保持原文不改。
+- **Related**: ADR-018, ADR-019, DECISIONS_NEEDED #23, #32, `scripts/shipping-coverage.test.ts`, `scripts/sync-gates.sh`, `package/src/cli.mjs`, `package/payload-manifest.json`, PITFALLS P-95/P-96
+
+---
+
 ## 待決(不影響開工)
 
 | 項目 | 需在何時前決定 | 阻擋什麼 |
