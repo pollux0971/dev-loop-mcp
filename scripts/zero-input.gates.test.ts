@@ -58,6 +58,8 @@ import { join, resolve } from 'node:path';
 
 const SCRIPTS_DIR = import.meta.dirname;
 const SPAWN_TIMEOUT_MS = 60_000;
+const NEW_PROJECT_MESSAGE =
+  '新專案剛完成初始化,目前沒有任何 features/NN-name 資料夾;這不是掃描器錯誤,下一步請依 README 建立第一個 features/01-xxx/';
 
 /** 沒有 `--root` 旗標的 gate,連同「為什麼沒有」——每一項都要有理由,不能只是清單。 */
 const NO_ROOT_FLAG: Record<string, string> = {
@@ -277,16 +279,16 @@ describe('check-dag 的零輸入語意', () => {
     }
   });
 
-  it('只有 features/_template/ 的全新 repo → 印「沒有 phase」、exit 0', () => {
+  it('只有 features/_template/ 的全新 repo → 印新專案訊息、exit 1', () => {
     const root = makeTempDir('lc-zero-input-dag-template-');
     writeRaw(root, 'features/_template/FEATURE.md', '# template\n');
     writeRaw(root, 'features/_template/NEXT.md', '# template next\n');
 
     const { code, output } = run('check-dag.ts', root);
 
-    expect(code).toBe(0);
-    expect(output).toContain('沒有 phase');
-    expect(output).toContain('gate=dag result=PASS scanned=0');
+    expect(code).toBe(1);
+    expect(output).toContain(NEW_PROJECT_MESSAGE);
+    expect(output).toContain('gate=dag result=FAIL scanned=0');
     assertNoBareStack(output);
   });
 });
