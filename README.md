@@ -114,7 +114,7 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 ```bash
 mkdir my-project && cd my-project
 git init
-npx github:pollux0971/dev-paradigm#npx-v1.9.0 init .
+npx github:pollux0971/dev-paradigm#npx-v1.10.0 init .
 ```
 
 - 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
