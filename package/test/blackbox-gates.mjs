@@ -12,7 +12,11 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, "..");
 const MANIFEST_FILE = path.join(PACKAGE_ROOT, "payload-manifest.json");
 const SOURCE_HEADER = /^(\/\/|#) SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}/;
 const PLACEHOLDER = /\{\{[^{}\n]+\}\}/g;
-const TRANSPORT_ALIAS = new Map([[".gitignore", "gitignore"], [".npmrc", "npmrc"]]);
+const TRANSPORT_ALIAS = (payloadPath) => {
+  const basename = path.posix.basename(payloadPath);
+  if (basename !== ".gitignore" && basename !== ".npmrc") return payloadPath;
+  return path.posix.join(path.posix.dirname(payloadPath), basename.slice(1));
+};
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function sorted(values) { return [...values].sort(); }
@@ -54,7 +58,10 @@ async function expandManifest(sourceRoot, manifest) {
   const paths = [];
   for (const entry of manifest.payload ?? []) {
     let root = path.resolve(sourceRoot, entry.root);
-    if (entry.root === ".gitignore" && !await isFile(root)) root = path.resolve(sourceRoot, "gitignore");
+    if (!await isFile(root)) {
+      const transportPath = TRANSPORT_ALIAS(entry.root);
+      if (transportPath !== entry.root) root = path.resolve(sourceRoot, transportPath);
+    }
     if (await isFile(root)) {
       paths.push(entry.root);
       continue;
@@ -121,6 +128,21 @@ async function packArtifact() {
   const temp = await makeTemp("pack");
   const repo = path.join(temp, "repo");
   await copyRepo(repo);
+  const transportFixture = {
+    path: "package/test/fixtures/transport/nested/.gitignore",
+    body: "fixture-only/\n",
+  };
+  const fixtureFile = path.join(repo, transportFixture.path);
+  await fs.mkdir(path.dirname(fixtureFile), { recursive: true });
+  await fs.writeFile(fixtureFile, transportFixture.body);
+  const manifestFile = path.join(repo, "package", "payload-manifest.json");
+  const manifest = JSON.parse(await fs.readFile(manifestFile, "utf8"));
+  manifest.payload.push({
+    root: transportFixture.path,
+    include: [transportFixture.path],
+    purpose: "test-only nested .gitignore transport alias fixture",
+  });
+  await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
   const artifactDir = path.join(temp, "artifacts");
   await fs.mkdir(artifactDir);
   const result = await run("npm", ["pack", "--json", "--pack-destination", artifactDir], { cwd: path.join(repo, "package") });
@@ -128,7 +150,7 @@ async function packArtifact() {
   const metadata = JSON.parse(result.stdout);
   const tarball = path.join(artifactDir, metadata[0].filename);
   assert.ok(await isFile(tarball), `npm pack did not create ${tarball}`);
-  return { temp, repo, tarball, packageDir: path.join(repo, "package"), metadata: metadata[0] };
+  return { temp, repo, tarball, packageDir: path.join(repo, "package"), metadata: metadata[0], transportFixture };
 }
 
 async function tarEntries(tarball) {
@@ -144,7 +166,7 @@ async function unpack(tarball, destination) {
   return path.join(destination, "package");
 }
 
-function payloadArchivePath(payloadPath) { return `dist/template/${TRANSPORT_ALIAS.get(payloadPath) ?? payloadPath}`; }
+function payloadArchivePath(payloadPath) { return `dist/template/${TRANSPORT_ALIAS(payloadPath)}`; }
 
 function excluded(payloadPath, excludes) {
   return excludes.some((pattern) => {
@@ -153,16 +175,20 @@ function excluded(payloadPath, excludes) {
   });
 }
 
-async function gateTarball(artifact) {
+async function artifactData(artifact) {
   const manifest = JSON.parse(await fs.readFile(path.join(artifact.packageDir, "payload-manifest.json"), "utf8"));
   const payload = await expandManifest(path.resolve(artifact.repo), manifest);
+  return { manifest, payload };
+}
+
+async function gateTarball(artifact, manifest, payload) {
   const expected = sorted(["README.md", "package.json", "payload-manifest.json", "src/cli.mjs", ...payload.map(payloadArchivePath)]);
   const actual = sorted(await tarEntries(artifact.tarball));
   assert.deepEqual(actual, expected, `tarball path multiset differs (expected ${expected.length}, actual ${actual.length})`);
   for (const payloadPath of payload) {
     assert.equal(excluded(payloadPath, manifest.exclude ?? []), false, `manifest payload hits exclude: ${payloadPath}`);
     const archivePath = payloadArchivePath(payloadPath);
-    const staged = path.join(artifact.packageDir, "dist", "template", TRANSPORT_ALIAS.get(payloadPath) ?? payloadPath);
+    const staged = path.join(artifact.packageDir, "dist", "template", TRANSPORT_ALIAS(payloadPath));
     const archive = await runRaw("tar", ["-xOzf", artifact.tarball, `package/${archivePath}`]);
     assert.equal(archive.code, 0, `cannot read tarball member ${archivePath}`);
     assert.equal(sha256(archive.stdout), sha256(await fs.readFile(staged)), `tarball bytes differ: ${archivePath}`);
@@ -172,6 +198,52 @@ async function gateTarball(artifact) {
     if (payloadPath) assert.equal(excluded(payloadPath, manifest.exclude ?? []), false, `tarball member hits exclude: ${payloadPath}`);
   }
   return { manifest, payload };
+}
+
+async function assertInstalledBytes(target, sourceRoot, relative, label) {
+  const installed = path.join(target, relative);
+  assert.ok(await isFile(installed), `${label}: missing installed path ${relative}`);
+  assert.deepEqual(
+    await fs.readFile(installed),
+    await fs.readFile(path.join(sourceRoot, relative)),
+    `${label}: bytes differ: ${relative}`,
+  );
+}
+
+async function gateTransportAlias(artifact, payload) {
+  const fixturePath = artifact.transportFixture.path;
+  assert.ok(payload.includes(fixturePath), `nested alias fixture was not included in payload: ${fixturePath}`);
+  assert.notEqual(path.posix.dirname(fixturePath), ".", "transport fixture must be nested");
+  assert.equal(TRANSPORT_ALIAS(".gitignore"), "gitignore", "root .gitignore alias regressed");
+  assert.equal(TRANSPORT_ALIAS(".npmrc"), "npmrc", "root .npmrc alias regressed");
+  assert.equal(
+    TRANSPORT_ALIAS(fixturePath),
+    "package/test/fixtures/transport/nested/gitignore",
+    "nested .gitignore must use its basename, not a literal path list",
+  );
+
+  const rootExtracted = await makeTemp("transport-root-alias");
+  const rootPackageDir = await unpack(artifact.tarball, rootExtracted);
+  const rootManifestFile = path.join(rootPackageDir, "payload-manifest.json");
+  const rootManifest = JSON.parse(await fs.readFile(rootManifestFile, "utf8"));
+  rootManifest.payload = rootManifest.payload.filter((entry) => entry.root !== fixturePath);
+  await fs.writeFile(rootManifestFile, `${JSON.stringify(rootManifest, null, 2)}\n`);
+  const rootTarget = path.join(rootExtracted, "consumer");
+  await fs.mkdir(rootTarget);
+  const rootInit = await run(process.execPath, [path.join(rootPackageDir, "src", "cli.mjs"), "init", rootTarget]);
+  assert.equal(rootInit.code, 0, `root transport alias init failed:\n${output(rootInit)}`);
+  for (const payloadPath of [".gitignore", ".npmrc"]) {
+    await assertInstalledBytes(rootTarget, artifact.repo, payloadPath, "root transport alias install");
+  }
+  console.log("✓ root transport aliases PASS");
+
+  const extracted = await makeTemp("transport-alias");
+  const packageDir = await unpack(artifact.tarball, extracted);
+  const target = path.join(extracted, "consumer");
+  await fs.mkdir(target);
+  const init = await run(process.execPath, [path.join(packageDir, "src", "cli.mjs"), "init", target]);
+  assert.equal(init.code, 0, `transport alias init failed:\n${output(init)}`);
+  await assertInstalledBytes(target, artifact.repo, fixturePath, "nested transport alias install");
 }
 
 async function snapshot(root) {
@@ -379,14 +451,21 @@ async function probeRollback(artifact, payload) {
 async function main() {
   const probe = process.argv.find((arg) => arg.startsWith("--probe="))?.slice("--probe=".length);
   const only = process.argv.find((arg) => arg.startsWith("--gate="))?.slice("--gate=".length);
+  assert.ok(only === undefined || ["transport-alias", "tarball", "clean-init", "conflict", "reinstall", "rollback"].includes(only), `unknown gate: ${only}`);
   const artifact = await packArtifact();
-  const { manifest, payload } = await gateTarball(artifact);
+  const { manifest, payload } = await artifactData(artifact);
+  if (only === "transport-alias") {
+    await gateTransportAlias(artifact, payload);
+    console.log("✓ gate transport-alias PASS");
+    return;
+  }
+  await gateTransportAlias(artifact, payload);
+  await gateTarball(artifact, manifest, payload);
   if (probe === "tarball") return probeTarball(artifact, manifest, payload);
   if (probe === "clean-init") return probeCleanInit(artifact, manifest, payload);
   if (probe === "conflict") return probeConflict(artifact);
   if (probe === "rollback") return probeRollback(artifact, payload);
   assert.equal(probe, undefined, `unknown probe: ${probe}`);
-  assert.ok(only === undefined || ["tarball", "clean-init", "conflict", "reinstall", "rollback"].includes(only), `unknown gate: ${only}`);
   if (only === "tarball") { console.log("✓ gate tarball-multiset PASS"); return; }
   if (only === "clean-init") { await gateCleanInit(artifact, manifest, payload); console.log("✓ gate clean-init PASS"); return; }
   if (only === "conflict") { await gateConflict(artifact); console.log("✓ gate conflict-zero-write PASS"); return; }
@@ -395,13 +474,14 @@ async function main() {
   await gateCleanInit(artifact, manifest, payload);
   await gateConflict(artifact);
   await gateRollback(artifact, payload);
+  console.log("✓ gate transport-alias PASS");
   console.log("✓ gate tarball-multiset PASS");
   console.log("✓ gate clean-init PASS");
   console.log("✓ gate conflict-zero-write PASS");
   await gateReinstall(artifact);
   console.log("✓ gate reinstall-preserves-user-edits PASS");
   console.log("✓ gate rollback-two-failures PASS (n=1, late)");
-  console.log("✓ blackbox gates PASS (5/5)");
+  console.log("✓ blackbox gates PASS (6/6)");
 }
 
 main().catch((error) => {
