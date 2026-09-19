@@ -18,7 +18,14 @@
       "include": [
         "CLAUDE.md"
       ],
-      "purpose": "【驗】consumer 的規則層與決策權表骨架。"
+      "purpose": "【驗】consumer 的 Claude Code 入口(第一行 @AGENTS.md,展開讀規則正本)。"
+    },
+    {
+      "root": "AGENTS.md",
+      "include": [
+        "AGENTS.md"
+      ],
+      "purpose": "【驗】ADR-020:規則正本,Claude Code 與 Codex 共用(consumer 的決策權表骨架在這裡,不在 CLAUDE.md)。"
     },
     {
       "root": "CHECKLIST.md",
