@@ -86,7 +86,7 @@ const KNOWN_GAPS: Record<string, { decision: number; reason: string }> = {
   'docs/templates/TASK.md.template': {
     decision: 23,
     reason:
-      '工單樣板應該出貨但兩個管道都沒送。sync 送不了 .md(SOURCE 標頭格式是兩個出貨管道共用的契約),且依 P-95 落點也不該是 docs/templates/;搬家要改規則層引用。',
+      '樣板已搬到 `docs/templates/`(P-95);工單樣板應該出貨但兩個管道都沒送——sync 送不了 `.md`(SOURCE 標頭格式是兩個出貨管道共用的契約);仍待 `#23` 讓 sync 也出貨。',
   },
   'scripts/py/.gitignore': {
     decision: 23,
