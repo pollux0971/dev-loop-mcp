@@ -17,6 +17,8 @@ CONSUMER2=""
 HOTFIX_NEW_CONSUMER=""
 HOTFIX_OLD_CONSUMER=""
 HOTFIX_LIST_CONSUMER=""
+HOTFIX_ROUTE_CONSUMER=""
+HOTFIX_VALID_ROUTE_CONSUMER=""
 
 cleanup() {
   [ -n "$CONSUMER" ] && [ -d "$CONSUMER" ] && rm -rf "$CONSUMER"
@@ -24,6 +26,8 @@ cleanup() {
   [ -n "$HOTFIX_NEW_CONSUMER" ] && [ -d "$HOTFIX_NEW_CONSUMER" ] && rm -rf "$HOTFIX_NEW_CONSUMER"
   [ -n "$HOTFIX_OLD_CONSUMER" ] && [ -d "$HOTFIX_OLD_CONSUMER" ] && rm -rf "$HOTFIX_OLD_CONSUMER"
   [ -n "$HOTFIX_LIST_CONSUMER" ] && [ -d "$HOTFIX_LIST_CONSUMER" ] && rm -rf "$HOTFIX_LIST_CONSUMER"
+  [ -n "$HOTFIX_ROUTE_CONSUMER" ] && [ -d "$HOTFIX_ROUTE_CONSUMER" ] && rm -rf "$HOTFIX_ROUTE_CONSUMER"
+  [ -n "$HOTFIX_VALID_ROUTE_CONSUMER" ] && [ -d "$HOTFIX_VALID_ROUTE_CONSUMER" ] && rm -rf "$HOTFIX_VALID_ROUTE_CONSUMER"
 }
 trap cleanup EXIT
 
@@ -525,6 +529,44 @@ else
     echo "$list_empty_out"
     echo "--- 兩筆 HOTFIX 實際輸出尾端 ---"
     echo "$list_tail"
+    echo "--- 輸出結束 ---"
+  fi
+fi
+
+echo
+echo "== 步驟 16(修補記錄第二輪,leg 2r2):HOTFIX 回流去向白名單下限 =="
+HOTFIX_ROUTE_CONSUMER="$(make_hotfix_consumer || true)"
+if [ -z "$HOTFIX_ROUTE_CONSUMER" ]; then
+  fail "普通英文字回流去向 fixture 建立成功"
+else
+  route_file="$HOTFIX_ROUTE_CONSUMER/scripts/check-boundaries.ts"
+  add_hotfix_fixture "$route_file" "// HOTFIX: ${hotfix_today} forgot ordinary-word-route"
+  route_out="$("$SYNC_GATES" "$HOTFIX_ROUTE_CONSUMER" scripts --check 2>&1)"
+  route_code=$?
+  if [ "$route_code" = "1" ] && contains_text "$route_out" "HOTFIX 行缺回流去向"; then
+    pass "普通英文字作為回流去向時 --check 紅且印出缺回流去向訊息"
+  else
+    fail "普通英文字作為回流去向時 --check 紅且印出缺回流去向訊息"
+    echo "--- 普通英文字回流去向實際輸出(exit $route_code) ---"
+    echo "$route_out"
+    echo "--- 輸出結束 ---"
+  fi
+fi
+
+HOTFIX_VALID_ROUTE_CONSUMER="$(make_hotfix_consumer || true)"
+if [ -z "$HOTFIX_VALID_ROUTE_CONSUMER" ]; then
+  fail "有效回流去向 fixture 建立成功"
+else
+  valid_route_file="$HOTFIX_VALID_ROUTE_CONSUMER/scripts/check-boundaries.ts"
+  add_hotfix_fixture "$valid_route_file" "// HOTFIX: ${hotfix_today} DECISIONS-14 valid-route"
+  valid_route_out="$("$SYNC_GATES" "$HOTFIX_VALID_ROUTE_CONSUMER" scripts --check 2>&1)"
+  valid_route_code=$?
+  if [ "$valid_route_code" = "0" ] && contains_text "$valid_route_out" "DECISIONS-14"; then
+    pass "有效回流去向 DECISIONS-14 仍允許 24 小時內 HOTFIX"
+  else
+    fail "有效回流去向 DECISIONS-14 仍允許 24 小時內 HOTFIX"
+    echo "--- 有效回流去向實際輸出(exit $valid_route_code) ---"
+    echo "$valid_route_out"
     echo "--- 輸出結束 ---"
   fi
 fi
