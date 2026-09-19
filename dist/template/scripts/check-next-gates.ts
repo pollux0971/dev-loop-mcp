@@ -12,7 +12,7 @@
  *   - 整合點 `I<N>`,要在 `docs/01-roadmap.md` 的 `## I<N> · ...` 標題出現,或
  *     `docs/integration/` 底下任何檔名前綴是 `i<N>`(大小寫不拘)的檔案。
  *   - phase 參照,四種寫法都算(取每個 features 資料夾底下 NEXT.md 實際觀察到的寫法,
- *     不是憑空只認一種):
+ *     不是憑空只認一種);phase 編號可帶一個小寫字母後綴,例如 `phase-2b`:
  *       1. `<NN-name>/phase-N`(完整資料夾名,規格明講的形式)
  *       2. `NN phase-N`(只寫兩位數字,不寫完整資料夾名——這是實際最常見的寫法,
  *          例如「01 phase-2 與 phase-3 done」「跨資料夾:03 phase-2 done」)
@@ -22,7 +22,7 @@
  *     不管哪種寫法,都要求對到的 `features/<folder>/FEATURE.md` 存在,且它的 Phase
  *     表(唯一狀態來源)有那個 phase 的表格列。
  *
- * gate 的形狀:每份 NEXT.md 用 `**phase-N** 需要:` 開一個 gate 段落。段落開頭那一行
+ * gate 的形狀:每份 NEXT.md 用 `**phase-N**` 或 `**phase-Na**` 需要:開一個 gate 段落。段落開頭那一行
  * 後面可能緊接著內容(一整行就是一條 gate 宣告,例如「**phase-4** 需要:phase-3
  * `done`、05 phase-3 `done`、**I4 通過**」),也可能是空的、後面接一串 `- [ ]` /
  * `- [x]` checklist(checklist 每一項各自是一條 gate 宣告)。已經打勾(`[x]`)、已經寫
@@ -103,24 +103,161 @@ export interface FeaturePhaseRow {
   status: string;
 }
 
+interface PhaseWarningContext {
+  emittedKeys: Set<string>;
+}
+
+// `check-dag.ts` imports the phase parser and calls it without a run context,
+// so keep a compatibility context for those calls. `check-next-gates` passes
+// a fresh context from its own main() instead; the two scanners therefore
+// cannot suppress one another's warnings when loaded in the same process.
+const defaultPhaseWarningContext: PhaseWarningContext = { emittedKeys: new Set() };
+
+function emitPhaseWarning(context: PhaseWarningContext, key: string, message: string): void {
+  if (context.emittedKeys.has(key)) return;
+  context.emittedKeys.add(key);
+  console.log(message);
+}
+
 /** 讀出 FEATURE.md 的 phase 表，供引用解析與 DAG 狀態判斷共用。 */
-export function readFeaturePhaseRows(root: string, folder: string): FeaturePhaseRow[] {
+export function readFeaturePhaseRows(
+  root: string,
+  folder: string,
+  context: PhaseWarningContext = defaultPhaseWarningContext,
+): FeaturePhaseRow[] {
   const featurePath = join(root, 'features', folder, 'FEATURE.md');
   if (!existsSync(featurePath)) return [];
   const content = readFileSync(featurePath, 'utf8');
-  const rows: FeaturePhaseRow[] = [];
-  for (const line of content.split('\n')) {
-    if (!line.trim().startsWith('|')) continue;
-    const cells = line.split('|').map((c) => c.trim());
-    if (cells[1] === undefined) continue;
-    const status = cells.find((cell) => /^(?:todo|ready|in-progress|done|blocked)(?:\s|$)/i.test(cell.replace(/[`*_]/g, '').trim())) ?? cells[4] ?? '';
-    rows.push({ phase: cells[1], status });
+  const lines = content.split('\n');
+  const phaseHeading = lines.findIndex((line) => /^##\s+Phase\s*$/i.test(line.trim()));
+  if (phaseHeading < 0) return [];
+
+  const sectionEnd = lines.findIndex(
+    (line, index) => index > phaseHeading && /^#{1,2}(?:\s|$)/.test(line.trim()),
+  );
+  const end = sectionEnd < 0 ? lines.length : sectionEnd;
+
+  const parseCells = (line: string): string[] | undefined => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|')) return undefined;
+    const cells = trimmed.split('|').map((cell) => cell.trim());
+    if (cells[0] === '') cells.shift();
+    if (cells[cells.length - 1] === '') cells.pop();
+    return cells;
+  };
+
+  const cleanCell = (cell: string): string => cell.replace(/[`*_]/g, '').trim();
+  const isSeparatorRow = (cells: string[]): boolean =>
+    cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
+  const isPhaseHeader = (cells: string[]): boolean => {
+    const phaseIndex = cells.findIndex((cell) => cleanCell(cell).toLowerCase() === 'phase');
+    const statusIndex = cells.findIndex((cell) => cleanCell(cell) === '狀態');
+    return phaseIndex === 0 && statusIndex >= 0;
+  };
+  const isTableHeader = (index: number): boolean => {
+    const cells = parseCells(lines[index] ?? '');
+    const separator = parseCells(lines[index + 1] ?? '');
+    return (
+      cells !== undefined &&
+      separator !== undefined &&
+      isSeparatorRow(separator) &&
+      !/^\d+[a-z]?$/i.test(cleanCell(cells[0] ?? ''))
+    );
+  };
+
+  // AI_KM 的 FEATURE.md 會在 phase 列之間插入驗收說明，所以不能只讀連續的
+  // Markdown 行；但必須先鎖定 `## Phase` 下、表頭含「狀態」的那張表，避免
+  // 同一份檔案後面的需求表(`| # | ... |`)把數字需求誤當成 phase。
+  let headerIndex = -1;
+  let phaseColumn = -1;
+  let statusColumn = -1;
+  for (let index = phaseHeading + 1; index < end - 1; index++) {
+    const cells = parseCells(lines[index] ?? '');
+    const separator = parseCells(lines[index + 1] ?? '');
+    if (
+      cells === undefined ||
+      separator === undefined ||
+      !isSeparatorRow(separator) ||
+      !isPhaseHeader(cells)
+    ) {
+      continue;
+    }
+    headerIndex = index;
+    phaseColumn = cells.findIndex((cell) => cleanCell(cell).toLowerCase() === 'phase');
+    statusColumn = cells.findIndex((cell) => cleanCell(cell) === '狀態');
+    break;
   }
+  if (headerIndex < 0 || phaseColumn < 0 || statusColumn < 0) return [];
+
+  const rows: FeaturePhaseRow[] = [];
+  const rowLineNos = new Map<string, number[]>();
+  const firstRows = new Map<string, FeaturePhaseRow>();
+  const knownStatuses = /^(todo|ready|in-progress|done|blocked)(?=$|\s|[（(])/i;
+  const fileLabel = `features/${folder}/FEATURE.md`;
+
+  for (let index = headerIndex + 2; index < end; index++) {
+    if (isTableHeader(index)) {
+      // AI_KM 會在 phase 列之間插入別的 Markdown 表；跳過那張表的連續資料列，
+      // 但回到同一個 `## Phase` 區段後仍繼續找 phase 列(phase-4 之後的列就是
+      // 這種形狀)。這比遇到任何表頭就把整個 phase 區段截斷更符合既有文件。
+      let next = index + 2;
+      while (next < end && parseCells(lines[next] ?? '') !== undefined) next++;
+      index = next - 1;
+      continue;
+    }
+    const cells = parseCells(lines[index] ?? '');
+    if (cells === undefined) continue;
+
+    const phase = cleanCell(cells[phaseColumn] ?? '');
+    if (!/^\d+[a-z]?$/i.test(phase)) continue;
+
+    const lineNo = index + 1;
+    const statusCell = cells[statusColumn]?.trim() ?? '';
+    const statusValue = cleanCell(statusCell);
+    const statusMatch = knownStatuses.exec(statusValue);
+    const status = statusMatch ? statusMatch[1]!.toLowerCase() : statusCell;
+    if (!statusMatch) {
+      const displayedStatus = statusValue || '空白';
+      const message =
+        `⚠ 警告 ${fileLabel}: 第 ${lineNo} 行 phase-${phase} 的狀態「${displayedStatus}」不是已知值(done/todo/in-progress/blocked/ready)`;
+      emitPhaseWarning(
+        context,
+        `${fileLabel}:${lineNo}:${message}`,
+        message,
+      );
+    }
+
+    const lineNos = rowLineNos.get(phase) ?? [];
+    lineNos.push(lineNo);
+    rowLineNos.set(phase, lineNos);
+    if (firstRows.has(phase)) continue;
+
+    const row = { phase, status };
+    firstRows.set(phase, row);
+    rows.push(row);
+  }
+
+  for (const [phase, lineNos] of rowLineNos) {
+    if (lineNos.length < 2) continue;
+    const message =
+      `⚠ 警告 ${fileLabel}: phase-${phase} 重複,出現在第 ${lineNos.join('、')} 行;取第 ${lineNos[0]} 行`;
+    emitPhaseWarning(
+      context,
+      `${fileLabel}:${lineNos[0]}:${message}`,
+      message,
+    );
+  }
+
   return rows;
 }
 
-function phaseRowExists(root: string, folder: string, phaseNum: string): boolean {
-  return readFeaturePhaseRows(root, folder).some((row) => row.phase === phaseNum);
+function phaseRowExists(
+  root: string,
+  folder: string,
+  phaseNum: string,
+  context: PhaseWarningContext,
+): boolean {
+  return readFeaturePhaseRows(root, folder, context).some((row) => row.phase === phaseNum);
 }
 
 function findFolderByPrefix(root: string, prefix: string): string | undefined {
@@ -220,7 +357,7 @@ export function collectFeatureFolders(root: string): string[] {
   });
 }
 
-const HEADER_RE = /^\*\*phase-(\d+)(?:\s*\([^\)\r\n]*\))?\*\*\s*需要(?:\s*全部滿足)?\s*[：:]?\s*(.*)$/;
+const HEADER_RE = /^\*\*phase-(\d+[a-z]?)(?:\s*\([^\)\r\n]*\))?\*\*\s*需要(?:\s*全部滿足)?\s*[：:]?\s*(.*)$/;
 const BULLET_RE = /^-\s*\[([ xX])\]\s*(.*)$/;
 const CONTINUATION_RE = /^\s{2,}\S/;
 const NEXT_GATE_SECTION_RE = /^##\s+下一個 phase 的 gate\s*$/;
@@ -405,6 +542,7 @@ export function parseGateReferences(
   folder: string,
   text: string,
   resolvers: Resolvers,
+  context: PhaseWarningContext = defaultPhaseWarningContext,
 ): GateReference[] {
   let working = text;
   const references: GateReference[] = [];
@@ -434,48 +572,48 @@ export function parseGateReferences(
     return ' '.repeat(m.length);
   });
 
-  working = working.replace(/\b(\d{2}-[A-Za-z0-9-]+)\/phase-(\d+)\b/g, (m, folderName: string, phaseNum: string) => {
+  working = working.replace(/\b(\d{2}-[A-Za-z0-9-]+)\/phase-(\d+[a-z]?)\b/g, (m, folderName: string, phaseNum: string) => {
     references.push({
       kind: 'phase',
       token: `${folderName}/phase-${phaseNum}`,
       folder: folderName,
       phaseNum,
-      resolved: phaseRowExists(root, folderName, phaseNum),
+      resolved: phaseRowExists(root, folderName, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
 
-  working = working.replace(/`(\d{2}-[A-Za-z0-9-]+)`[ \t]+phase-(\d+)\b/g, (m, folderName: string, phaseNum: string) => {
+  working = working.replace(/`(\d{2}-[A-Za-z0-9-]+)`[ \t]+phase-(\d+[a-z]?)\b/g, (m, folderName: string, phaseNum: string) => {
     references.push({
       kind: 'phase',
       token: m,
       folder: folderName,
       phaseNum,
-      resolved: phaseRowExists(root, folderName, phaseNum),
+      resolved: phaseRowExists(root, folderName, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
 
-  working = working.replace(/\b(\d{2})\s+phase-(\d+)\b/g, (m, prefix: string, phaseNum: string) => {
+  working = working.replace(/\b(\d{2})\s+phase-(\d+[a-z]?)\b/g, (m, prefix: string, phaseNum: string) => {
     const target = findFolderByPrefix(root, prefix);
     references.push({
       kind: 'phase',
       token: `${prefix} phase-${phaseNum}`,
       folder: target ?? prefix,
       phaseNum,
-      resolved: target !== undefined && phaseRowExists(root, target, phaseNum),
+      resolved: target !== undefined && phaseRowExists(root, target, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
 
   // 剩下沒被上面兩條吃掉的、單獨的 phase-N:視為「自身」,指這份 NEXT.md 所屬的資料夾。
-  working = working.replace(/\bphase-(\d+)\b/g, (m, phaseNum: string) => {
+  working = working.replace(/\bphase-(\d+[a-z]?)\b/g, (m, phaseNum: string) => {
     references.push({
       kind: 'phase',
       token: `phase-${phaseNum}(自身:${folder})`,
       folder,
       phaseNum,
-      resolved: phaseRowExists(root, folder, phaseNum),
+      resolved: phaseRowExists(root, folder, phaseNum, context),
     });
     return ' '.repeat(m.length);
   });
@@ -492,8 +630,14 @@ export function parseGateReferences(
   return references;
 }
 
-function checkCitations(root: string, folder: string, text: string, resolvers: Resolvers): CitationCheck {
-  const references = parseGateReferences(root, folder, text, resolvers);
+function checkCitations(
+  root: string,
+  folder: string,
+  text: string,
+  resolvers: Resolvers,
+  context: PhaseWarningContext,
+): CitationCheck {
+  const references = parseGateReferences(root, folder, text, resolvers, context);
   return {
     found: references.length > 0,
     resolved: references.some((reference) => reference.resolved),
@@ -525,6 +669,7 @@ function main(): void {
   }
 
   const resolvers = loadResolvers(ROOT);
+  const warningContext: PhaseWarningContext = { emittedKeys: new Set() };
 
   const allGateLines: GateLine[] = [];
   const orphanChecklistWarnings: Array<{ file: string; lineNos: number[] }> = [];
@@ -545,7 +690,7 @@ function main(): void {
 
   let failures = 0;
   for (const g of allGateLines) {
-    const check = checkCitations(ROOT, g.folder, g.text, resolvers);
+    const check = checkCitations(ROOT, g.folder, g.text, resolvers, warningContext);
     if (!check.found) {
       failures++;
       console.log(`✗ ${g.file}:${g.lineNo}  gate 沒有引用 ADR/commit/§/IN/phase:${g.text}`);

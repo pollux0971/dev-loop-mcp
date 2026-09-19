@@ -46,7 +46,7 @@ function commitAll(root: string, message: string): string {
   return r.stdout.trim();
 }
 
-function writeFeature(root: string, folder: string, phases: { n: number; status: string }[]): void {
+function writeFeature(root: string, folder: string, phases: { n: number | string; status: string }[]): void {
   const rows = phases
     .map((p) => `| ${p.n} | phase-${p.n} | 測試 phase-${p.n} | Wave 0 | ${p.status} |  |`)
     .join('\n');
@@ -189,11 +189,80 @@ const AI_KM_AUTHORIZATION_PHASE_2_GATE = [
   '- [ ] 整合:I6(admin 的部門／群組頁接真 API)',
 ].join('\n');
 
+// 逐字照抄 /data/python/AI_KM/features/05-ingestion/NEXT.md 的第 40–52 行:
+// 真實的 phase-2b gate。這個 fixture 的重點是 header 與 phase 表節點都帶小寫
+// 字母後綴；舊程式會把整段 gate 靜默跳過，且不會建立 05 phase-2b 節點。
+const AI_KM_INGESTION_PHASE_2B_GATE = [
+  '## phase-2b 的 gate(2026-09-05 新增,顧問裁決)',
+  '',
+  '**phase-2b(`pnpm dev` 起來時 fixture 已在索引裡)** 需要:',
+  '',
+  '- [x] 自身:phase-2 `done`(2026-09-05)',
+  '- [x] 方向已裁:**旗標 seeder**(`AI_KM_DEV_SEED_FIXTURE=1`,由 `apps/api` 的 `dev` script 帶)。',
+  '      顧問否決了另外兩條:**HTTP 上傳是 I4 的交付**(`knowledge.yaml`、`08` phase-2),',
+  '      拉進 I2 就是跳整合點;**sqlite-vec(`06-retrieval/phase-3`)拉前面**才是真的「一條 CLI」,',
+  '      但它同時改變「第二個 server 是空的」的語意(檔案共享),**那是 06 phase-3 自己該重寫的場景**,',
+  '      不在 I2 中途做。',
+  '- [x] 實作約束(顧問指定):seeder **必須走與測試步驟同一條 `app.ingestion` 路徑**,',
+  '      不另開程式碼路徑;啟動時 **log 印出索引了哪份文件、幾個 chunk**,讓使用者看得到 store 不是空的;',
+  '      `NODE_ENV=production` 加旗標 → **拒絕啟動**,照 `apps/api/src/config.ts` 既有',
+  '      `AI_KM_DEV_TRIGGERS`/`AI_KM_TEST_SANDBOX` 的形狀與措辭,理由寫',
+  '      「**它把固定 fixture 塞進生產索引**」。',
+].join('\n');
+
+// 逐字複製 /data/python/AI_KM/features/11-app-shell/FEATURE.md 的 phase 表資料列
+// (第 113 行起至第 327 行的最後一列),再接上同檔第 339–343 行的無關需求表。
+// 這兩張表混在一起是本工單要重現的既有 bug:需求表的 2、3 列會覆寫 phase-2/3,
+// 使 check:dag 印出「11 phase-2 []」與「11 phase-3 []」。
+const AI_KM_APP_SHELL_PHASE_TABLE = [
+  '| Phase | 標題 | 整合點 | 狀態 | 完成日 |',
+  '|---|---|---|---|---|',
+  '| 1 | (回填)導覽可見性、首頁捷徑與時間、M3 token 不漂移與可讀性 | I1 | done | 2026-09-05 |',
+  '| 2 | **問完問題的人點一下答案裡的引用,就看得到它在原文的哪一段;答案沒有 `state` 時畫面保持中性、不假裝那是一個已回答的答案。** | I2 | done | 2026-09-05 |',
+  '| 3 | **一個人在瀏覽器問問題,看到的答案與引用就是伺服器產生的那一則,不是罐頭。** | I2 | done | 2026-09-05 |',
+  '| 3b | **瀏覽器端不再有任何能自己產生助理回覆的碼或型別。** | I2 | done | 2026-09-07 |',
+  '| 4 | **一個人點一下引用,抽屜裡顯示的就是伺服器給的那段原文,不是佔位文字。** | I2 | done | 2026-09-08 |',
+  '| 5 | **一個人把視窗縮到手機寬度,側欄先變成只有圖示的窄軌,再縮就收進要按漢堡鈕才打開的抽屜;而不管在哪個寬度,每一個畫面在沒有資料、載入中、出錯、沒有權限的時候,都用字說得出現在是哪一種,不是一片空白,也不會露出他不該看到的東西。** | 待定 | **done** | 2026-09-13 |',
+  '| 5b | **CI 的瀏覽器層 job 是綠的,而且每個整合點至少一條場景在它裡面跑。** | I2 之後 | todo | |',
+  '| 6 | **一個人看到的答案照它該有的樣子排版,而不是滿螢幕的星號。** | I2 之後 | **done** | 2026-09-12 |',
+].join('\n');
+
+const AI_KM_APP_SHELL_REQUIREMENTS_TABLE = [
+  '| # | 要求 | 為什麼 |',
+  '|---|---|---|',
+  '| 1 | **只渲染助理訊息,不渲染使用者輸入** | 使用者打的 `**` 不該變粗體;**更重要的是把使用者輸入餵進渲染器是典型的注入面**。**這條寫進場景,不只寫進註解** |',
+  '| 2 | **關閉 raw HTML**(不要 `rehype-raw`);相依版本**釘死** | 模型可以吐 `<script>`,而我們正要把它的輸出丟進渲染器 |',
+  '| 3 | **與 `[N]` 引用記號的互動要有場景** | markdown 的 `[text]` 是**連結參考語法**,我們的 `[1]` 會不會被它吃掉、或反過來破壞引用的可點性 —— **這是最可能壞的一處,而且壞了之後答案看起來仍然正常**。場景要斷言:渲染後 `[1]` **仍然可點**,且**點下去打開的是對的那一段** |',
+].join('\n');
+
+const AI_KM_APP_SHELL_FEATURE = [
+  '# 11-app-shell',
+  '',
+  '## Phase',
+  '',
+  AI_KM_APP_SHELL_PHASE_TABLE,
+  '',
+  AI_KM_APP_SHELL_REQUIREMENTS_TABLE,
+  '',
+].join('\n');
+
 afterEach(() => {
   while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
 });
 
 describe('check-dag:PASS 輸出', () => {
+  it('AI_KM 11-app-shell 兩張表混合時 phase-2/3 狀態仍是 done(先寫紅)', () => {
+    const root = makeRepo();
+    write(root, 'features/11-app-shell/FEATURE.md', AI_KM_APP_SHELL_FEATURE);
+    commitAll(root, 'AI_KM app-shell phase table disambiguation regression');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).toContain('11 phase-2 [done]');
+    expect(output).toContain('11 phase-3 [done]');
+  }, SPAWN_TIMEOUT_MS);
+
   it('列出拓撲分層、平行寬度、ready 集合與外部阻擋', () => {
     const root = makeRepo();
     writeDecisionMap(root, ['123']);
@@ -382,6 +451,51 @@ describe('check-dag:環路', () => {
       `features/02-authorization/NEXT.md: 第 ${selfLine} 行 gate 引用了自己(phase-2),已忽略`,
     );
     expect(output).toContain('gate=dag result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+});
+
+describe('check-dag:phase 小寫字母後綴(先寫紅)', () => {
+  it('AI_KM 05-ingestion phase-2b 真實 gate 會建立節點並接上 phase-2 依賴', () => {
+    const root = makeRepo();
+    writeRoadmap(root, [4]);
+    writeFeature(root, '05-ingestion', [
+      { n: 2, status: 'done' },
+      { n: '2b', status: 'todo' },
+    ]);
+    writeNext(root, '05-ingestion', AI_KM_INGESTION_PHASE_2B_GATE);
+    commitAll(root, 'AI_KM ingestion phase-2b regression fixture');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).toContain('gate=dag result=PASS');
+    const layer1 = layerSection(output, 1, 2);
+    expect(layer1).toContain('05 phase-2');
+    expect(layer1).not.toContain('05 phase-2b');
+    const layer2 = layerSection(output, 2);
+    expect(layer2).toContain('05 phase-2b');
+    const ready = outputSection(output, '目前 ready 集合', '被外部阻擋卡住的 phase');
+    expect(ready).toContain('- 05 phase-2b');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('phase-2b ↔ phase-2c 人造環會報出完整閉合路徑', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-suffix', [
+      { n: '2b', status: 'todo' },
+      { n: '2c', status: 'todo' },
+    ]);
+    writeNext(
+      root,
+      '01-suffix',
+      ['## 下一個 phase 的 gate', '', '**phase-2b** 需要:phase-2c', '**phase-2c** 需要:phase-2b'].join('\n'),
+    );
+    commitAll(root, 'suffix phase cycle');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('✗ phase DAG 有環路:01 phase-2b → 01 phase-2c → 01 phase-2b');
+    expect(output).toContain('gate=dag result=FAIL scanned=2');
   }, SPAWN_TIMEOUT_MS);
 });
 

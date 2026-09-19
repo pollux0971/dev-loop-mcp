@@ -4,6 +4,53 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
+## 1.10.0 — 2026-09-19(已發布)
+
+**minor。** 1.9.0 發布(tag `v1.9.0`)之後的第一批變更,不算進已發布的 1.9.0——那個 tag 已經推出去了,
+不能回頭改內容;版本號往前跳一個。發布本身:使用者 2026-09-19 在技術顧問 session 親口「繼續吧」批准
+(`DECISIONS_NEEDED.md` 已批示 #29)。
+
+- **`check:dag`/`check:next-gates` 認得帶字母後綴的 phase**(`phase-2b`、`phase-2c`…)。
+  技術顧問把 1.9.0 的 `check:dag` 給 AI_KM 用時發現:AI_KM 大量使用這種寫法(`05-ingestion` 的
+  `phase-2b`~`2f`),現行解析只認純數字 `phase-N`,這些 phase 完全不會變成節點、依賴也不會被算,
+  ready 集合可能漏列本來該顯示的 phase。修法:phase 識別改成 `phase-<數字><可選小寫字母後綴>`,
+  節點產生、三種既有解析寫法、反引號包資料夾名都認得後綴版本,排序 `2 < 2b < 2c < 3`。
+  分層輸出每個節點標狀態(`done`/`todo`/`in-progress`/`ready`/`blocked`,涵蓋 CLAUDE.md 列的全部
+  5 種),整合點標 `[整合點]`,讓人一眼看出哪些是還要做的。回歸 fixture 逐字複製 AI_KM
+  `features/05-ingestion/NEXT.md` 的 `phase-2b` gate 段落。審核棒獨立重做全部反向驗證(帶後綴的
+  環必須紅並印環路、拿掉帶後綴的真依賴分層要變、純數字真環不受影響仍要紅);merge commit `7488fd2`。
+  **順手必要捆綁修正**:狀態正則不認「`done(自動)`」這種關鍵字後直接接括號的寫法,AI_KM 真實資料
+  大量這樣用,不修的話新的狀態顯示功能在真資料上會顯示錯——審核棒確認這是必要捆綁,不是夾帶。
+  **待辦**(不擋這次合併):「拿掉後綴依賴分層要變」目前只有審核棒手動驗證過,缺專屬回歸測試,
+  列入候選觀察,尚未另開工單。
+- **`roles/README.md` §5「全 gate」補上 `cd package && npm test` 與 `bash scripts/sync-gates.test.sh`**
+  (2026-09-19,技術顧問):1.9.0 發布前的黑箱 gate 漏跑是因為這兩支沒被列進四角色鏈的全 gate 清單,
+  導致 `{{ACTIVE_AGENT_CAP}}` 沒登記進 `CHECKLIST.md` 一路沒被抓到,直到發布前最後手動跑才發現。
+  `dag-suffix-phase` 這輪是新規則第一次真的在候選整合裡跑,兩者都乾淨過關。
+- **phase 表解析只認真正的 phase 表,不被同檔案其他表格污染**(2026-09-19)。技術顧問重驗
+  `dag-suffix-phase` 時拿 AI_KM 真實檔案發現:`readFeaturePhaseRows` 把 `FEATURE.md` 裡每一張表格
+  都當 phase 表讀,同檔案裡另一張無關表(內容需求清單)第一欄剛好也是數字,蓋掉了真正的
+  `phase-2`/`phase-3` 狀態,`check:dag` 印出狀態空白,依賴它們的 phase 被靜默擋在 ready 集合外。
+  修法:phase 列只從「`## Phase` 標題底下、表頭含狀態欄」那張表讀;同一個 phase 編號重複出現印
+  警告、取表格裡那一列;狀態欄讀不出已知值印警告、不靜默當空字串;跳過同一個 `## Phase` 區段內
+  任意多張非 phase 表並恢復掃描(AI_KM `11-app-shell` 的 `phase-3b`/`4` 之間就有這種情況,必要能力)。
+  **過程一次 RETURN**:第一輪審核棒獨立驗證三次都確認程式對,但工單要求的反向驗證斷言沒有任何
+  一棒的 `allowed_paths` 能寫進 `.test.ts`——技術顧問裁決繞回測試棒補斷言,dev 棒的程式不動。
+  第二輪審核棒獨立重做全部驗證、對 AI_KM 全部 12 個 feature 資料夾額外驗證過,多抓到一個真實
+  非標準狀態值案例;merge commit `14b85f3`。規則層順手修:「工單反向驗證要求的斷言要確認有一棒
+  的 `allowed_paths` 涵蓋得到」寫進 `.orca-brief/TASK.md.template`(commit `6a4e851`)。
+- **同一則 phase 表警告一次執行只印一次**(2026-09-19,低優先)。技術顧問重驗
+  `phase-table-disambiguation` 時發現同一則警告印了 7 次——`readFeaturePhaseRows` 被多條 gate 引用
+  重複呼叫,每次都重新印警告。修法:單次執行內以「檔名+行號+訊息」去重,`check-dag.ts` 既有的
+  每資料夾一次行為不受影響。**`.gitignore` 新增 `.orca-brief/*-REPORT.md`**(出貨檔變更,同
+  `.orca-brief/REVIEW.md` 的先例,防止鏈規格棒次的報告檔被誤 commit)。
+  **過程記兩件事,協調者自己的失誤**:①第一版紅測試斷言寫成「斷言現狀」而非「斷言期望」,方向錯了;
+  ②協調者把上一輪才訂的「反向驗證斷言要有棒能寫」規則曲解成「放寬 dev 棒的 `allowed_paths` 含測試檔」,
+  而不是開一棒新的 test 角色——技術顧問核過 diff 只有 1 行,給單次例外不退件。兩條教訓已寫進
+  `.orca-brief/TASK.md.template`(commit `ac7b392`):紅測試斷言期望不斷現狀、dev 棒 `allowed_paths`
+  永遠不含測試檔、工單不准要求 commit 報告。審核棒額外發現 `check-dag.ts` 有一個同形狀的舊 bug 被這次
+  修法意外治好(依賴呼叫順序,非刻意設計),列為未來觀察項;merge commit `813945e`。
+
 ## 1.9.0 — 2026-09-19(已發布)
 
 **minor。** 使用者 2026-09-14 在技術顧問 session 親口選 A(`DECISIONS_NEEDED.md` 已批示 25②),

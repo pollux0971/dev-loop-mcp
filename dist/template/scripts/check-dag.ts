@@ -80,10 +80,12 @@ function integrationId(id: string): string {
 }
 
 function compareNodeIds(a: string, b: string): number {
-  const phaseA = /^(\d{2}) phase-(\d+)$/.exec(a);
-  const phaseB = /^(\d{2}) phase-(\d+)$/.exec(b);
+  const phaseA = /^(\d{2}) phase-(\d+)([a-z]?)$/.exec(a);
+  const phaseB = /^(\d{2}) phase-(\d+)([a-z]?)$/.exec(b);
   if (phaseA && phaseB) {
-    return Number(phaseA[1]) - Number(phaseB[1]) || Number(phaseA[2]) - Number(phaseB[2]);
+    return Number(phaseA[1]) - Number(phaseB[1])
+      || Number(phaseA[2]) - Number(phaseB[2])
+      || phaseA[3]!.localeCompare(phaseB[3]!);
   }
   const integrationA = /^I(\d+)$/.exec(a);
   const integrationB = /^I(\d+)$/.exec(b);
@@ -94,7 +96,9 @@ function compareNodeIds(a: string, b: string): number {
 }
 
 function normalizeStatus(status: string): string {
-  return status.replace(/[`*_]/g, '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+  const normalized = status.replace(/[`*_]/g, '').trim().toLowerCase();
+  const known = /^(todo|ready|in-progress|done|blocked)(?:\s|\(|$)/.exec(normalized);
+  return known?.[1] ?? normalized.split(/\s+/)[0] ?? '';
 }
 
 function collectNodes(root: string, folders: string[], resolvers: Resolvers): Map<string, Node> {
@@ -102,7 +106,7 @@ function collectNodes(root: string, folders: string[], resolvers: Resolvers): Ma
 
   for (const folder of folders) {
     for (const row of readFeaturePhaseRows(root, folder)) {
-      if (!/^\d+$/.test(row.phase)) continue;
+      if (!/^\d+[a-z]?$/.test(row.phase)) continue;
       const id = phaseId(folder, row.phase);
       nodes.set(id, {
         kind: 'phase',
@@ -297,6 +301,13 @@ function printReady(dag: Dag): void {
   for (const id of ready) console.log(`- ${id}`);
 }
 
+function formatLayerNode(dag: Dag, id: string): string {
+  const node = dag.nodes.get(id);
+  if (!node) return id;
+  if (node.kind === 'integration') return `${id} [整合點]`;
+  return `${id} [${node.status}]`;
+}
+
 function printExternalBlockers(dag: Dag): void {
   console.log('\n被外部阻擋卡住的 phase');
   const targets = [...dag.externalBlockers.keys()].sort(compareNodeIds);
@@ -333,7 +344,7 @@ function main(): void {
 
   console.log('\n拓撲分層');
   for (const [index, layer] of topologicalLayers(dag).entries()) {
-    console.log(`第 ${index + 1} 層(節點數=${layer.length}): ${layer.join('、')}`);
+    console.log(`第 ${index + 1} 層(節點數=${layer.length}): ${layer.map((id) => formatLayerNode(dag, id)).join('、')}`);
   }
   printReady(dag);
   printExternalBlockers(dag);
