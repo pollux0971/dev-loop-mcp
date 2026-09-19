@@ -70,9 +70,11 @@
 # `--check` 能在 CI 上單獨跑,不必先 checkout 模板。要知道「有沒有跟上模板最新版」是另一件事,
 # 見 README.md「版本」段的採用節奏(讀 CHANGELOG 決定要不要升版),不是 `--check` 的工作。
 #
-# 本地急修:在檔頭第 2 行加 `// HOTFIX: YYYY-MM-DD <理由>`(Python 檔用 `# HOTFIX: ...`),
-# --check 只警告不紅;超過 24 小時未回流模板 → 紅。（HOTFIX 那行本身不算進 sha256 比對的
-# 「內容」裡——比對用的是「標頭 + HOTFIX 行(如果有)」之後的所有行。）
+# 本地急修:在檔頭第 2 行加 `// HOTFIX: YYYY-MM-DD <回流去向> <理由>`
+# (Python 檔用 `# HOTFIX: ...`),--check 只警告不紅;超過 24 小時未回流模板 → 紅。
+# 回流去向必須是非空、非佔位字元的工單/issue ID;舊格式(只有日期+理由)不再相容。
+# HOTFIX 那行本身不算進 sha256 比對的「內容」裡——比對用的是「標頭 + HOTFIX 行(如果有)」
+# 之後的所有行。
 #
 # 反向驗證:
 #   改目標 repo 裡任一守門檔一個字 → --check 紅(sha256 不符);加今天的 HOTFIX 行 →
@@ -155,6 +157,7 @@ PY_DEST="$DEST/py"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
 CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json doc-rot.blacklist.json known-defects.json)
 fail=0; n=0; hotfix_n=0
+declare -a hotfix_reports=()
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -163,6 +166,31 @@ sha256_file() {
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
   else shasum -a 256 | awk '{print $1}'; fi
+}
+
+# $1=回流去向 → 0 = 非空且不是佔位字元;1 = 格式不合法。
+# 不綁死單一工單系統;新格式另要求後面還要有非空理由,用來拒絕舊的日期+單一理由字串。
+is_valid_hotfix_route() {
+  local route="$1"
+  case "$route" in
+    ""|"-"|"--"|"_"|"__"|"."|".."|"?"|"??"|"..."|"TBD"|"tbd"|"TODO"|"todo"|"TBA"|"tba"|"N/A"|"n/a"|"NA"|"na"|"NONE"|"none"|"NULL"|"null"|"PLACEHOLDER"|"placeholder"|*"<"*">"*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+# --check 尾端的 HOTFIX 報表。這是資訊性輸出,不改變 exit code。
+print_hotfix_report() {
+  local entry report_name report_date report_route report_reason report_age
+  [ "${#hotfix_reports[@]}" -gt 0 ] || return 0
+  echo
+  echo "HOTFIX 清單:"
+  for entry in "${hotfix_reports[@]}"; do
+    IFS=$'\t' read -r report_name report_date report_route report_reason report_age <<< "$entry"
+    printf '  - 檔名:%s | 日期:%s | 回流去向:%s | 理由:%s | 經過:%s\n' \
+      "$report_name" "$report_date" "$report_route" "$report_reason" "$report_age"
+  done
 }
 
 # 同步單一檔案(非 --check 專用):$1=來源檔、$2=標頭註解字元(// 或 #)、$3=目的目錄。
@@ -185,29 +213,66 @@ sync_one() {
 check_one() {
   local name="$1" dst="$2"
   if [ ! -f "$dst" ]; then echo "✗ 缺 $dst"; fail=1; return; fi
-  local header embedded_hash hotfix_date skip_lines actual_hash age
+  local header embedded_hash hotfix_line hotfix_date hotfix_route hotfix_reason
+  local parsed_date parsed_route parsed_reason hotfix_epoch hotfix_invalid skip_lines actual_hash age
   header="$(sed -n '1p' "$dst")"
   if ! echo "$header" | grep -qE '^(//|#) SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}'; then
     echo "✗ $name 缺 SOURCE 標頭或格式不對(第一行:$header)"; fail=1; return
   fi
   embedded_hash="$(echo "$header" | grep -oE 'sha256=[0-9a-f]{64}' | cut -d= -f2)"
-  # 本地 hotfix 規則:檔頭第 2 行寫 `// HOTFIX: YYYY-MM-DD <理由>`(Python 檔用 `#`)
-  # 可暫時偏離模板,24 小時內要回流模板;過期即紅。HOTFIX 那行不算進雜湊比對的內容裡,
-  # 所以先偵測有沒有這行,決定雜湊要跳過標頭後的幾行。
-  hotfix_date="$(sed -n '2p' "$dst" | grep -oE '^(//|#) HOTFIX: [0-9]{4}-[0-9]{2}-[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)"
+  # 本地 hotfix 規則:第 2 行必須是 `// HOTFIX: YYYY-MM-DD <回流去向> <理由>`
+  # (Python 檔用 `#`).只有完整且有效的新格式才跳過雜湊;舊格式視同內容被改過,
+  # 但額外印出明確的格式錯誤,不悄悄相容成 HOTFIX。
+  hotfix_line="$(sed -n '2p' "$dst")"
+  hotfix_date=""; hotfix_route=""; hotfix_reason=""; hotfix_invalid=0
+  case "$hotfix_line" in
+    "// HOTFIX:"*|"# HOTFIX:"*)
+      if [[ "$hotfix_line" =~ ^(//|#)[[:space:]]HOTFIX:[[:space:]]([0-9]{4}-[0-9]{2}-[0-9]{2})[[:space:]]([^[:space:]]+)[[:space:]](.+)$ ]]; then
+        parsed_date="${BASH_REMATCH[2]}"
+        parsed_route="${BASH_REMATCH[3]}"
+        parsed_reason="${BASH_REMATCH[4]}"
+      else
+        parsed_date=""; parsed_route=""; parsed_reason=""
+      fi
+      if [ -n "$parsed_date" ] \
+        && is_valid_hotfix_route "$parsed_route" \
+        && [[ "$parsed_reason" =~ [^[:space:]] ]]; then
+        hotfix_date="$parsed_date"
+        hotfix_route="$parsed_route"
+        hotfix_reason="$parsed_reason"
+        if hotfix_epoch="$(date -d "$hotfix_date" +%s 2>/dev/null)"; then
+          age=$(( ( $(date +%s) - hotfix_epoch ) / 3600 ))
+          hotfix_reports+=("$name"$'\t'"$hotfix_date"$'\t'"$hotfix_route"$'\t'"$hotfix_reason"$'\t'"${age}h")
+        else
+          hotfix_date=""; hotfix_route=""; hotfix_reason=""; hotfix_invalid=1
+        fi
+      else
+        hotfix_invalid=1
+      fi
+      ;;
+  esac
   if [ -n "$hotfix_date" ]; then skip_lines=2; else skip_lines=1; fi
   actual_hash="$(tail -n +$((skip_lines+1)) "$dst" | sha256_stdin)"
+  if [ "$hotfix_invalid" = 1 ]; then
+    echo "✗ $name HOTFIX 行缺回流去向(格式:\`// HOTFIX: <日期> <回流去向> <理由>\`)"
+    fail=1
+    return
+  fi
+  if [ -n "$hotfix_date" ]; then
+    if [ "$age" -le 24 ]; then
+      echo "⚠ $name 有本地 HOTFIX($hotfix_date,${age}h),24 小時內要回流模板"
+      hotfix_n=$(( hotfix_n + 1 ))
+    else
+      echo "✗ $name 的 HOTFIX($hotfix_date)已超過 24 小時未回流模板"
+      fail=1
+    fi
+    return
+  fi
   if [ "$actual_hash" = "$embedded_hash" ]; then
     echo "✓ $name"
     return
   fi
-  if [ -n "$hotfix_date" ]; then
-    age=$(( ( $(date +%s) - $(date -d "$hotfix_date" +%s) ) / 3600 ))
-    if [ "$age" -le 24 ]; then echo "⚠ $name 有本地 HOTFIX($hotfix_date,${age}h),24 小時內要回流模板"; hotfix_n=$(( hotfix_n + 1 ))
-    else echo "✗ $name 的 HOTFIX($hotfix_date)已超過 24 小時未回流模板"; fail=1; fi
-  else
-    echo "✗ $name 內容被改過(sha256 不符;急修請在第 2 行加 HOTFIX 註解:<日期> <理由>)"; fail=1
-  fi
+  echo "✗ $name 內容被改過(sha256 不符;急修請在第 2 行加 HOTFIX 註解:<日期> <回流去向> <理由>)"; fail=1
 }
 
 # 語言選集是否含 $1(在 LANGS 全域陣列裡找)。
@@ -633,9 +698,17 @@ if [ "$MODE" = "--check" ]; then
   # 而摘要行的功能就是「讓人不必讀全部」,所以它必須自己就是對的。
   # 【驗】consumer 用 `tail -8` 只看到這行的 ✓,據此下了「check:gates 沒有比對 _root.ts」
   # 的錯誤結論,還從那個結論反推了一個不存在的機制。
-  if [ "$fail" != 0 ]; then exit 1
-  elif [ "${hotfix_n:-0}" -gt 0 ]; then echo "⚠ 守門內容有 ${hotfix_n} 處本地 HOTFIX(見上),其餘自同步以來未被更動"
-  else echo "✓ 守門內容自同步以來未被更動"; fi
+  if [ "$fail" != 0 ]; then
+    exit_code=1
+  elif [ "${hotfix_n:-0}" -gt 0 ]; then
+    echo "⚠ 守門內容有 ${hotfix_n} 處本地 HOTFIX(見上),其餘自同步以來未被更動"
+    exit_code=0
+  else
+    echo "✓ 守門內容自同步以來未被更動"
+    exit_code=0
+  fi
+  print_hotfix_report
+  exit "$exit_code"
 else
   if is_lang_selected py; then py_note="含 $PY_DEST 底下的 Python 版工具;"; else py_note=""; fi
   echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"
