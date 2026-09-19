@@ -26,6 +26,18 @@
   (2026-09-19,技術顧問):1.9.0 發布前的黑箱 gate 漏跑是因為這兩支沒被列進四角色鏈的全 gate 清單,
   導致 `{{ACTIVE_AGENT_CAP}}` 沒登記進 `CHECKLIST.md` 一路沒被抓到,直到發布前最後手動跑才發現。
   `dag-suffix-phase` 這輪是新規則第一次真的在候選整合裡跑,兩者都乾淨過關。
+- **phase 表解析只認真正的 phase 表,不被同檔案其他表格污染**(2026-09-19)。技術顧問重驗
+  `dag-suffix-phase` 時拿 AI_KM 真實檔案發現:`readFeaturePhaseRows` 把 `FEATURE.md` 裡每一張表格
+  都當 phase 表讀,同檔案裡另一張無關表(內容需求清單)第一欄剛好也是數字,蓋掉了真正的
+  `phase-2`/`phase-3` 狀態,`check:dag` 印出狀態空白,依賴它們的 phase 被靜默擋在 ready 集合外。
+  修法:phase 列只從「`## Phase` 標題底下、表頭含狀態欄」那張表讀;同一個 phase 編號重複出現印
+  警告、取表格裡那一列;狀態欄讀不出已知值印警告、不靜默當空字串;跳過同一個 `## Phase` 區段內
+  任意多張非 phase 表並恢復掃描(AI_KM `11-app-shell` 的 `phase-3b`/`4` 之間就有這種情況,必要能力)。
+  **過程一次 RETURN**:第一輪審核棒獨立驗證三次都確認程式對,但工單要求的反向驗證斷言沒有任何
+  一棒的 `allowed_paths` 能寫進 `.test.ts`——技術顧問裁決繞回測試棒補斷言,dev 棒的程式不動。
+  第二輪審核棒獨立重做全部驗證、對 AI_KM 全部 12 個 feature 資料夾額外驗證過,多抓到一個真實
+  非標準狀態值案例;merge commit `14b85f3`。規則層順手修:「工單反向驗證要求的斷言要確認有一棒
+  的 `allowed_paths` 涵蓋得到」寫進 `.orca-brief/TASK.md.template`(commit `6a4e851`)。
 
 ## 1.9.0 — 2026-09-19(已發布)
 
