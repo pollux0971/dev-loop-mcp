@@ -1,6 +1,6 @@
 ---
 name: mutation-testing
-description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的有在測東西。當使用者要求跑 mutation testing、變異測試、檢查測試品質、確認測試有沒有效、覆蓋率很高但不確定測試是否真的有用,或是在 /phase-done 之前驗收一個 phase 的測試時使用。也在寫完屬於「嚴格級」的純邏輯模組(見下方分級表)的單元測試後主動使用。
+description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的有在測東西。當使用者要求跑 mutation testing、變異測試、檢查測試品質、確認測試有沒有效、覆蓋率很高但不確定測試是否真的有用,或是在 phase 驗收之前驗收一個 phase 的測試時使用。也在寫完屬於「嚴格級」的純邏輯模組(見下方分級表)的單元測試後主動使用。
 ---
 
 # Mutation Testing

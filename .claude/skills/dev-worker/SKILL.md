@@ -28,7 +28,7 @@ description: 協調者內部使用的結構化實作 worker。只在 dispatch �
 
 ## 啟動流程
 
-1. 依 `CLAUDE.md` 開工規則，每次完整讀取 `contracts/types.md`、roadmap 現況、目標 `FEATURE.md`／`NEXT.md` 與對應 `.feature`；整合工單另讀目標 integration 規格。
+1. 依 `AGENTS.md` 開工規則，每次完整讀取 `contracts/types.md`、roadmap 現況、目標 `FEATURE.md`／`NEXT.md` 與對應 `.feature`；整合工單另讀目標 integration 規格。
 2. 讀取 dispatch、權威來源與工單要求的 inputs。
 3. 核對目前 worktree／HEAD 是否符合 `base_ref`，並確認沒有其他人的未預期變更會被覆蓋。
 4. 輸出 mode、目標、預計讀取路徑、`allowed_paths`、禁區與驗證命令。
@@ -50,7 +50,7 @@ authority:
   source: <L3 feature / ADR / user decision / approved repair request>
   ids: [<scenario, ADR, decision, phase, integration point>]
 base_ref: <commit>
-worktree: <Orca worktree selector>
+worktree: <worktree selector>
 inputs:
   required: [<paths>]
   read_only: [<paths>]
@@ -59,7 +59,7 @@ forbidden_paths: [<明列禁區>]
 acceptance:
   scenarios: [<scenario IDs>]
   commands: [<可重跑命令>]
-  manual: [<依 CLAUDE.md 決策權表指定的確認者與項目>]
+  manual: [<依 AGENTS.md 決策權表指定的確認者與項目>]
 constraints:
   cross_region_imports: deny | approved-public-only
   may_edit_tests: false
@@ -73,7 +73,7 @@ report:
 done_when: <成功與失敗都可機械判定的結束條件>
 ```
 
-`allowed_paths` 未列出的路徑一律不可寫；`forbidden_paths` 只用來強調高風險禁區，不能反向推論其他路徑可寫。Dispatch 的 allowlist 不能覆蓋 `CLAUDE.md` 五條硬規則、決策權表或本 skill 的永久禁區。
+`allowed_paths` 未列出的路徑一律不可寫；`forbidden_paths` 只用來強調高風險禁區，不能反向推論其他路徑可寫。Dispatch 的 allowlist 不能覆蓋 `AGENTS.md` 五條硬規則、決策權表或本 skill 的永久禁區。
 
 ## Mode 行為
 
@@ -95,13 +95,13 @@ done_when: <成功與失敗都可機械判定的結束條件>
 
 - 預設是 report-only verifier：跑完整系統可自動執行的 `@e2e`、`@regression`、所有 standalone 與工單指定 gate，並原文列出待人工確認的場景。
 - 預設只寫 worktree-local 報告。只有 dispatch 明列唯一的全局 composition 路徑時，才可寫該路徑。
-- 不直接執行會更新 roadmap／`NEXT.md` 或等待使用者回覆的完整 `/integrate` 收尾；由協調者核對本報告後主持 `/integrate` 與狀態更新。
+- 不直接執行會更新 roadmap／`NEXT.md` 或等待使用者回覆的完整整合驗收收尾；由協調者核對本報告後主持 integration-check 與狀態更新。
 - 不順手修分區內部，也不改測試讓結果變綠；把問題拆成可由協調者另派的修復建議。
 
 ## 永久禁區
 
 - 不修改 `*.test.*`、`features/steps/**` 或既有 `.feature`。
-- 不修改 `CLAUDE.md`、`.claude/commands/`、`.claude/skills/`、contracts、ADR、roadmap 或未列入 allowlist 的共用檔。
+- 不修改 `AGENTS.md`、`CLAUDE.md`、`.agents/skills/`、`.claude/commands/`、`.claude/skills/`、contracts、ADR、roadmap 或未列入 allowlist 的共用檔。
 - 不自行新增需求、改 acceptance criteria、放寬 gate 或變更權威來源。
 - 不 merge、不 push、不建立或管理其他 terminal／session／worktree／worker。
 - 不把測試綠燈、worker_done 或一份報告描述成 phase done／integration accepted。
@@ -138,4 +138,4 @@ WORKTREE / BASE / HEAD:
 報告位置:
 ```
 
-`worker_done` 只表示本 dispatch 的實作與指定驗證已完成。Reviewer 仍須獨立檢查、修改或建立測試、執行反向驗證；協調者負責合併；技術顧問在 main 做最終複驗；人工確認依 `CLAUDE.md` 決策權表執行。
+`worker_done` 只表示本 dispatch 的實作與指定驗證已完成。Reviewer 仍須獨立檢查、修改或建立測試、執行反向驗證；協調者負責合併；技術顧問在 main 做最終複驗；人工確認依 `AGENTS.md` 決策權表執行。

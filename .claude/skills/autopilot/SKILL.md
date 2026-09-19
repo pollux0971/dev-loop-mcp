@@ -1,11 +1,14 @@
 ---
 name: autopilot
-description: 讓協調者不停推進專案,把使用者當成只要成果的老闆。當使用者說「一直做」「自動推進」「不用問我」「autopilot」,或協調者在 /loop 裡被喚醒時使用。內含決策權責表(哪些自己決、哪些問技術顧問、哪些才問使用者)、每輪的固定流程、沒事可做時的維護清單、煞車條件。只給協調者用;技術顧問與 worker 不跑這個。
+description: 讓協調者不停推進專案,把使用者當成只要成果的老闆。當使用者說「一直做」「自動推進」「不用問我」「autopilot」,或協調者被週期排程喚醒時使用。內含決策權責表(哪些自己決、哪些問技術顧問、哪些才問使用者)、每輪的固定流程、沒事可做時的維護清單、煞車條件。只給協調者用;技術顧問與 worker 不跑這個。
 ---
 
-# /autopilot — 協調者的自動推進迴圈
+# autopilot — 協調者的自動推進迴圈
 
-啟動方式:協調者 session 執行 `/loop 15m /autopilot`。每次醒來跑一輪下面的流程,回報一段,然後睡。
+啟動方式:由協調者的排程機制週期執行。每次醒來跑一輪下面的流程,回報一段,然後睡。
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code adapter:協調者 session 可執行 `/loop 15m /autopilot`。
+<!-- CLAUDE-ONLY-END -->
 **使用者是只要成果的老闆**:不問他技術問題,只在「權責表」寫明的三種情況才找他,而且找他時要把選項與建議一起給,讓他一句話能答。
 
 ## 0. 每輪開頭(固定,不可省)
@@ -22,14 +25,14 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 
 ## 1. 權責表(誰決定什麼)
 
-誰決定什麼,以 `CLAUDE.md`「做決定時」表為準,本迴圈不另抄一份。這裡只補協調者在每一類要做的動作:
+誰決定什麼,以 `AGENTS.md`「做決定時」表為準,本迴圈不另抄一份。這裡只補協調者在每一類要做的動作:
 
 - **自己決的**(派工、合併、worktree、審核回合):直接做。有開 ADR-018 四常駐角色時,鏈內接棒與清樹的**執行**交接線／整合清樹 agent,決定仍是你的。
-- **問技術顧問的**:SendMessage 問,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。
+- **問技術顧問的**:通知技術顧問並等待回覆,附你的傾向;**30 分鐘沒回就照保守選項做**,記 ADR 標「待覆核」,下一輪再提。
   **保守選項的定義**:一次 `git revert` 就能整個還原的那個選項,不是「花力氣最少」的那個(P-57)。
 - **問產品 PM 的**:所有使用者產品需求先交 `product-pm`;PM 可提探索請求,但 session/worktree 仍由協調者建立與監督。
   PM 呼叫內部 `feature-triage` 分流後:E / C / B → 使用者;A → 技術顧問;D 先拆分後逐項重新判定。
-- **等使用者的**:放「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批。改硬約定或 `CLAUDE.md` 要附 ADR 草稿;
+- **等使用者的**:放「等老闆」清單,**不擋其他工作**;PM 與協調者都不能代批。改硬約定或規則正本要附 ADR 草稿;
   `@e2e` 場景列清單(原文 + 檔案路徑);花錢超過 `{{DAILY_CAP_ENV}}` 就不跑,@llm 場景延到明天。
 - **技術顧問判定的**(`@manual and not @e2e`):等他把依據寫進 phase 驗收報告或 `IN-REVIEW.md`。
 
@@ -40,7 +43,7 @@ grep -o "ADR-0[0-9]*" docs/02-decision-map.md | sort -u | tail -1   # 目前最�
 git diff --name-only main...<branch> | grep <要改的檔案>
 ```
 每個 in-progress branch 都要為空才動手——這條在合併(步驟 1)、先修 main(§4)、技術顧問直接改規則層
-(`CLAUDE.md`「做決定時」表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
+(`AGENTS.md`「做決定時」表最後一列)都適用,不是只在收割時才查(來源 nightmare-assault,D14)。
 
 ### 2a. 三種 dispatch mode（每次派工必填）
 
@@ -57,7 +60,7 @@ test／reviewer 仍依原角色規則寫測試與審核，不因 mode 取得實�
 
 派工 envelope 至少包含：`task_id`、`dispatch_id`、`mode`、單一 objective、權威來源與可解析 ID、`base_ref`、
 worktree、inputs、`allowed_paths`、`forbidden_paths`、acceptance commands、`done_when`、回報位置。
-`allowed_paths` 未列出的路徑一律不可寫，且永遠不能覆蓋 `CLAUDE.md` 五條硬規則、決策權表或 worker 永久禁區。
+`allowed_paths` 未列出的路徑一律不可寫，且永遠不能覆蓋 `AGENTS.md` 五條硬規則、決策權表或 worker 永久禁區。
 Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist 追認。
 
 1. **收割**:哪些 worktree 的審核回來了 → PASS 的合併(一次一個,`git checkout main && git merge --no-ff <branch>`,**不 rebase**,每個 phase 三輪 commit 的軌跡是刻意留的),合併後跑完整檢查,**單一入口**:
@@ -106,7 +109,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
    **分數要附完整指令與設定檔**(範圍、旗標、`stryker.config.json` 的路徑):同一份程式碼、不同設定檔跑出來的分數
    不能比較(TS 型別檢查開關就能造成 3 分以上的差距),不附指令與設定檔的分數不算數(P-58)。每張照角色規則:
    測試 agent 先寫紅 commit → 開發 agent 做綠 → 審核 agent(`.orca-brief/REVIEW.md` 交接)。
-4. **整合點**:某個 IN 需要的 phase 全 done → **先開 `region-integration`「整合工作」工單**(P-20:roadmap 該段的整合工作欄 + 各 FEATURE.md「Wave 0 的重複」表),只把 composition／adapter／integration seam 列入 allowlist；來源分區缺陷另派回原分區。合併後開 `global-integration` 驗證工單：worker 跑可自動執行的 `@e2e`／`@regression`、所有 standalone 與完整 gate，只寫 worktree-local 報告並原文列出人工場景。worker PASS 後由協調者核對原始結果、主持 `/integrate IN`、寫入 `docs/integration/IN-REVIEW.md` 與狀態檔；`@llm` 只在預算內跑。任何 `@e2e`(即使同時帶 `@manual`)由使用者做最終「你做得到嗎」確認；其餘 `@manual and not @e2e` 的觀感／品質由技術顧問確認並在 `IN-REVIEW.md` 留下依據與發現。IN 的人工確認未完成前,gate 是「IN 通過」的 phase 維持 todo——這是刻意的,不要繞。
+4. **整合點**:某個 IN 需要的 phase 全 done → **先開 `region-integration`「整合工作」工單**(P-20:roadmap 該段的整合工作欄 + 各 FEATURE.md「Wave 0 的重複」表),只把 composition／adapter／integration seam 列入 allowlist；來源分區缺陷另派回原分區。合併後開 `global-integration` 驗證工單：worker 跑可自動執行的 `@e2e`／`@regression`、所有 standalone 與完整 gate，只寫 worktree-local 報告並原文列出人工場景。worker PASS 後由協調者核對原始結果、主持 integration-check、寫入 `docs/integration/IN-REVIEW.md` 與狀態檔；`@llm` 只在預算內跑。任何 `@e2e`(即使同時帶 `@manual`)由使用者做最終「你做得到嗎」確認；其餘 `@manual and not @e2e` 的觀感／品質由技術顧問確認並在 `IN-REVIEW.md` 留下依據與發現。IN 的人工確認未完成前,gate 是「IN 通過」的 phase 維持 todo——這是刻意的,不要繞。
 5. **沒有 ready 的 phase** → 做維護清單(§3),做完一項就回到 2。
 6. **回報**(§5 格式),睡。
 
@@ -138,7 +141,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 8. 本清單第 1–7 項裡,**同一項連續 3 輪都在清單上但沒被實際碰過** → 該項自動升級成一張正式工單
    派出去,不要繼續留在「沒事可做時再看看」的狀態——「有空再做」等於不會做,這是協調者自己
    踩過的坑(`docs/07-practices.md` 「來自專案 A 協調者的做法」)
-9. 以上都空(含第 6 項技術顧問的六判準)→ **停止迴圈**(`ScheduleWakeup stop`)前先做兩件事:
+9. 以上都空(含第 6 項技術顧問的六判準)→ **停止迴圈**(停止排程迴圈)前先做兩件事:
    - **確認每個 worktree 都 commit 過**——未 commit 的工作在 session 結束時最脆弱,一旦平台或機器重開就不見了;
      跑不完就先 commit 到分支上,不要留在工作區裡等下一輪。
    - **技術顧問那邊的對應動作**(協調者提醒即可,實際驗證由顧問做):push 前 `git log --oneline origin/main..HEAD`
@@ -152,7 +155,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 - 當日 OpenAI 花費達上限 → 所有 @llm 工作停,非 LLM 工作繼續
 - 完整檢查在 main 上紅 → **先修 main**,不派新工;修的時候若動到測試檔,**同一輪開一張 review 工單事後覆核**,每處寫「為什麼是測試錯不是實作錯」(P-49)
 - 根目錄有**已追蹤檔案**的未 commit 變更,或不在 main → 停,查是誰(P-12 / P-19);未追蹤目錄(例如產出資料)不觸發,但要確認它在 .gitignore 裡
-- 技術顧問 session 不在(`ListAgents` 找不到)→ 技術決策改成「**保守選項**(一次 `git revert` 就能整個還原的那個,P-57) + ADR 待覆核」,不問使用者
+- 技術顧問 session 不在(平台的 session 清單找不到)→ 技術決策改成「**保守選項**(一次 `git revert` 就能整個還原的那個,P-57) + ADR 待覆核」,不問使用者
 - 同時進行的 worktree 已達 `{{PARALLEL_CAP}}` → 不派新工,先收割
 - 已有一個審核輪在跑變異測試 → 其他審核輪先做不含變異的部分,或等待;agent 看到 stryker 退出碼 137 / 144 一律重跑,絕不把當次結果當分數(P-34)
 - **同一種 PITFALLS 類型第三次出現**(不論是條目本身或 REVIEW.md 的退回理由)→ 不逐案修,停下來開一張**範式級工單**
@@ -163,7 +166,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 
 ## 4a. 停止條件 / 不是停止條件
 
-整個迴圈只有三種情況真的**停止**(不是「這輪先跳過」,是 `ScheduleWakeup stop`):
+整個迴圈只有三種情況真的**停止**(不是「這輪先跳過」,是停止排程迴圈):
 
 1. **全部待辦都卡在使用者級**——沒有任何協調者或技術顧問能自己做的事,權責表(§1)判下來
    全部落在「使用者決定」那一列,而且都已經放進「等老闆」清單。
@@ -217,7 +220,8 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 警告本身不是機制)是同一個「交接動作沒有回執」家族(P-76)的另外兩種形狀,不是分支/合併
 問題,但常常在同一輪回報裡一起出現。
 
-## 4b. 平台操作備忘(Orca,實際踩過的)
+<!-- CLAUDE-ONLY-BEGIN -->
+## 4b. Claude Code / Orca 平台操作備忘(實際踩過的)
 
 - `worker-start --worktree new-top-level` **一定要帶 `--name`**,不帶會 `invalid_argument`
 - `worker-start` 只用在一個 worktree 的**第一輪**。同一 worktree 的第二、三輪(debug / 再審):
@@ -232,6 +236,7 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 - **找 worker 一律用 worktree 路徑尾段比對,永遠不用 title**(title 是 agent 自己會改的顯示文字;找不到會被誤判成死掉而重派,P-39);每個 worktree 兩個 terminal,挑 title 不是 `user@…` 開頭的
 - `orca terminal send` 的旗標是 `--terminal <handle>`(不是 `--handle`),要加 `--enter` agent 才真的收到
 - 工單寫進 `<worktree>/.orca-brief/TASK.md`(未追蹤,不混進 diff);批次改工單文字後 grep 舊字串應為 0 命中(P-40)
+<!-- CLAUDE-ONLY-END -->
 - 開 worktree 明確指定起點(`--base-branch main` 或 `git worktree add -b <branch> <path> main`),開完驗 `git merge-base --is-ancestor main <branch>`(P-18)
 
 ## 5. 每輪回報格式(給使用者看的,越短越好)
@@ -249,6 +254,6 @@ Branch diff 出現 allowlist 外修改就退回，不以事後擴大 allowlist �
 ## 6. 不做的事
 
 - 不 push(技術顧問推)
-- 不改 `CLAUDE.md`、`contracts/` 硬約定、`prompts/`(改 prompt 要 golden run,那是 12 的流程)
+- 不改規則層檔案、`contracts/` 硬約定、`prompts/`(改 prompt 要 golden run,那是 12 的流程)
 - 不在根目錄 checkout 別的分支
 - 不因為「等老闆」而停下其他能做的事;也不因為想推進而繞過「IN 通過」的 gate

@@ -4,7 +4,7 @@
 用 `docs/03-agile-workflow.md` 的角色分工就夠,不必開這 4 個常駐 session。
 
 開之前先確認:`docs/02-decision-map.md` ADR-018 已經是 `accepted`(不是 proposed),
-且使用者本人批准要開這 4 個角色——這是組織架構變更,依 `CLAUDE.md`「做決定時」表屬於使用者裁決,
+且使用者本人批准要開這 4 個角色——這是組織架構變更,依 `AGENTS.md`「做決定時」表屬於使用者裁決,
 不是協調者或技術顧問能自己決定要不要開的事。
 
 ## 怎麼用
@@ -27,8 +27,8 @@
 
 ## 這 4 份不是唯一入口
 
-使用者的產品需求入口仍是 `/product-pm`(在技術顧問 session 或任一對話 session 呼叫,不必另開 PM session);
-新功能、改「不在範圍」、改 `contracts/` 硬約定與規則層,一律照 `CLAUDE.md`「做決定時」表走,
+使用者的產品需求入口仍是 `product-pm` skill(在技術顧問 session 或任一對話 session 呼叫,不必另開 PM session);
+新功能、改「不在範圍」、改 `contracts/` 硬約定與規則層,一律照 `AGENTS.md`「做決定時」表走,
 這 4 份 prompt 不改變任何一列的批准權——只是把協調者原本一個人做的「決定」與「執行」拆給不同 session。
 
 ## 停用回單人模式

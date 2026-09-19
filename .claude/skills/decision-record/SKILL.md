@@ -3,11 +3,15 @@ name: decision-record
 description: 記錄一個技術或設計決策到 decision map。當任何有取捨的選擇被做出時使用——包含 AI 自己在實作過程中做的選擇,例如選了某個資料結構、某個錯誤處理策略、某個預設值,而那個選擇本來可以是別的樣子。也在使用者說「就這樣決定」「我們用 X 不用 Y」時使用。先評估會不會動到契約。
 ---
 
-# /decide — 記錄決策
+# decision-record — 記錄決策
 
 描述:
 
-> $ARGUMENTS
+> 使用者給的輸入
+
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
+<!-- CLAUDE-ONLY-END -->
 
 ## 第一步:讀取
 
@@ -89,7 +93,7 @@ description: 記錄一個技術或設計決策到 decision map。當任何有取
 - 改變某功能的技術棧 → 提示更新該 `FEATURE.md`
 - 改變某 phase 的 gate → 提示更新該 `NEXT.md`
 - 改變設計文件內容 → 在 `docs/00-design.md` 頂部的「已知不同之處」加一行,**不改正文**
-- 讓某些 `.feature` 場景不再正確 → 列出受影響的場景,提示用 `/feature` 處理
+- 讓某些 `.feature` 場景不再正確 → 列出受影響的場景,提示用 feature workflow 處理
 
 ## 第七步:回報
 

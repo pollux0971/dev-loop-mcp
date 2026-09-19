@@ -83,10 +83,10 @@ const NOT_SHIPPED: Record<string, string> = {
 
 /** 已知缺口:**欠帳,不是決定**。每一筆必須指向一件還在待批示的裁決。 */
 const KNOWN_GAPS: Record<string, { decision: number; reason: string }> = {
-  '.orca-brief/TASK.md.template': {
+  'docs/templates/TASK.md.template': {
     decision: 23,
     reason:
-      '工單樣板應該出貨但兩個管道都沒送。sync 送不了 .md(SOURCE 標頭格式是兩個出貨管道共用的契約),且依 P-95 落點也不該是 .orca-brief/;搬家要改規則層引用。',
+      '樣板已搬到 `docs/templates/`(P-95);工單樣板應該出貨但兩個管道都沒送——sync 送不了 `.md`(SOURCE 標頭格式是兩個出貨管道共用的契約);仍待 `#23` 讓 sync 也出貨。',
   },
   'scripts/py/.gitignore': {
     decision: 23,

@@ -68,7 +68,7 @@ interface {{STATE_ENTRY_TYPE}} {
 }
 ```
 
-**寫入這個檔案的模組要遵守 CLAUDE.md 的原子寫入硬規則**:寫暫存檔、fsync、rename。
+**寫入這個檔案的模組要遵守 AGENTS.md 的原子寫入硬規則**(CLAUDE.md 為 Claude Code 入口):寫暫存檔、fsync、rename。
 
 ## 5. §{{SOFT_SECTION_1_NUM}} · (軟約定範例:某個計算結果的型別)
 

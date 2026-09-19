@@ -1,13 +1,17 @@
 # CHANGELOG
 
-版本規則(semver):PITFALLS / docs / 措辭改動升 **patch**;新增或改變檔案結構、腳本、CLAUDE.md 固定段落升 **minor**;改硬規則或落地步驟升 **major**。
-採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
+版本規則(semver):PITFALLS / docs / 措辭改動升 **patch**;新增或改變檔案結構、腳本、規則層固定段落升 **minor**;改硬規則或落地步驟升 **major**。
+**1.11.0 起規則正本是 `AGENTS.md`,`CLAUDE.md` 只是 Claude Code 的相容入口**(見下方 1.11.0 條目);
+1.11.0 之前的條目寫「`CLAUDE.md` 固定段落」時,指的是當時唯一的規則檔,不用回頭改寫。
+採用模板的專案在自己的 `AGENTS.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
 ## 1.11.0 — 2026-09-19(已進 main,尚未發布)
 
 **minor。** 1.10.0 發布(tag `v1.10.0`)之後的第一批變更,不算進已發布的 1.10.0——那個 tag 已經
 推出去了,不能回頭改內容;版本號往前跳一個。發布時機另定。
+
+- 規則正本搬到 `AGENTS.md`(ADR-020)。
 
 - **清死代碼**:`check-dag.ts` 的 `ExternalBlocker`(型別宣告未用)、`check-doc-rot.ts` 的未用
   `mkdirSync` import 與 `DEFAULT_SKIP_DIRS` 常數。`npx tsc --noEmit --noUnusedLocals
@@ -39,6 +43,27 @@
   **本 repo 自己**(只有 `features/_template/`)的 `check:dag`/`check:next-gates` 因此從「已知綠/
   已知紅各一支」變成「兩支都是已知紅」,直到有第一個真的 `features/01-xxx/` 為止——這是刻意的
   行為變更,不是回歸。
+- **規則正本搬到 `AGENTS.md`,`CLAUDE.md` 變成 Claude Code 相容入口**(`DECISIONS_NEEDED.md` #32,
+  使用者選 A)。技術顧問實測 Codex 0.155.1 會讀專案根 `AGENTS.md`、會讀 `.agents/skills/<name>/SKILL.md`
+  (frontmatter 格式跟 Claude skill 相同)——模板原本只有 `CLAUDE.md` 與 `.claude/skills/`,Codex
+  兩者都不讀。盤點(`claude-codex-survey`,一份 259 行的唯讀調查報告,147 處 `CLAUDE.md` 引用逐條
+  分類)另外發現 `#23`(sync 送不了非守門檔)是同一件事的另一面——`.agents/skills/` 也是非守門檔;
+  且 `scripts/shipping-coverage.test.ts` 把兩個出貨管道取聯集,「npx 有、sync 沒有」的檔會被判成
+  已出貨,這個 union 語意的洞後續要收(`#23` 仍待批示)。
+  設計定案為 `ADR-020`:規則正本 `AGENTS.md`;`CLAUDE.md` 第一行 `@AGENTS.md` + 一段 Claude 專用
+  (斜線指令別名、Claude 工具對照),用 `<!-- CLAUDE-ONLY-BEGIN/END -->` 標記區段;9 支 skill 與
+  規則層引用逐條改成跨平台語彙,Claude 專屬機制(`SendMessage`/`ListAgents`/`CronCreate`/`Monitor`/
+  `$ARGUMENTS`/Orca terminal 操作)全部收進 `CLAUDE-ONLY` 標記;工單樣板從 `.orca-brief/TASK.md.template`
+  搬到 `docs/templates/TASK.md.template`(真正的 `git mv`,內容逐位元組核對沒有遺失)。
+  `.agents/skills/` 雙目錄鏡像、`#23` 非守門檔共用安裝紀錄是後續兩條鏈(鏈 2、鏈 3),**依序做,
+  不並行**(canonical 路徑與 hash 要序列化)。
+  **過程記三件事**:①這條鏈一如既往落後 main,協調者 `git merge main` 同步;②技術顧問審核時抓到
+  `AGENTS.md` 完全沒進出貨分類、合進去會讓 consumer 拿到指向不存在檔案的 `CLAUDE.md`,裁決現在補
+  不留到後面,協調者同批加 `package/payload-manifest.json` 的 `AGENTS.md` payload root;③一句
+  KNOWN_GAPS 理由文字被機械式路徑取代(`.orca-brief/` → `docs/templates/`)連句意一起取代壞掉,
+  變成自相矛盾,另開小棒修正。整合/清樹 agent 除了跑全 gate,額外做了真的 `npm pack` + `init` 實測
+  (不只看 blackbox gate 綠燈):`AGENTS.md` 真的裝上、`CLAUDE.md` 第一行逐字 `@AGENTS.md`、9 支
+  `SKILL.md` frontmatter 完好;merge commit `57e83e9`。
 
 ## 1.10.0 — 2026-09-19(已發布)
 

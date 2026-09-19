@@ -19,7 +19,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 
 表格裡 `{{X_1/2/3}}`、`{{X_1..5}}` 這種寫法代表一組編號連續的 placeholder,每一個都要填。
 
-## CLAUDE.md
+## AGENTS.md
 
 | Placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
@@ -49,7 +49,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 | Placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
 | `{{CONTRACT_VERSION}}` | 契約目前版號 | 1.1.0 |
-| `{{HARD_CONTRACT_SECTIONS}}` / `{{SOFT_CONTRACT_SECTIONS}}` | 同 CLAUDE.md,以及軟約定章節清單 | 硬:§2 §3 §4 §8–§12;軟:§5 §6 §7 函式簽章 §13 |
+| `{{HARD_CONTRACT_SECTIONS}}` / `{{SOFT_CONTRACT_SECTIONS}}` | 同 AGENTS.md,以及軟約定章節清單 | 硬:§2 §3 §4 §8–§12;軟:§5 §6 §7 函式簽章 §13 |
 | `{{ENTITY}}` / `{{ENTITY_DIR}}` / `{{ENTITY_EXT}}` | 核心實體名稱、存放目錄、副檔名 | `Card` / `cards` / `md` |
 | `{{SECOND_ENTITY}}` / `{{SECOND_ENTITY_DIR}}` / `{{SECOND_ENTITY_EXT}}` | 第二種磁碟格式的名稱、目錄、副檔名 | `QuestionFile` / `questions` / `yaml` |
 | `{{STATE_DIR}}` / `{{STATE_FILE}}` / `{{STATE_ENTRY_TYPE}}` | 狀態檔目錄、檔名、單筆記錄型別 | `state` / `reviews.json` / `ReviewEntry` |
@@ -179,7 +179,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 
 | Placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
-| `{{STRICT_MODULES}}` | 同 CLAUDE.md | scheduler、grading 前兩層、驗證器、weekly 計數、路徑防護 |
+| `{{STRICT_MODULES}}` | 同 AGENTS.md | scheduler、grading 前兩層、驗證器、weekly 計數、路徑防護 |
 | `{{STANDARD_MODULES}}` | 標準級模組清單 | ingest 非 LLM 部分、lint 檢查、llm-router 路由決策 |
 | `{{RELAXED_MODULES}}` | 寬鬆級模組清單 | adapter、CLI 進入點、Svelte 元件、Tauri command |
 | `{{BOUNDARY_CASE_1/2/3}}` | 你專案自己的數值邊界情境 | body 剛好 100 字 / 101 字;`fails_in_row` 剛好 2 / 3;ISO 週的年末交界 |
@@ -196,13 +196,13 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 | Placeholder | 出現在 | 填什麼 |
 |---|---|---|
 | `{{TODAY}}` | `docs/01-roadmap.md`、`docs/02-decision-map.md` | 目前日期,或該批決策/roadmap 定案的日期 |
-| `{{PROJECT_NAME}}` | `CLAUDE.md`、`docs/00-design.md`、`package.json` | 專案名稱(文件用可讀名稱,`package.json` 用 kebab-case) |
+| `{{PROJECT_NAME}}` | `AGENTS.md`、`docs/00-design.md`、`package.json` | 專案名稱(文件用可讀名稱,`package.json` 用 kebab-case) |
 
 ## `.claude/skills/autopilot/SKILL.md`(協調者的自動推進迴圈,可選)
 
 | placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
-| `{{ADVISOR_SESSION}}` | 技術顧問 session 的名字(`ListAgents` 看得到);這個名字會隨 session 重開而變,不要抄一次就當永遠不變(見 `PITFALLS.md` P-59) | `<你的專案>-advisor`(格式範例,不要照抄字面值) |
+| `{{ADVISOR_SESSION}}` | 技術顧問 session 的名字(可由目前平台的 session 清單確認);這個名字會隨 session 重開而變,不要抄一次就當永遠不變(見 `PITFALLS.md` P-59) | `<你的專案>-advisor`(格式範例,不要照抄字面值) |
 | `{{LINT_COMMAND}}` | 對產出資料做健檢的指令 | `npm run lint:wiki` |
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
 | `{{PARALLEL_CAP}}` | 同時處於審核輪(跑變異測試)的 worktree 上限,由使用者依機器規格與帳號額度填,協調者不猜 | `3`(單機 Stryker 平行的 OOM 臨界值) |
@@ -210,14 +210,14 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 | `{{UNMERGED_CAP}}` | 做完但還沒合進 main 的交付物上限;超過就暫停派新工、產能轉整合。依你們的合併速度填,協調者不猜 | `10`(AI_KM;見 `docs/07-practices.md` (ap)) |
 | `{{BRANCH_DRIFT_CAP}}` | in-progress 分支落後 main 的 commit 數上限;超過先同步(`git merge main`)再派下一棒 | `50`(AI_KM;落後 200 以上時衝突與漏改集中出現) |
 | `{{NN}}` | 回報格式範例裡的資料夾編號,照抄格式即可 | `04` |
-§4b 的平台備忘是 Orca 專用;用別的 agent 平台就換成你踩到的。
+§4b 的平台備忘是特定平台 adapter;用別的 agent 平台就換成你踩到的。
 
-## `.orca-brief/TASK.md.template`(工單模板)
+## `docs/templates/TASK.md.template`(工單模板)
 
 | placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
 | `{{INSTALL_COMMAND}}` | worker 進 worktree 後第一步要跑的依賴安裝指令 | `npm ci` |
-| `{{RULES_FILE_SECTION}}` | 規則檔裡 worker 必須先讀的特定節,不要只寫「讀規則」 | `CLAUDE.md` 的「五條硬規則」與「做決定時」表 |
+| `{{RULES_FILE_SECTION}}` | 規則檔裡 worker 必須先讀的特定節,不要只寫「讀規則」 | `AGENTS.md` 的「五條硬規則」與「做決定時」表 |
 | `{{FULL_CHECK_COMMANDS}}` | 完成前必跑的完整檢查指令(通常跟 autopilot §0 或 §2 的收割檢查一致) | `npm run boundaries && npm test && npm run accept:standalone && npm run accept:dry && npm run accept:coverage` |
 | `{{KNOWN_RED_NOTE}}` | 專案特有的「哪些紅是還沒做,不是弄壞了」說明 | 「`packages/core` 尚未實作 `weekly-goal`,相關場景紅屬預期,不要修」 |
 | `{{SPEND_CHECK_COMMAND}}` | 同 `.claude/skills/autopilot/SKILL.md`——worktree 起手也要跑一次,退出碼三態 0/1/2 | `npx tsx scripts/llm-spend.ts --today` |
@@ -226,7 +226,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 
 | placeholder | 填什麼 | 本專案的例子 |
 |---|---|---|
-| `{{TEMPLATE_VERSION}}` | `CLAUDE.md` 記的採用模板版本 | `1.0.0` |
+| `{{TEMPLATE_VERSION}}` | `AGENTS.md` 記的採用模板版本 | `1.0.0` |
 | `{{ADVISOR_SESSION}}` | 決策權表裡技術顧問的 session 名(同上,會過期,不要照抄字面值) | `<你的專案>-advisor` |
 | `{{DAILY_CAP_ENV}}` | 當日付費 API 上限的環境變數名 | `LLM_DAILY_CAP_USD` |
 | `{{BASELINE_TAG}}` | 切換前打的舊制基準 tag 名(步驟 2) | AI_KM:`baseline-bmad`;nightmare:`safety/main-before-paradigm` |

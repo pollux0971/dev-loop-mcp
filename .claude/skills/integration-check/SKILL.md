@@ -1,11 +1,15 @@
 ---
 name: integration-check
-description: 驗收一個整合點。當某個整合點的所有 phase 都完成、使用者說要整合了、或問「現在系統能用了嗎」時使用。核心是把端到端場景原文貼給使用者問「你做得到嗎」——測試全綠但使用者說做不到,就是沒整合完。
+description: 驗收一個整合點。當某個整合點的所有 phase 都完成、使用者要求整合驗收、或問「現在系統能用了嗎」時使用。核心是把端到端場景原文貼給使用者問「你做得到嗎」——測試全綠但使用者說做不到,就是沒整合完。
 ---
 
-# /integrate — 整合驗收
+# integration-check — 整合驗收
 
-目標:`$ARGUMENTS`
+目標:使用者給的輸入
+
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
+<!-- CLAUDE-ONLY-END -->
 
 整合點的驗收比 phase 嚴格,因為它的意思是「**系統現在是完整可用的**」
 (見 `docs/02-decision-map.md` ADR-007)。
