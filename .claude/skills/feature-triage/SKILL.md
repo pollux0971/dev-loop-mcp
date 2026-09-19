@@ -1,13 +1,13 @@
 ---
 name: feature-triage
-description: 產品 PM 的內部 A/B/C/D/E 新需求分流 workflow。只由 product-pm 在整理 L0/L1 後呼叫；使用者提出新功能、產品想法或 /feature 時一律先啟動 product-pm，本 skill 不直接與 product-pm 競爭使用者入口。
+description: 產品 PM 的內部 A/B/C/D/E 新需求分流 workflow。只由 product-pm 在整理 L0/L1 後呼叫；使用者提出新功能、產品想法或要求 feature workflow 時一律先啟動 product-pm，本 skill 不直接與 product-pm 競爭使用者入口。
 ---
 
 # feature-triage — 產品 PM 的內部分流 workflow
 
 ## 路由契約（優先權寫死）
 
-1. 使用者提出新功能、需求調整、產品想法或 `/feature` 時，唯一使用者入口是 `product-pm`。
+1. 使用者提出新功能、需求調整、產品想法或要求 feature workflow 時，唯一使用者入口是 `product-pm`。
 2. 本 skill 只接受 `product-pm` 整理後的需求 envelope，不自行建立另一段 PM 對話或平行提案。
 3. 若路由器同時命中 `product-pm` 與本 skill，**只啟動 `product-pm`**；由它在同一條產品對話內呼叫本 workflow。
 4. 本 skill 負責分類、產生 L2 提案與確認後寫入 L3；`product-pm` 負責主持訪談、呈現提案、找到適格批准者並把 L3 交給協調者。
@@ -18,14 +18,18 @@ description: 產品 PM 的內部 A/B/C/D/E 新需求分流 workflow。只由 pro
 |---|---|---|
 | L0 探索證據 | party transcript、brainstorm、研究摘錄 | 只證明討論與觀察，不可派工 |
 | L1 PM 綜整 | product brief、PRD、候選 capability、未解問題 | 本 workflow 的上游輸入，不可直接改權威規格 |
-| L2 `/feature` 提案 | A/B/C/D/E 分流、目標 phase、gate、草擬 scenarios、衝突清單 | 待適格批准者確認；不可寫檔或派工 |
+| L2 feature 提案 | A/B/C/D/E 分流、目標 phase、gate、草擬 scenarios、衝突清單 | 待適格批准者確認；不可寫檔或派工 |
 | L3 已批准規格 | 已確認並寫入的 `.feature`、`FEATURE.md`、`NEXT.md` 及必要索引／roadmap | 可交協調者納入開發 DAG；硬約定仍以 contracts 與 ADR 為準 |
 
 L2→L3 的唯一界線是本 workflow 的確認 gate。L0/L1 的檔案存在、技術顧問的可行性意見或 PM 的建議都不能取代確認。
 
 需求:
 
-> $ARGUMENTS
+> 使用者給的輸入
+
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
+<!-- CLAUDE-ONLY-END -->
 
 輸入應包含 `PROPOSAL-ID`、使用者原話、L0/L1 來源、產品目標、已知範圍、【驗】事實、【推】假設與未解問題。缺少會改變分類的欄位時，把缺口回給產品 PM；不要直接另開一條使用者對話。
 
@@ -76,7 +80,7 @@ L2→L3 的唯一界線是本 workflow 的確認 gate。L0/L1 的檔案存在、
 違反某條產品層 ADR。「這個提案讓 Wave 0 的某個功能直接呼叫另一個功能的內部函式」→
 違反 `docs/02-decision-map.md` ADR-004(Wave 0 平行、禁止跨資料夾 import)。
 
-處理:列出衝突的 ADR 編號，由產品 PM 問使用者「要推翻嗎?」。要的話先 `/decide` 產生 superseding ADR。
+處理:列出衝突的 ADR 編號，由產品 PM 問使用者「要推翻嗎?」。要的話先使用 decision-record 產生 superseding ADR。
 
 ### D · 跨功能 → 拆,再各自判定
 
@@ -113,14 +117,14 @@ L2→L3 的唯一界線是本 workflow 的確認 gate。L0/L1 的檔案存在、
 **新資料夾的 phase-1 必須符合 Wave 0 的規則**——只 import contracts、能單獨跑、吃 fixture。
 即使現在已經過了 Wave 0 也一樣,這是保持模組獨立的機制(見 ADR-005)。
 
-## 確認由誰做(來源 nightmare-assault,跟 `CLAUDE.md`「做決定時」表對齊)
+## 確認由誰做(來源 nightmare-assault,跟 `AGENTS.md`「做決定時」表對齊)
 
 產品 PM 負責把 L2 提案送給正確的確認者。不是每個提案都要等使用者:
 
 - **A(編輯既有資料夾)且符合准入三條**(命中既有 FEATURE.md 範圍、不落在「不在範圍」、不需要動契約)
   → 提案給**技術顧問**確認即可,不必等使用者——這件事本身落在決策權表「技術取捨」那一列。
 - **B(新資料夾)、或任何被判成新功能 / 新需求的提案** → 一律等**使用者**確認,即使技術顧問已經覺得
-  提案很合理也不能代替使用者拍板——這是決策權表「新功能、新需求」那一列,`/feature` 本身不能跳過它。
+  提案很合理也不能代替使用者拍板——這是決策權表「新功能、新需求」那一列,feature workflow 本身不能跳過它。
 - C / D / E 依原本第三步的判定各自處理(C、E 本來就已經是「先問人」的路徑)。
 
 **技術顧問 30 分鐘沒回應時**:**不要**代替他確認、也**不要**寫任何檔案——先去做其他 ready 的工作,
@@ -171,7 +175,7 @@ Gate:自身 …;整合 …;契約 …
 
 1. **寫 gherkin**,英文,遵守 `features/README.md` 慣例。場景要完整可執行,不是只有標題,每個 3–6 步。
 2. **更新 FEATURE.md**:phase 表加一行。新資料夾要從 `_template/FEATURE.md` 複製並填滿每一段——
-   「範圍」與「不在範圍」要具體到下次 `/feature` 能拿來判斷,「單獨執行」要是真能跑的指令。
+   「範圍」與「不在範圍」要具體到下次 feature workflow 能拿來判斷,「單獨執行」要是真能跑的指令。
 3. **更新 NEXT.md**:新 phase 的 gate 三類都要寫,以及「gate 未滿足時該做什麼」——
    這段最有價值,它防止之後有人在等待時瞎猜介面。
 4. **新資料夾額外**:`features/README.md` 索引加一行(含單獨執行指令);

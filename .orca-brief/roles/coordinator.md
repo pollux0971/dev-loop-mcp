@@ -8,7 +8,7 @@
 
 ## 你做
 
-1. **寫工單**:`/data/python/dev-paradigm-briefs/tickets/<節點>.md`。照 `.orca-brief/TASK.md.template`,
+1. **寫工單**:`/data/python/dev-paradigm-briefs/tickets/<節點>.md`。照 `docs/templates/TASK.md.template`,
    尾端**寫死整條鏈規格**(格式見下)。工單內容用「當場取數」:不寫死 ADR/DECISIONS_NEEDED 編號,寫取數指令。
 2. **開第一棒**(只有第一棒是你開,後面都是接線 agent):
    ```bash

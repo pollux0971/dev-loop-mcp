@@ -9,6 +9,8 @@
 **minor。** 1.10.0 發布(tag `v1.10.0`)之後的第一批變更,不算進已發布的 1.10.0——那個 tag 已經
 推出去了,不能回頭改內容;版本號往前跳一個。發布時機另定。
 
+- 規則正本搬到 `AGENTS.md`(ADR-020)。
+
 - **清死代碼**:`check-dag.ts` 的 `ExternalBlocker`(型別宣告未用)、`check-doc-rot.ts` 的未用
   `mkdirSync` import 與 `DEFAULT_SKIP_DIRS` 常數。`npx tsc --noEmit --noUnusedLocals
   --noUnusedParameters` 從 4 條降到 1 條(剩 `check-boundaries.test.ts` 的 `SCANNER_BROKEN`,

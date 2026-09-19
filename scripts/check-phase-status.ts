@@ -1,7 +1,7 @@
 /**
  * Phase 狀態表漂移檢查(S15,來源:專案 A 協調者,2026-09-05;PITFALLS P-75)。
  *
- * 背景:`FEATURE.md` 的 Phase 表是「唯一狀態來源」(見 CLAUDE.md「目錄慣例」),但沒有任何
+ * 背景:`FEATURE.md` 的 Phase 表是「唯一狀態來源」(見 AGENTS.md「目錄慣例」),但沒有任何
  * 守門在看它跟現實對不對得上——專案 A 實測 `01-data-layer/phase-4` 兩輪合併都已經場景全綠、
  * 審核 PASS 進了 main,狀態表卻連續兩輪還寫 `in-progress`,`NEXT.md` 也還列著四個「待實作」
  * 的函式,其實早就 `export function` 寫好了。這支腳本抓三種形狀的漂移,**預設 report 模式**
