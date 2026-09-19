@@ -71,8 +71,9 @@ const NO_ROOT_FLAG: Record<string, string> = {
     '沒有 --root 旗標;一律用 _root.ts 推定的 git 頂層 ROOT,腳本裡完全沒有 argv 解析 --root 的邏輯。',
 };
 
-/** `check-dag.ts` 的零輸入語意不同於既有掃描器:只有 `_template`-only repo PASS。
- * 它放在專屬 describe，不硬套下面既有 gate 的「空目錄必 FAIL + malformed config」探針。 */
+/** `check-dag.ts` 不套下面既有 gate 的共用探針表,放在專屬 describe——不是因為它的退出碼語意不同
+ * (1.11.0 起它跟其他掃描器一樣,零輸入一律 FAIL),而是它**不讀 `gates.config.json`**,探針 (c)
+ * (malformed config)對它天生不適用,套上去驗的東西是假的。 */
 const SPECIAL_ZERO_INPUT_GATE_FILES = ['check-dag.ts'];
 
 /** `scripts/` 底下所有 `check-*.ts`(不含 `.test.ts`)——目錄列舉,不是手抄清單,

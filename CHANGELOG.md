@@ -105,6 +105,8 @@ session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-ag
   重用 `check-next-gates.ts` 既有解析(private 函式改 export、回傳值重組),沒有另寫平行 parser。
   有環 → `exit 1` 印出完整環路;無環 → 印拓撲分層(平行寬度)、ready 集合、被外部阻擋(ADR/§/sha)卡住的 phase 另列。
   `npm run check:dag`;零輸入(只有 `features/_template/`)印「沒有 phase」、`exit 0`;`scripts/zero-input.gates.test.ts` 涵蓋。
+  **這條「零輸入 PASS」的方向 1.11.0 已修正成 FAIL**(違反「0 目標一律 FAIL」通則,見 1.11.0 條目)——
+  這裡保留原文不改,是這次(1.9.0)實際出貨的行為紀錄。
   本 repo 這條是走 ADR-018 四角色鏈(test→dev→非作者審核)落地的第一條,審核棒獨立合併到臨時樹重做反向驗證
   (環路 fixture 必紅、拿掉一條真依賴分層必變),結論 PASS;merge commit bcfc58a。
 - **修 `check-next-gates.ts` 既有 bug:三種 header 句型解析錯誤**(2026-09-15,fix-forward,不 revert check-dag)。
