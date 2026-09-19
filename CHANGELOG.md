@@ -4,6 +4,22 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
+## 1.11.0 — 2026-09-19(已進 main,尚未發布)
+
+**minor。** 1.10.0 發布(tag `v1.10.0`)之後的第一批變更,不算進已發布的 1.10.0——那個 tag 已經
+推出去了,不能回頭改內容;版本號往前跳一個。發布時機另定。
+
+- **清死代碼**:`check-dag.ts` 的 `ExternalBlocker`(型別宣告未用)、`check-doc-rot.ts` 的未用
+  `mkdirSync` import 與 `DEFAULT_SKIP_DIRS` 常數。`npx tsc --noEmit --noUnusedLocals
+  --noUnusedParameters` 從 4 條降到 1 條(剩 `check-boundaries.test.ts` 的 `SCANNER_BROKEN`,
+  在測試檔裡,依規則刻意不處理)。
+  **過程記一件事**:工單原本另外列了 `_root.ts` 的 `featurePhaseRowExists`/`adrExists`,協調者用
+  `grep` 驗證「零呼叫」,但 dev 棒用 `tsc` 交叉核對發現 `check-known-defects.ts` 真的呼叫它們,
+  正確拒絕刪除並 RETURN。事後查明根因:`check-known-defects.ts` 裡有兩個字面 NUL 位元組
+  (`U+0000`),`grep` 把整支檔案當二進位靜默跳過匹配——不是協調者下錯指令,是那支檔案本身的
+  怪異之處。範圍已更正,那兩個函式維持不動(它們確實有用,只是舊版的 phase 表解析,已知要另案
+  換掉,見下一輪待辦);merge commit `c58afab`。
+
 ## 1.10.0 — 2026-09-19(已發布)
 
 **minor。** 1.9.0 發布(tag `v1.9.0`)之後的第一批變更,不算進已發布的 1.9.0——那個 tag 已經推出去了,
