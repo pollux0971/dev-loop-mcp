@@ -14,7 +14,7 @@
 | 角色 | ListAgents 名(會變,啟動時重認) | prompt 檔 | cron(分) |
 |---|---|---|---|
 | 協調者 ARIA | 重啟就換名,用 ListAgents 認 | `coordinator.md` | 6,21,36,51 |
-| 技術顧問 | 重啟就換名,用 ListAgents 認 | (本 session,不需要檔) | 2,22,42 |
+| 技術顧問 | 重啟就換名,用 ListAgents 認 | (本 session,不需要檔;偵測腳本 `bin/advisor_watch.sh`) | Monitor 60 秒 + 巡檢 2,22,42 |
 | 接線 agent | 重啟就換名,用 ListAgents 認 | `wiring.md` | Monitor 150 秒 + 巡檢 10,25,40,55 |
 | 整合/清樹 agent | 重啟就換名,用 ListAgents 認 | `integrator.md` | 13,28,43,58 |
 
