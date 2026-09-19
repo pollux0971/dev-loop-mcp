@@ -11,18 +11,16 @@ const SOURCE_RE = /^(\/\/|#) SOURCE: template v/;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => JSON.stringify(value, null, 2) + "\n";
 
-export function transportAlias(payloadPath) {
+export function transportAlias(payloadPath, direction = "to-transport") {
   const normalized = payloadPath.replaceAll(path.sep, "/");
   const basename = path.posix.basename(normalized);
+  if (direction === "to-logical") {
+    if (basename !== "gitignore" && basename !== "npmrc") return normalized;
+    return path.posix.join(path.posix.dirname(normalized), `.${basename}`);
+  }
+  if (direction !== "to-transport") throw new Error(`不認得的 transport alias 方向: ${direction}`);
   if (basename !== ".gitignore" && basename !== ".npmrc") return normalized;
   return path.posix.join(path.posix.dirname(normalized), basename.slice(1));
-}
-
-function restoreTransportAlias(transportPath) {
-  const normalized = transportPath.replaceAll(path.sep, "/");
-  const basename = path.posix.basename(normalized);
-  if (basename !== "gitignore" && basename !== "npmrc") return normalized;
-  return path.posix.join(path.posix.dirname(normalized), `.${basename}`);
 }
 
 async function readJson(file) { return JSON.parse(await fs.readFile(file, "utf8")); }
@@ -68,12 +66,11 @@ async function expandEntry(sourceRoot, entry) {
   const files = [];
   if (await isFile(root)) return [root];
   for (const include of includes) {
-    const exact = path.resolve(root, include);
-    if (!/[?*]/.test(include) && await isFile(exact)) { files.push(exact); continue; }
     const matcher = globToRegExp(include.replaceAll(path.sep, "/"));
     for (const candidate of await filesUnder(root)) {
       const relative = path.relative(root, candidate).split(path.sep).join("/");
-      if (matcher.test(relative)) files.push(candidate);
+      const logical = transportAlias(relative, "to-logical");
+      if (matcher.test(logical)) files.push(candidate);
     }
   }
   const expanded = [...new Set(files)].sort();
@@ -158,9 +155,7 @@ async function buildPlan(context, target) {
     for (const source of await expandEntry(sourceRoot, entry)) {
       const sourceRelative = path.relative(sourceRoot, source).split(path.sep).join("/");
       // 1.7.1:單檔條目可用 `dest` 指定落地路徑(例:空白骨架 package/skeleton/DECISIONS_NEEDED.md → DECISIONS_NEEDED.md)。
-      const relative = entry.dest ?? (transportAlias(entry.root) === sourceRelative
-        ? entry.root
-        : restoreTransportAlias(sourceRelative));
+      const relative = entry.dest ?? transportAlias(sourceRelative, "to-logical");
       let body = render((await fs.readFile(source)).toString("utf8"), target);
       if (relative.startsWith("scripts/") && (relative.endsWith(".ts") || relative.endsWith(".py"))) body = sourceHeader(version, commit, body, path.extname(relative));
       add(relative, body);
