@@ -39,6 +39,8 @@
  * 所以豁免逐項列具體子路徑;`.orca-brief/` 底下出現一個新檔,會以「未分類」紅出來。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+// @ts-expect-error cli.mjs is JavaScript-only and has no declaration file; its named export is runtime-verified below.
+import { transportAlias } from '../package/src/cli.mjs';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -160,13 +162,12 @@ beforeAll(() => {
   if (!tgz) throw new Error(`npm pack 沒有產出 tarball:\n${pack.out}`);
   const tar = run('tar', ['-tzf', join(art, tgz)], base);
   if (tar.code !== 0) throw new Error(`tar -tzf 失敗:\n${tar.out}`);
-  const alias = new Map([['gitignore', '.gitignore'], ['npmrc', '.npmrc']]);
   npxShipped = new Set(
     tar.out
       .split('\n')
       .map((l) => l.match(/^package\/dist\/template\/(.+)$/)?.[1])
       .filter((p): p is string => Boolean(p))
-      .map((p) => alias.get(p) ?? p),
+      .map((p) => transportAlias(p, 'to-logical')),
   );
 
   // (2) sync:真的跑一次,看 consumer 落地了哪些檔。
