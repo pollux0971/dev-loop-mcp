@@ -4,6 +4,29 @@
 採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
 
+## 1.10.0 — 2026-09-19(已進 main,尚未發布)
+
+**minor。** 1.9.0 發布(tag `v1.9.0`)之後的第一個變更,不算進已發布的 1.9.0——那個 tag 已經推出去了,
+不能回頭改內容;版本號往前跳一個。發布時機另定,由協調者或技術顧問決定何時打 `npx-v1.10.0`。
+
+- **`check:dag`/`check:next-gates` 認得帶字母後綴的 phase**(`phase-2b`、`phase-2c`…)。
+  技術顧問把 1.9.0 的 `check:dag` 給 AI_KM 用時發現:AI_KM 大量使用這種寫法(`05-ingestion` 的
+  `phase-2b`~`2f`),現行解析只認純數字 `phase-N`,這些 phase 完全不會變成節點、依賴也不會被算,
+  ready 集合可能漏列本來該顯示的 phase。修法:phase 識別改成 `phase-<數字><可選小寫字母後綴>`,
+  節點產生、三種既有解析寫法、反引號包資料夾名都認得後綴版本,排序 `2 < 2b < 2c < 3`。
+  分層輸出每個節點標狀態(`done`/`todo`/`in-progress`/`ready`/`blocked`,涵蓋 CLAUDE.md 列的全部
+  5 種),整合點標 `[整合點]`,讓人一眼看出哪些是還要做的。回歸 fixture 逐字複製 AI_KM
+  `features/05-ingestion/NEXT.md` 的 `phase-2b` gate 段落。審核棒獨立重做全部反向驗證(帶後綴的
+  環必須紅並印環路、拿掉帶後綴的真依賴分層要變、純數字真環不受影響仍要紅);merge commit `7488fd2`。
+  **順手必要捆綁修正**:狀態正則不認「`done(自動)`」這種關鍵字後直接接括號的寫法,AI_KM 真實資料
+  大量這樣用,不修的話新的狀態顯示功能在真資料上會顯示錯——審核棒確認這是必要捆綁,不是夾帶。
+  **待辦**(不擋這次合併):「拿掉後綴依賴分層要變」目前只有審核棒手動驗證過,缺專屬回歸測試,
+  列入候選觀察,尚未另開工單。
+- **`roles/README.md` §5「全 gate」補上 `cd package && npm test` 與 `bash scripts/sync-gates.test.sh`**
+  (2026-09-19,技術顧問):1.9.0 發布前的黑箱 gate 漏跑是因為這兩支沒被列進四角色鏈的全 gate 清單,
+  導致 `{{ACTIVE_AGENT_CAP}}` 沒登記進 `CHECKLIST.md` 一路沒被抓到,直到發布前最後手動跑才發現。
+  `dag-suffix-phase` 這輪是新規則第一次真的在候選整合裡跑,兩者都乾淨過關。
+
 ## 1.9.0 — 2026-09-19(已發布)
 
 **minor。** 使用者 2026-09-14 在技術顧問 session 親口選 A(`DECISIONS_NEEDED.md` 已批示 25②),
