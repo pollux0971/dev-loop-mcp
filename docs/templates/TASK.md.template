@@ -190,6 +190,9 @@ git status --short
 
 - 被 grep/tail 濾成空的輸出 = 失敗,不是通過。宣稱通過前把成功那一行原文貼進報告。
 - {{KNOWN_RED_NOTE}}(專案特有的假紅說明:哪些紅是「還沒做」不是「弄壞了」)
+- **寫 `done_when` 或工單正文要求「全 gate 綠」時,一律寫成「全 gate 綠(README §5,已知紅除外)」**,
+  不要寫光禿禿的「全 gate 綠」——worker 讀到字面會去追殺專案本身就有、跟這棒無關的既有已知紅
+  (`skill-mirror` 實例,技術顧問同一句話提醒過不只一次)。
 
 ## 回報格式
 
@@ -231,6 +234,13 @@ diff 檔案清單:
 測試檔加進 dev 棒的 `allowed_paths`——**dev 棒的 `allowed_paths` 永遠不含測試檔**
 `*.test.ts`/`*.test.sh`/`*.feature`/`features/steps/`,沒有例外,即使只是「翻一個數字」也一樣。
 需要改測試就是需要一棒 `role: test`,不是放寬 dev 的權限)。
+
+**工單新增任何 `scripts/check-*.ts` 時,test 棒的 `allowed_paths` 必須同時包含
+`scripts/zero-input.gates.test.ts`,並在該棒 `done_when` 寫明新 gate 的零輸入行為(缺輸入/空輸入
+各自該 `FAIL` 還是有例外、要不要吃 `gates.config.json`)**(1.11.0,`skill-mirror` 實例——第三次
+同一類「新守門沒登記進零輸入清單」,前兩次是 `dag-zero-input-message`、`phase-table-disambiguation`
+的近親問題。`zero-input.gates.test.ts` 用目錄列舉抓出所有 `check-*.ts`,沒登記就整包紅,而那是測試
+檔,dev 棒的 `allowed_paths` 天生碰不到——寫工單時就把這棒排進鏈,不要等 dev 棒 RETURN 才發現)。
 
 **任何一棒的 `done_when` 都不准要求 commit 自己的鏈報告檔**(`.orca-brief/<worktree名>-REPORT.md`
 一律留在工作目錄、不追蹤;範本已經把 `.orca-brief/*-REPORT.md` 加進 `.gitignore`)——工單裡「交件」
