@@ -172,6 +172,9 @@ function main(): void {
 
   let canonical = collectFiles(canonicalRoot, skipDirs);
   let mirror = collectFiles(mirrorRoot, skipDirs);
+  if (canonical.size === 0) {
+    fail(`正本目錄沒有任何 skill 檔案:${canonicalRoot}`, 0);
+  }
   let differences = compare(canonical, mirror);
 
   if (fix && differences.length > 0) {
