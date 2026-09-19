@@ -17,6 +17,12 @@ const TRANSPORT_ALIAS = (payloadPath) => {
   if (basename !== ".gitignore" && basename !== ".npmrc") return payloadPath;
   return path.posix.join(path.posix.dirname(payloadPath), basename.slice(1));
 };
+const RESTORE_TRANSPORT_ALIAS = (transportPath) => {
+  const normalized = transportPath.replaceAll(path.sep, "/");
+  const basename = path.posix.basename(normalized);
+  if (basename !== "gitignore" && basename !== "npmrc") return normalized;
+  return path.posix.join(path.posix.dirname(normalized), `.${basename}`);
+};
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function sorted(values) { return [...values].sort(); }
@@ -68,14 +74,18 @@ async function expandManifest(sourceRoot, manifest) {
     }
     for (const include of entry.include ?? ["**/*"]) {
       const exact = path.resolve(root, include);
-      if (!/[?*]/.test(include) && await isFile(exact)) {
-        paths.push(path.relative(sourceRoot, exact).split(path.sep).join("/"));
+      const transportExact = path.resolve(root, TRANSPORT_ALIAS(include));
+      if (!/[?*]/.test(include) && (await isFile(exact) || await isFile(transportExact))) {
+        const source = await isFile(exact) ? exact : transportExact;
+        paths.push(RESTORE_TRANSPORT_ALIAS(path.relative(sourceRoot, source)));
         continue;
       }
       const matcher = globToRegExp(include.replaceAll(path.sep, "/"));
       for (const candidate of await filesUnder(root)) {
         const relative = path.relative(root, candidate).split(path.sep).join("/");
-        if (matcher.test(relative)) paths.push(path.relative(sourceRoot, candidate).split(path.sep).join("/"));
+        if (matcher.test(RESTORE_TRANSPORT_ALIAS(relative))) {
+          paths.push(RESTORE_TRANSPORT_ALIAS(path.relative(sourceRoot, candidate)));
+        }
       }
     }
   }
@@ -135,6 +145,33 @@ async function packArtifact() {
   const fixtureFile = path.join(repo, transportFixture.path);
   await fs.mkdir(path.dirname(fixtureFile), { recursive: true });
   await fs.writeFile(fixtureFile, transportFixture.body);
+  const transportFixtures = [
+    {
+      name: "literal-include",
+      root: "package/test/fixtures/transport/multi-literal",
+      include: ["py/.gitignore", "py/ordinary.txt"],
+      files: [
+        { relative: "py/.gitignore", body: "literal-fixture-only/\n" },
+        { relative: "py/ordinary.txt", body: "literal ordinary fixture\n" },
+      ],
+    },
+    {
+      name: "glob-include",
+      root: "package/test/fixtures/transport/multi-glob",
+      include: ["**/*"],
+      files: [
+        { relative: "py/deep/.gitignore", body: "glob-fixture-only/\n" },
+        { relative: "py/ordinary.txt", body: "glob ordinary fixture\n" },
+      ],
+    },
+  ];
+  for (const fixture of transportFixtures) {
+    for (const file of fixture.files) {
+      const target = path.join(repo, fixture.root, file.relative);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, file.body);
+    }
+  }
   const manifestFile = path.join(repo, "package", "payload-manifest.json");
   const manifest = JSON.parse(await fs.readFile(manifestFile, "utf8"));
   manifest.payload.push({
@@ -142,6 +179,13 @@ async function packArtifact() {
     include: [transportFixture.path],
     purpose: "test-only nested .gitignore transport alias fixture",
   });
+  for (const fixture of transportFixtures) {
+    manifest.payload.push({
+      root: fixture.root,
+      include: fixture.include,
+      purpose: `test-only multi-root ${fixture.name} transport alias fixture`,
+    });
+  }
   await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
   const artifactDir = path.join(temp, "artifacts");
   await fs.mkdir(artifactDir);
@@ -150,7 +194,7 @@ async function packArtifact() {
   const metadata = JSON.parse(result.stdout);
   const tarball = path.join(artifactDir, metadata[0].filename);
   assert.ok(await isFile(tarball), `npm pack did not create ${tarball}`);
-  return { temp, repo, tarball, packageDir: path.join(repo, "package"), metadata: metadata[0], transportFixture };
+  return { temp, repo, tarball, packageDir: path.join(repo, "package"), metadata: metadata[0], transportFixture, transportFixtures };
 }
 
 async function tarEntries(tarball) {
@@ -210,7 +254,17 @@ async function assertInstalledBytes(target, sourceRoot, relative, label) {
   );
 }
 
-async function gateTransportAlias(artifact, payload) {
+function expectedInstalledPaths(manifest, payload) {
+  const destOf = new Map((manifest.payload ?? []).filter((entry) => entry.dest).map((entry) => [entry.root, entry.dest]));
+  return sorted([...payload.map((payloadPath) => destOf.get(payloadPath) ?? payloadPath), ".npx-init-manifest.json"]);
+}
+
+async function assertInstalledPathSet(target, manifest, payload, label) {
+  const installed = sorted((await filesUnder(target)).map((file) => path.relative(target, file).split(path.sep).join("/")));
+  assert.deepEqual(installed, expectedInstalledPaths(manifest, payload), `${label}: installed path set differs from manifest expansion`);
+}
+
+async function gateTransportAlias(artifact, manifest, payload) {
   const fixturePath = artifact.transportFixture.path;
   assert.ok(payload.includes(fixturePath), `nested alias fixture was not included in payload: ${fixturePath}`);
   assert.notEqual(path.posix.dirname(fixturePath), ".", "transport fixture must be nested");
@@ -226,7 +280,8 @@ async function gateTransportAlias(artifact, payload) {
   const rootPackageDir = await unpack(artifact.tarball, rootExtracted);
   const rootManifestFile = path.join(rootPackageDir, "payload-manifest.json");
   const rootManifest = JSON.parse(await fs.readFile(rootManifestFile, "utf8"));
-  rootManifest.payload = rootManifest.payload.filter((entry) => entry.root !== fixturePath);
+  const testFixtureRoots = new Set([fixturePath, ...artifact.transportFixtures.map((fixture) => fixture.root)]);
+  rootManifest.payload = rootManifest.payload.filter((entry) => !testFixtureRoots.has(entry.root));
   await fs.writeFile(rootManifestFile, `${JSON.stringify(rootManifest, null, 2)}\n`);
   const rootTarget = path.join(rootExtracted, "consumer");
   await fs.mkdir(rootTarget);
@@ -244,6 +299,15 @@ async function gateTransportAlias(artifact, payload) {
   const init = await run(process.execPath, [path.join(packageDir, "src", "cli.mjs"), "init", target]);
   assert.equal(init.code, 0, `transport alias init failed:\n${output(init)}`);
   await assertInstalledBytes(target, artifact.repo, fixturePath, "nested transport alias install");
+  for (const fixture of artifact.transportFixtures) {
+    for (const file of fixture.files) {
+      const relative = `${fixture.root}/${file.relative}`;
+      assert.ok(payload.includes(relative), `${fixture.name}: manifest expansion omitted ${relative}`);
+      await assertInstalledBytes(target, artifact.repo, relative, `${fixture.name} transport alias install`);
+    }
+  }
+  await assertInstalledPathSet(target, manifest, payload, "multi-root transport alias install");
+  console.log("✓ multi-root transport aliases PASS (literal include + glob include)");
 }
 
 async function snapshot(root) {
@@ -455,11 +519,11 @@ async function main() {
   const artifact = await packArtifact();
   const { manifest, payload } = await artifactData(artifact);
   if (only === "transport-alias") {
-    await gateTransportAlias(artifact, payload);
+    await gateTransportAlias(artifact, manifest, payload);
     console.log("✓ gate transport-alias PASS");
     return;
   }
-  await gateTransportAlias(artifact, payload);
+  await gateTransportAlias(artifact, manifest, payload);
   await gateTarball(artifact, manifest, payload);
   if (probe === "tarball") return probeTarball(artifact, manifest, payload);
   if (probe === "clean-init") return probeCleanInit(artifact, manifest, payload);
