@@ -14,10 +14,16 @@ SYNC_GATES="$TEMPLATE_DIR/scripts/sync-gates.sh"
 FAILURES=0
 CONSUMER=""
 CONSUMER2=""
+HOTFIX_NEW_CONSUMER=""
+HOTFIX_OLD_CONSUMER=""
+HOTFIX_LIST_CONSUMER=""
 
 cleanup() {
   [ -n "$CONSUMER" ] && [ -d "$CONSUMER" ] && rm -rf "$CONSUMER"
   [ -n "$CONSUMER2" ] && [ -d "$CONSUMER2" ] && rm -rf "$CONSUMER2"
+  [ -n "$HOTFIX_NEW_CONSUMER" ] && [ -d "$HOTFIX_NEW_CONSUMER" ] && rm -rf "$HOTFIX_NEW_CONSUMER"
+  [ -n "$HOTFIX_OLD_CONSUMER" ] && [ -d "$HOTFIX_OLD_CONSUMER" ] && rm -rf "$HOTFIX_OLD_CONSUMER"
+  [ -n "$HOTFIX_LIST_CONSUMER" ] && [ -d "$HOTFIX_LIST_CONSUMER" ] && rm -rf "$HOTFIX_LIST_CONSUMER"
 }
 trap cleanup EXIT
 
@@ -71,6 +77,34 @@ assert_eq() {
   else
     fail "$desc(預期 $expected,實際 $actual)"
   fi
+}
+
+contains_text() {
+  case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac
+}
+
+# 建立一個所有同步進來的 check-*.ts 都已接線的假 consumer,讓 HOTFIX fixture 的
+# --check 退出碼只反映 HOTFIX 行為,不被接線檢查的既有紅燈干擾。
+make_hotfix_consumer() {
+  local dest
+  dest="$(mktemp -d)"
+  (
+    cd "$dest"
+    git init -q
+    git config user.email "sync-gates-hotfix-test@example.com"
+    git config user.name "sync-gates-hotfix-test"
+  )
+  cp "$TEMPLATE_DIR/package.json" "$dest/package.json"
+  "$SYNC_GATES" "$dest" scripts >/dev/null 2>&1 || return 1
+  echo "$dest"
+}
+
+# 在已同步的檔案第 2 行放 HOTFIX,再在檔身插入一行變更,確保會走 HOTFIX
+# 判斷分支而不是因為雜湊相同直接顯示「未被更動」。
+add_hotfix_fixture() {
+  local file="$1" hotfix_line="$2"
+  sed -i "2i\\$hotfix_line" "$file"
+  sed -i '3i// HOTFIX fixture body change' "$file"
 }
 
 # $1=檔案路徑 → sha256(用來斷言「這個檔案完全沒被動過」)
@@ -399,6 +433,101 @@ assert_eq "非 git 目標:--check 跑完自己的判定(0/1),不是崩潰" "$NG_
 grep -q "pre-commit hook" "$NG.check.out"
 assert_eq "非 git 目標:--check 仍印出 hook 狀態那一行" "$?" "0"
 rm -rf "$NG" "$NG.sync.out" "$NG.check.out"
+
+echo "== 步驟 15(1.11.0,hotfix-traceability):HOTFIX 新格式、舊格式與尾端清單 =="
+# 這三組 fixture 刻意各自隔離:新格式的兩個時間點、舊格式的格式錯誤、清單的空/非空
+# 兩種狀態都只碰同步進來的檔案,不把前面步驟的 consumer 狀態帶進來。
+hotfix_today="$(date +%F)"
+hotfix_expired="$(date -d '3 days ago' +%F)"
+hotfix_today_age=$(( ( $(date +%s) - $(date -d "$hotfix_today" +%s) ) / 3600 ))
+
+HOTFIX_NEW_CONSUMER="$(make_hotfix_consumer || true)"
+if [ -z "$HOTFIX_NEW_CONSUMER" ]; then
+  fail "新格式 fixture 建立成功"
+else
+  new_file="$HOTFIX_NEW_CONSUMER/scripts/check-boundaries.ts"
+  add_hotfix_fixture "$new_file" "// HOTFIX: ${hotfix_today} DECISIONS-14 new-format recent"
+  new_recent_out="$("$SYNC_GATES" "$HOTFIX_NEW_CONSUMER" scripts --check 2>&1)"
+  new_recent_code=$?
+  new_recent_tail="$(printf '%s\n' "$new_recent_out" | tail -n 12)"
+
+  sed -i "2s/${hotfix_today}/${hotfix_expired}/" "$new_file"
+  new_expired_out="$("$SYNC_GATES" "$HOTFIX_NEW_CONSUMER" scripts --check 2>&1)"
+  new_expired_code=$?
+  if [ "$new_recent_code" = "0" ] \
+    && contains_text "$new_recent_out" "⚠ check-boundaries.ts 有本地 HOTFIX(${hotfix_today}," \
+    && contains_text "$new_recent_tail" "HOTFIX 清單" \
+    && contains_text "$new_recent_tail" "DECISIONS-14" \
+    && contains_text "$new_recent_tail" "new-format recent" \
+    && contains_text "$new_recent_tail" "${hotfix_today_age}h" \
+    && [ "$new_expired_code" = "1" ] \
+    && contains_text "$new_expired_out" "HOTFIX(${hotfix_expired})"; then
+    pass "新格式 HOTFIX:24 小時內警告不紅、超過 24 小時紅,且清單含完整欄位"
+  else
+    fail "新格式 HOTFIX:24 小時內警告不紅、超過 24 小時紅,且清單含完整欄位"
+    echo "--- 新格式 24 小時內實際輸出 ---"
+    echo "$new_recent_out"
+    echo "--- 新格式超過 24 小時實際輸出 ---"
+    echo "$new_expired_out"
+    echo "--- 輸出結束 ---"
+  fi
+fi
+
+HOTFIX_OLD_CONSUMER="$(make_hotfix_consumer || true)"
+if [ -z "$HOTFIX_OLD_CONSUMER" ]; then
+  fail "舊格式 fixture 建立成功"
+else
+  old_file="$HOTFIX_OLD_CONSUMER/scripts/check-boundaries.ts"
+  add_hotfix_fixture "$old_file" "// HOTFIX: ${hotfix_today} legacy-format-without-route"
+  old_format_out="$("$SYNC_GATES" "$HOTFIX_OLD_CONSUMER" scripts --check 2>&1)"
+  old_format_code=$?
+  if [ "$old_format_code" = "1" ] && contains_text "$old_format_out" "HOTFIX 行缺回流去向"; then
+    pass "舊格式 HOTFIX:--check 紅且印出缺回流去向的新訊息"
+  else
+    fail "舊格式 HOTFIX:--check 紅且印出缺回流去向的新訊息"
+    echo "--- 舊格式實際輸出 ---"
+    echo "$old_format_out"
+    echo "--- 輸出結束 ---"
+  fi
+fi
+
+HOTFIX_LIST_CONSUMER="$(make_hotfix_consumer || true)"
+if [ -z "$HOTFIX_LIST_CONSUMER" ]; then
+  fail "清單 fixture 建立成功"
+else
+  list_empty_out="$("$SYNC_GATES" "$HOTFIX_LIST_CONSUMER" scripts --check 2>&1)"
+  list_empty_code=$?
+  assert_exit_code "沒有 HOTFIX 時 --check 維持成功" "$list_empty_code" "0"
+  assert_not_contains "沒有 HOTFIX 時不印清單段落" "$list_empty_out" "HOTFIX 清單"
+
+  list_file_a="$HOTFIX_LIST_CONSUMER/scripts/check-boundaries.ts"
+  list_file_b="$HOTFIX_LIST_CONSUMER/scripts/check-dag.ts"
+  add_hotfix_fixture "$list_file_a" "// HOTFIX: ${hotfix_today} #23 list-first"
+  add_hotfix_fixture "$list_file_b" "// HOTFIX: ${hotfix_today} JIRA-1234 list-second"
+  list_out="$("$SYNC_GATES" "$HOTFIX_LIST_CONSUMER" scripts --check 2>&1)"
+  list_code=$?
+  list_tail="$(printf '%s\n' "$list_out" | tail -n 20)"
+  if [ "$list_empty_code" = "0" ] \
+    && ! contains_text "$list_empty_out" "HOTFIX 清單" \
+    && [ "$list_code" = "0" ] \
+    && contains_text "$list_tail" "HOTFIX 清單" \
+    && contains_text "$list_tail" "check-boundaries.ts" \
+    && contains_text "$list_tail" "check-dag.ts" \
+    && contains_text "$list_tail" "$hotfix_today" \
+    && contains_text "$list_tail" "JIRA-1234" \
+    && contains_text "$list_tail" "list-first" \
+    && contains_text "$list_tail" "list-second" \
+    && contains_text "$list_tail" "${hotfix_today_age}h"; then
+    pass "HOTFIX 清單:無 HOTFIX 時不印,有兩筆時尾端列出完整欄位"
+  else
+    fail "HOTFIX 清單:無 HOTFIX 時不印,有兩筆時尾端列出完整欄位"
+    echo "--- 無 HOTFIX 實際輸出 ---"
+    echo "$list_empty_out"
+    echo "--- 兩筆 HOTFIX 實際輸出尾端 ---"
+    echo "$list_tail"
+    echo "--- 輸出結束 ---"
+  fi
+fi
 
 echo
 if [ "$FAILURES" -eq 0 ]; then
