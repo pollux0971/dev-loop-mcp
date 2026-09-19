@@ -108,14 +108,118 @@ export function readFeaturePhaseRows(root: string, folder: string): FeaturePhase
   const featurePath = join(root, 'features', folder, 'FEATURE.md');
   if (!existsSync(featurePath)) return [];
   const content = readFileSync(featurePath, 'utf8');
-  const rows: FeaturePhaseRow[] = [];
-  for (const line of content.split('\n')) {
-    if (!line.trim().startsWith('|')) continue;
-    const cells = line.split('|').map((c) => c.trim());
-    if (cells[1] === undefined) continue;
-    const status = cells.find((cell) => /^(?:todo|ready|in-progress|done|blocked)(?:\s|\(|$)/i.test(cell.replace(/[`*_]/g, '').trim())) ?? cells[4] ?? '';
-    rows.push({ phase: cells[1], status });
+  const lines = content.split('\n');
+  const phaseHeading = lines.findIndex((line) => /^##\s+Phase\s*$/i.test(line.trim()));
+  if (phaseHeading < 0) return [];
+
+  const sectionEnd = lines.findIndex(
+    (line, index) => index > phaseHeading && /^#{1,2}(?:\s|$)/.test(line.trim()),
+  );
+  const end = sectionEnd < 0 ? lines.length : sectionEnd;
+
+  const parseCells = (line: string): string[] | undefined => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|')) return undefined;
+    const cells = trimmed.split('|').map((cell) => cell.trim());
+    if (cells[0] === '') cells.shift();
+    if (cells[cells.length - 1] === '') cells.pop();
+    return cells;
+  };
+
+  const cleanCell = (cell: string): string => cell.replace(/[`*_]/g, '').trim();
+  const isSeparatorRow = (cells: string[]): boolean =>
+    cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
+  const isPhaseHeader = (cells: string[]): boolean => {
+    const phaseIndex = cells.findIndex((cell) => cleanCell(cell).toLowerCase() === 'phase');
+    const statusIndex = cells.findIndex((cell) => cleanCell(cell) === '狀態');
+    return phaseIndex === 0 && statusIndex >= 0;
+  };
+  const isTableHeader = (index: number): boolean => {
+    const cells = parseCells(lines[index] ?? '');
+    const separator = parseCells(lines[index + 1] ?? '');
+    return (
+      cells !== undefined &&
+      separator !== undefined &&
+      isSeparatorRow(separator) &&
+      !/^\d+[a-z]?$/i.test(cleanCell(cells[0] ?? ''))
+    );
+  };
+
+  // AI_KM 的 FEATURE.md 會在 phase 列之間插入驗收說明，所以不能只讀連續的
+  // Markdown 行；但必須先鎖定 `## Phase` 下、表頭含「狀態」的那張表，避免
+  // 同一份檔案後面的需求表(`| # | ... |`)把數字需求誤當成 phase。
+  let headerIndex = -1;
+  let phaseColumn = -1;
+  let statusColumn = -1;
+  for (let index = phaseHeading + 1; index < end - 1; index++) {
+    const cells = parseCells(lines[index] ?? '');
+    const separator = parseCells(lines[index + 1] ?? '');
+    if (
+      cells === undefined ||
+      separator === undefined ||
+      !isSeparatorRow(separator) ||
+      !isPhaseHeader(cells)
+    ) {
+      continue;
+    }
+    headerIndex = index;
+    phaseColumn = cells.findIndex((cell) => cleanCell(cell).toLowerCase() === 'phase');
+    statusColumn = cells.findIndex((cell) => cleanCell(cell) === '狀態');
+    break;
   }
+  if (headerIndex < 0 || phaseColumn < 0 || statusColumn < 0) return [];
+
+  const rows: FeaturePhaseRow[] = [];
+  const rowLineNos = new Map<string, number[]>();
+  const firstRows = new Map<string, FeaturePhaseRow>();
+  const knownStatuses = /^(todo|ready|in-progress|done|blocked)(?=$|\s|[（(])/i;
+  const fileLabel = `features/${folder}/FEATURE.md`;
+
+  for (let index = headerIndex + 2; index < end; index++) {
+    if (isTableHeader(index)) {
+      // AI_KM 會在 phase 列之間插入別的 Markdown 表；跳過那張表的連續資料列，
+      // 但回到同一個 `## Phase` 區段後仍繼續找 phase 列(phase-4 之後的列就是
+      // 這種形狀)。這比遇到任何表頭就把整個 phase 區段截斷更符合既有文件。
+      let next = index + 2;
+      while (next < end && parseCells(lines[next] ?? '') !== undefined) next++;
+      index = next - 1;
+      continue;
+    }
+    const cells = parseCells(lines[index] ?? '');
+    if (cells === undefined) continue;
+
+    const phase = cleanCell(cells[phaseColumn] ?? '');
+    if (!/^\d+[a-z]?$/i.test(phase)) continue;
+
+    const lineNo = index + 1;
+    const statusCell = cells[statusColumn]?.trim() ?? '';
+    const statusValue = cleanCell(statusCell);
+    const statusMatch = knownStatuses.exec(statusValue);
+    const status = statusMatch ? statusMatch[1]!.toLowerCase() : statusCell;
+    if (!statusMatch) {
+      const displayedStatus = statusValue || '空白';
+      console.log(
+        `⚠ 警告 ${fileLabel}: 第 ${lineNo} 行 phase-${phase} 的狀態「${displayedStatus}」不是已知值(done/todo/in-progress/blocked/ready)`,
+      );
+    }
+
+    const lineNos = rowLineNos.get(phase) ?? [];
+    lineNos.push(lineNo);
+    rowLineNos.set(phase, lineNos);
+    if (firstRows.has(phase)) continue;
+
+    const row = { phase, status };
+    firstRows.set(phase, row);
+    rows.push(row);
+  }
+
+  for (const [phase, lineNos] of rowLineNos) {
+    if (lineNos.length < 2) continue;
+    console.log(
+      `⚠ 警告 ${fileLabel}: phase-${phase} 重複,出現在第 ${lineNos.join('、')} 行;取第 ${lineNos[0]} 行`,
+    );
+  }
+
   return rows;
 }
 
