@@ -156,6 +156,12 @@ DEST="$TARGET/$SUBDIR"
 PY_DEST="$DEST/py"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
 CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json doc-rot.blacklist.json known-defects.json)
+MANIFEST_NAME=".npx-init-manifest.json"
+MANIFEST_PATH="$TARGET/$MANIFEST_NAME"
+declare -a MANAGED_PATHS=()
+declare -a MANAGED_SOURCES=()
+declare -a MANAGED_HASHES=()
+declare -a MANAGED_CONFLICTS=()
 fail=0; n=0; hotfix_n=0
 declare -a hotfix_reports=()
 
@@ -275,6 +281,284 @@ is_lang_selected() {
   local target="$1" l
   for l in "${LANGS[@]}"; do [ "$l" = "$target" ] && return 0; done
   return 1
+}
+
+# 受管非守門檔的集合由模板目前的檔案決定,不寫死 skill 數量。發布快照可能沒有 .git,
+# 所以有版本庫時取 tracked 集合,沒有版本庫時退回同一受管目錄的 filesystem 集合。
+list_managed_template_paths() {
+  local root file rel
+  if git -C "$TEMPLATE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$TEMPLATE_DIR" ls-files -- \
+      '.claude/skills/**' \
+      '.agents/skills/**' \
+      'docs/templates/TASK.md.template' \
+      'scripts/py/.gitignore'
+    return
+  fi
+  for root in .claude/skills .agents/skills; do
+    [ -d "$TEMPLATE_DIR/$root" ] || continue
+    while IFS= read -r file; do
+      rel="${file#"$TEMPLATE_DIR/$root/"}"
+      printf '%s/%s\n' "$root" "$rel"
+    done < <(find "$TEMPLATE_DIR/$root" -type f -print)
+  done
+  for rel in docs/templates/TASK.md.template scripts/py/.gitignore; do
+    [ -f "$TEMPLATE_DIR/$rel" ] && printf '%s\n' "$rel"
+  done
+}
+
+# `scripts/py/.gitignore` 跟 Python 守門工具走同一個語言選集;其餘受管檔與語言無關。
+collect_managed_paths() {
+  local rel
+  MANAGED_PATHS=()
+  MANAGED_SOURCES=()
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    if [ "$rel" = "scripts/py/.gitignore" ] && ! is_lang_selected py; then
+      continue
+    fi
+    [ -f "$TEMPLATE_DIR/$rel" ] || continue
+    MANAGED_PATHS+=("$rel")
+    MANAGED_SOURCES+=("$TEMPLATE_DIR/$rel")
+  done < <(list_managed_template_paths | sort -u)
+}
+
+# 讀取與 npx init 相同的 files[].sha256;找不到條目或條目沒有雜湊時返回 1。
+manifest_entry_hash() {
+  node -e '
+    const fs = require("fs");
+    try {
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      let found = false;
+      let value = "";
+      for (const entry of manifest.files ?? []) {
+        if (entry && entry.path === process.argv[2]) {
+          found = true;
+          value = typeof entry.sha256 === "string" ? entry.sha256 : "";
+        }
+      }
+      if (!found || !value) process.exit(1);
+      process.stdout.write(value);
+    } catch (error) {
+      process.exit(1);
+    }
+  ' "$1" "$2"
+}
+
+# 與 package/src/cli.mjs 的 INSTALL_MANIFEST schema 對齊;不在這裡驗 manifestSha256,
+# 因為 cli.mjs 的 managedPaths 也只信任 files[] 的逐檔雜湊。
+manifest_is_valid() {
+  node -e '
+    const fs = require("fs");
+    try {
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const valid = manifest && manifest.manifestVersion === 1
+        && typeof manifest.packageVersion === "string"
+        && typeof manifest.templateVersion === "string"
+        && manifest.source === "VERSION"
+        && manifest.generatedBy === "npx init"
+        && Array.isArray(manifest.files)
+        && manifest.files.every((entry) => entry && typeof entry.path === "string"
+          && typeof entry.sha256 === "string");
+      process.exit(valid ? 0 : 1);
+    } catch (error) {
+      process.exit(1);
+    }
+  ' "$1"
+}
+
+# 受管檔衝突先掃後寫。內容等於模板目前版本是 no-op,但仍要求已有 manifest
+# 記錄;沒有安裝紀錄的既有檔不能靠「剛好內容一樣」推測 ownership。
+prepare_managed() {
+  local i rel src dst template_hash current_hash recorded_hash
+  MANAGED_HASHES=()
+  MANAGED_CONFLICTS=()
+
+  if [ -e "$MANIFEST_PATH" ] && [ ! -f "$MANIFEST_PATH" ]; then
+    MANAGED_CONFLICTS+=("$MANIFEST_PATH 已存在但不是檔案,不覆蓋")
+    printf '%s\n' "${MANAGED_CONFLICTS[@]}"
+    return 1
+  fi
+  if [ -f "$MANIFEST_PATH" ] && ! manifest_is_valid "$MANIFEST_PATH"; then
+    echo "✗ $MANIFEST_PATH 存在但格式不是 npx init 的 manifest,不覆蓋"
+    return 1
+  fi
+
+  for i in "${!MANAGED_PATHS[@]}"; do
+    rel="${MANAGED_PATHS[$i]}"
+    src="${MANAGED_SOURCES[$i]}"
+    dst="$TARGET/$rel"
+    template_hash="$(sha256_file "$src")"
+    MANAGED_HASHES+=("$template_hash")
+    if [ -e "$dst" ] && [ ! -f "$dst" ]; then
+      MANAGED_CONFLICTS+=("$dst 已存在但不是檔案,受管同步不覆蓋")
+      continue
+    fi
+    [ -f "$dst" ] || continue
+
+    current_hash="$(sha256_file "$dst")"
+    recorded_hash="$(manifest_entry_hash "$MANIFEST_PATH" "$rel" 2>/dev/null || true)"
+    if [ -z "$recorded_hash" ]; then
+      MANAGED_CONFLICTS+=("✗ $rel 已存在但沒有 .npx-init-manifest.json 的安裝紀錄(是 consumer 自有檔);不覆蓋")
+    elif [ "$current_hash" != "$template_hash" ] && [ "$current_hash" != "$recorded_hash" ]; then
+      MANAGED_CONFLICTS+=("✗ $rel 內容被改過(與 .npx-init-manifest.json 記錄不符);不覆蓋")
+    fi
+  done
+
+  if [ "${#MANAGED_CONFLICTS[@]}" -gt 0 ]; then
+    printf '%s\n' "${MANAGED_CONFLICTS[@]}"
+    return 1
+  fi
+}
+
+# 用 Node 寫出與 cli.mjs manifestBody 相同的 JSON,暫存檔 fsync 後再 rename。
+# 已存在的 manifest 只更新受管檔的 files[].sha256,保留 npx init 的其他欄位與檔案紀錄。
+write_managed_manifest() {
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const { createHash } = require("crypto");
+    const [manifestPath, sourceRoot, packageFile, versionFile, ...managed] = process.argv.slice(1);
+    const hash = (value) => createHash("sha256").update(value).digest("hex");
+    const json = (value) => JSON.stringify(value, null, 2) + "\n";
+
+    let manifest;
+    if (fs.existsSync(manifestPath)) {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } else {
+      const packageInfo = JSON.parse(fs.readFileSync(packageFile, "utf8"));
+      manifest = {
+        manifestVersion: 1,
+        packageVersion: packageInfo.version,
+        templateVersion: fs.readFileSync(versionFile, "utf8").trim(),
+        source: "VERSION",
+        generatedBy: "npx init",
+        files: [],
+        manifestSha256: null,
+      };
+    }
+
+    const files = Array.isArray(manifest.files) ? manifest.files.map((entry) => ({ ...entry })) : [];
+    for (const relative of managed) {
+      const digest = hash(fs.readFileSync(path.join(sourceRoot, relative)));
+      let index = -1;
+      for (let i = 0; i < files.length; i += 1) {
+        if (files[i] && files[i].path === relative) index = i;
+      }
+      if (index >= 0) files[index] = { ...files[index], path: relative, sha256: digest };
+      else files.push({ path: relative, sha256: digest });
+    }
+
+    const next = { ...manifest, files, manifestSha256: null };
+    next.manifestSha256 = hash(json(next));
+    const body = json(next);
+    let unchanged = false;
+    try { unchanged = fs.readFileSync(manifestPath, "utf8") === body; } catch (error) { /* new file */ }
+    if (unchanged) {
+      console.log(`✓ ${manifestPath}(內容相同,不重寫)`);
+      process.exit(0);
+    }
+
+    const temporary = `${manifestPath}.sync-${process.pid}-${Date.now()}`;
+    let fd;
+    try {
+      fd = fs.openSync(temporary, "wx", 0o644);
+      fs.writeFileSync(fd, body, "utf8");
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      fs.renameSync(temporary, manifestPath);
+      try {
+        const directory = fs.openSync(path.dirname(manifestPath), "r");
+        fs.fsyncSync(directory);
+        fs.closeSync(directory);
+      } catch (error) { /* directory fsync is not available on every platform */ }
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+      try { fs.unlinkSync(temporary); } catch (error) { /* already renamed */ }
+    }
+    console.log(`→ ${manifestPath}(manifest)`);
+  ' "$MANIFEST_PATH" "$TEMPLATE_DIR" "$TEMPLATE_DIR/package/package.json" \
+    "$TEMPLATE_DIR/VERSION" "${MANAGED_PATHS[@]}"
+}
+
+sync_managed() {
+  local i rel src dst dstdir tmp template_hash current_hash
+  for i in "${!MANAGED_PATHS[@]}"; do
+    rel="${MANAGED_PATHS[$i]}"
+    src="${MANAGED_SOURCES[$i]}"
+    dst="$TARGET/$rel"
+    template_hash="${MANAGED_HASHES[$i]}"
+    if [ -f "$dst" ]; then
+      current_hash="$(sha256_file "$dst")"
+      if [ "$current_hash" = "$template_hash" ]; then
+        echo "✓ $rel(內容相同,不重寫)"
+        continue
+      fi
+    fi
+    dstdir="$(dirname "$dst")"
+    mkdir -p "$dstdir"
+    tmp="$(mktemp "$dstdir/.sync-managed.XXXXXX")"
+    cp "$src" "$tmp"
+    chmod --reference="$src" "$tmp" 2>/dev/null || true
+    mv "$tmp" "$dst"
+    echo "→ $rel(受管檔)"
+  done
+  write_managed_manifest
+}
+
+# --check 不讀模板,只以安裝紀錄中的受管檔逐檔驗證,因此可在沒有模板 checkout 的 CI 執行。
+check_managed() {
+  local rel dst recorded_hash current_hash
+  local -a recorded_paths=()
+  if [ ! -f "$MANIFEST_PATH" ]; then
+    echo "✗ $MANIFEST_PATH 不存在,無法檢查受管檔"
+    fail=1
+    return
+  fi
+  if ! manifest_is_valid "$MANIFEST_PATH"; then
+    echo "✗ $MANIFEST_PATH 格式不是 npx init 的 manifest"
+    fail=1
+    return
+  fi
+  mapfile -t recorded_paths < <(
+    node -e '
+      const fs = require("fs");
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const managed = (value) => value.startsWith(".claude/skills/")
+        || value.startsWith(".agents/skills/")
+        || value === "docs/templates/TASK.md.template"
+        || value === "scripts/py/.gitignore";
+      for (const entry of manifest.files ?? []) {
+        if (entry && typeof entry.path === "string" && managed(entry.path)) console.log(entry.path);
+      }
+    ' "$MANIFEST_PATH" | sort -u
+  )
+  if [ "${#recorded_paths[@]}" -eq 0 ]; then
+    echo "ℹ $MANIFEST_PATH 沒有受管非守門檔紀錄"
+    return
+  fi
+  for rel in "${recorded_paths[@]}"; do
+    dst="$TARGET/$rel"
+    if [ ! -f "$dst" ]; then
+      echo "✗ $rel 缺 $dst"
+      fail=1
+      continue
+    fi
+    recorded_hash="$(manifest_entry_hash "$MANIFEST_PATH" "$rel" 2>/dev/null || true)"
+    if [ -z "$recorded_hash" ]; then
+      echo "✗ $rel manifest 缺少逐檔 sha256"
+      fail=1
+      continue
+    fi
+    current_hash="$(sha256_file "$dst")"
+    if [ "$current_hash" = "$recorded_hash" ]; then
+      echo "✓ $rel"
+    else
+      echo "✗ $rel 內容被改過(sha256 不符;manifest 記錄不一致)"
+      fail=1
+    fi
+  done
 }
 
 # $1 = gates.config.json 路徑 → 有 sync.languages 陣列就把逗號分隔的清單印到 stdout、
@@ -462,6 +746,7 @@ is_wired_in_package_json() {
 
 if [ "$MODE" = "--check" ]; then
   # --check 是自包含的:不讀 $TEMPLATE_DIR,只讀已經裝好的那份檔案本身;不需要語言選集。
+  check_managed
   is_config_file() {
     local base="$1" c
     for c in "${CONFIG_FILES[@]}"; do [ "$base" = "$c" ] && return 0; done
@@ -582,6 +867,11 @@ else
   [ "$has_ts" = 1 ] || LANGS=(ts "${LANGS[@]}")
   echo "選集 $(IFS=,; echo "${LANGS[*]}")(${LANGS_BASIS})"
 
+  collect_managed_paths
+  if ! prepare_managed; then
+    exit 1
+  fi
+
   # 先掃後寫(CHANGELOG 1.5.0,P-85):寫任何檔之前,先對本次選集的每一支來源檔,
   # 算出目的檔路徑,檢查「已存在且第一行不是 SOURCE 標頭」——那代表 consumer 自己
   # 寫了同名的檔案,不是模板裝的。任一命中就列出全部命中,exit 1,一個檔都不寫。
@@ -615,6 +905,8 @@ else
       sync_one "$src" "#" "$PY_DEST"
     done
   fi
+
+  sync_managed
 
   if [ "$PRUNE" = 1 ]; then
     prune_unselected
@@ -706,5 +998,5 @@ if [ "$MODE" = "--check" ]; then
   exit "$exit_code"
 else
   if is_lang_selected py; then py_note="含 $PY_DEST 底下的 Python 版工具;"; else py_note=""; fi
-  echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"
+  echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的規則入口記「採用模板 v${VERSION}」"
 fi
