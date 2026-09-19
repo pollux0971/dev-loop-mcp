@@ -38,6 +38,17 @@
   第二輪審核棒獨立重做全部驗證、對 AI_KM 全部 12 個 feature 資料夾額外驗證過,多抓到一個真實
   非標準狀態值案例;merge commit `14b85f3`。規則層順手修:「工單反向驗證要求的斷言要確認有一棒
   的 `allowed_paths` 涵蓋得到」寫進 `.orca-brief/TASK.md.template`(commit `6a4e851`)。
+- **同一則 phase 表警告一次執行只印一次**(2026-09-19,低優先)。技術顧問重驗
+  `phase-table-disambiguation` 時發現同一則警告印了 7 次——`readFeaturePhaseRows` 被多條 gate 引用
+  重複呼叫,每次都重新印警告。修法:單次執行內以「檔名+行號+訊息」去重,`check-dag.ts` 既有的
+  每資料夾一次行為不受影響。**`.gitignore` 新增 `.orca-brief/*-REPORT.md`**(出貨檔變更,同
+  `.orca-brief/REVIEW.md` 的先例,防止鏈規格棒次的報告檔被誤 commit)。
+  **過程記兩件事,協調者自己的失誤**:①第一版紅測試斷言寫成「斷言現狀」而非「斷言期望」,方向錯了;
+  ②協調者把上一輪才訂的「反向驗證斷言要有棒能寫」規則曲解成「放寬 dev 棒的 `allowed_paths` 含測試檔」,
+  而不是開一棒新的 test 角色——技術顧問核過 diff 只有 1 行,給單次例外不退件。兩條教訓已寫進
+  `.orca-brief/TASK.md.template`(commit `ac7b392`):紅測試斷言期望不斷現狀、dev 棒 `allowed_paths`
+  永遠不含測試檔、工單不准要求 commit 報告。審核棒額外發現 `check-dag.ts` 有一個同形狀的舊 bug 被這次
+  修法意外治好(依賴呼叫順序,非刻意設計),列為未來觀察項;merge commit `813945e`。
 
 ## 1.9.0 — 2026-09-19(已發布)
 
