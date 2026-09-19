@@ -92,6 +92,13 @@
       "purpose": "【驗】可供 consumer 使用的 Claude Code skill 集合；以 glob 隨現況增減。"
     },
     {
+      "root": ".agents/skills/",
+      "include": [
+        "**/*"
+      ],
+      "purpose": "【驗】可供 consumer 使用的 Codex skill 集合；逐位元組鏡像 `.claude/skills/`。"
+    },
+    {
       "root": "contracts/",
       "include": [
         "**/*"
