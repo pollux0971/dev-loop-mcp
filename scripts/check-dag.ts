@@ -57,11 +57,6 @@ interface Edge {
   target: string;
 }
 
-interface ExternalBlocker {
-  target: string;
-  token: string;
-}
-
 interface Dag {
   nodes: Map<string, Node>;
   edges: Edge[];
