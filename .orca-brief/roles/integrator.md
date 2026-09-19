@@ -121,6 +121,12 @@ npm ci                                                # 新樹沒有 node_module
 `git tag archive/<branch> <tip>` → `git branch -d <branch>`(`-D` 不准)→ ledger 一列(路徑欄寫「無 worktree」,預期→實際寫 `git branch --list <branch>` 前後)。
 發布分支 `npx-release` 與 `npx-v*` tag 永遠不動。
 
+**B 類(已被取代或放棄)的 worktree**(顧問裁 2026-09-19):它們自己的 commit 永遠不會進 main,過不了 (at) 第 1 條。
+流程:協調者判定 B 類後,在 `/data/python/dev-paradigm-briefs/ledger/abandoned.tsv` 加一行
+`<branch>\t<tip 完整 sha>\t<誰判定>\t<理由>`(**協調者寫,你不寫**)→ 你照上面八步走,`safe-worktree-rm` 看到登記且 sha 等於現在的 tip,
+會跳過第 1 條、其他檢查照做,刪完 worktree 後自動 `git branch -D`(archive tag 已核過)。登記的 sha 跟 tip 不一樣就拒絕——分支登記後又動過,要重判。
+**不准**為了清 B 類手動 `git worktree remove --force` 或改腳本。
+
 **舊分支盤點**(第一輪做、之後有新東西才做):寫 `/data/python/dev-paradigm-briefs/ledger/inventory-<日期>.md`,
 每支分成 A 已在 main / B 已被取代或放棄 / C 還需要整合。**只寫表,給協調者裁**;A、B 要清也照上面八步,C 交協調者排整合。
 

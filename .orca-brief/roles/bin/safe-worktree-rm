@@ -10,6 +10,10 @@
 #   - gitignored 的 .orca-brief/* 已原樣歸檔到 archive/<worktree名>/
 #   - 分支的 archive/<branch> tag 已存在且指向現在的 tip(orca worktree rm 會順手刪本地分支,所以 tag 一定要先打)
 #   - 分支自己的 commit 全部已在 main(git log <branch> --not main 為空),且 tip 不在 main first-parent 鏈上(擋剛開的空分支)
+#   - **B 類(已被取代或放棄)例外**:分支若列在棄用登記檔(ABANDONED,見下),而且登記的 sha 等於分支現在的 tip,
+#     就跳過上面「自己的 commit 已在 main」兩條(B 類定義上永遠不會進 main),其他檢查一條都不少;
+#     刪 worktree 後分支若還在(orca 會保留沒合入的分支),用 `git branch -D` 刪——此時 archive tag 已核過等於 tip。
+#     登記檔一行:`<branch>\t<tip 完整 sha>\t<誰判定>\t<理由>`,由協調者寫(判 B 類是它的排程決定)。
 # 任一行不過 → 整批不動。全過才逐一 orca-ide worktree rm --force(先存 porcelain)。
 set -euo pipefail
 
@@ -19,6 +23,7 @@ DRY=0
 PLAN="${1:-}"
 MAIN="${SAFE_WT_MAIN:-/data/python/dev-paradigm}"   # 覆寫只給測試用
 ARCHIVE="${SAFE_ARCHIVE:-/data/python/dev-paradigm-briefs/archive}"   # 覆寫只給測試用
+ABANDONED="${SAFE_ABANDONED:-/data/python/dev-paradigm-briefs/ledger/abandoned.tsv}"   # 覆寫只給測試用
 [[ -n "$PLAN" && -f "$PLAN" && -f "$POLICY" ]] || { echo "用法: safe-worktree-rm [--dry-run] <plan-file>(policy: $POLICY)" >&2; exit 2; }
 
 mapfile -t RAW < <(grep -vE '^\s*(#.*)?$' "$PLAN")
@@ -28,7 +33,7 @@ mapfile -t PROT < <(jq -r '.protected_path_exact_or_prefix[]' "$POLICY")
 HANDOFF_RE="$(jq -r '.handoff_file_regex' "$POLICY")"
 
 fail=0
-declare -a NORM BRANCH
+declare -a NORM BRANCH KIND
 for p in "${RAW[@]}"; do
   if [[ "$p" != /* || "$p" == *'/../'* || "$p" == *'/./'* || "$p" == *'/..' || "$p" == *'/.' ]]; then
     echo "REFUSED: 非絕對路徑或含 /../ /./: $p" >&2; fail=1; continue
@@ -75,25 +80,35 @@ for p in "${RAW[@]}"; do
   if [[ "$(git -C "$MAIN" rev-parse "refs/tags/archive/$b^{commit}")" != "$(git -C "$MAIN" rev-parse "$b")" ]]; then
     echo "REFUSED: archive/$b 指的不是 $b 現在的 tip(分支名重用過?改用 archive/$b-<日期> 前先問顧問): $p" >&2; fail=1; continue
   fi
+  tip="$(git -C "$MAIN" rev-parse "$b")"
+  if [[ -f "$ABANDONED" ]] && awk -F'\t' -v b="$b" -v t="$tip" '$1==b && $2==t {f=1} END {exit !f}' "$ABANDONED"; then
+    echo "B 類(棄用登記,tip $tip 核對一致):$b" >&2
+    NORM+=("$n"); BRANCH+=("$b"); KIND+=("abandoned"); continue
+  fi
+  if [[ -f "$ABANDONED" ]] && awk -F'\t' -v b="$b" '$1==b {f=1} END {exit !f}' "$ABANDONED"; then
+    echo "REFUSED: $b 有棄用登記,但登記的 sha 不等於現在的 tip $tip(登記後分支又動過?重新判定): $p" >&2; fail=1; continue
+  fi
   if [[ -n "$(git -C "$MAIN" log --no-merges --format=%h "$b" --not main)" ]]; then
     echo "REFUSED: 分支 $b 還有 main 沒有的 commit: $p" >&2; fail=1; continue
   fi
   # (at) 第 1 條:分支「自己的」commit 已進 main。剛從 main 開、沒有自己 commit 的分支,tip 會落在 main 的
   # first-parent 鏈上;協調者一律 merge --no-ff,真的合進去的分支 tip 不會在 first-parent 鏈上。
-  tip="$(git -C "$MAIN" rev-parse "$b")"
   if git -C "$MAIN" rev-list --first-parent main | grep -qx "$tip"; then
     echo "REFUSED: $b 的 tip 在 main first-parent 鏈上(沒有自己的 commit,或被 fast-forward)——不是 (at) 第 1 條,人工判: $p" >&2; fail=1; continue
   fi
-  NORM+=("$n"); BRANCH+=("$b")
+  NORM+=("$n"); BRANCH+=("$b"); KIND+=("merged")
 done
 
 [[ $fail -eq 0 ]] || { echo "整批拒絕,沒有任何 worktree 被刪。" >&2; exit 1; }
 
 echo "計畫筆數: ${#NORM[@]}"
-if [[ $DRY -eq 1 ]]; then printf '  would remove: %s\n' "${NORM[@]}"; echo "dry-run:沒有刪任何東西"; exit 0; fi
+if [[ $DRY -eq 1 ]]; then for i in "${!NORM[@]}"; do echo "  would remove: ${NORM[$i]} (${KIND[$i]})"; done; echo "dry-run:沒有刪任何東西"; exit 0; fi
 for i in "${!NORM[@]}"; do
   n="${NORM[$i]}"; b="${BRANCH[$i]}"
   echo "--- $n ($b) porcelain:"; git -C "$n" status --porcelain --untracked-files=all | sed 's/^/    /'
   orca-ide worktree rm --worktree "path:$n" --force --json
-  echo "removed: $n ($b, tag archive/$b)"
+  if [[ "${KIND[$i]}" == abandoned ]] && git -C "$MAIN" rev-parse -q --verify "refs/heads/$b" >/dev/null; then
+    git -C "$MAIN" branch -D "$b"
+  fi
+  echo "removed: $n ($b, ${KIND[$i]}, tag archive/$b)"
 done
