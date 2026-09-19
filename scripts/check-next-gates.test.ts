@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { extractGateLines } from './check-next-gates.js';
+import { extractGateLines, readFeaturePhaseRows } from './check-next-gates.js';
 
 const CHECK_NEXT_GATES_TS = resolve(import.meta.dirname, 'check-next-gates.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -136,6 +136,42 @@ const AI_KM_INGESTION_PHASE_2B_GATE = [
   '      「**它把固定 fixture 塞進生產索引**」。',
 ].join('\n');
 
+// 逐字複製 /data/python/AI_KM/features/11-app-shell/FEATURE.md 的 phase 表資料列
+// (第 113 行起至第 327 行的最後一列),再接上同檔第 339–343 行的無關需求表。
+// 兩張表故意放在同一份 FEATURE.md；舊 parser 會把需求表的 2、3 列當成 phase-2/3,
+// 讓真正的 done 狀態被最後一列的空狀態蓋掉。
+const AI_KM_APP_SHELL_PHASE_TABLE = [
+  '| Phase | 標題 | 整合點 | 狀態 | 完成日 |',
+  '|---|---|---|---|---|',
+  '| 1 | (回填)導覽可見性、首頁捷徑與時間、M3 token 不漂移與可讀性 | I1 | done | 2026-09-05 |',
+  '| 2 | **問完問題的人點一下答案裡的引用,就看得到它在原文的哪一段;答案沒有 `state` 時畫面保持中性、不假裝那是一個已回答的答案。** | I2 | done | 2026-09-05 |',
+  '| 3 | **一個人在瀏覽器問問題,看到的答案與引用就是伺服器產生的那一則,不是罐頭。** | I2 | done | 2026-09-05 |',
+  '| 3b | **瀏覽器端不再有任何能自己產生助理回覆的碼或型別。** | I2 | done | 2026-09-07 |',
+  '| 4 | **一個人點一下引用,抽屜裡顯示的就是伺服器給的那段原文,不是佔位文字。** | I2 | done | 2026-09-08 |',
+  '| 5 | **一個人把視窗縮到手機寬度,側欄先變成只有圖示的窄軌,再縮就收進要按漢堡鈕才打開的抽屜;而不管在哪個寬度,每一個畫面在沒有資料、載入中、出錯、沒有權限的時候,都用字說得出現在是哪一種,不是一片空白,也不會露出他不該看到的東西。** | 待定 | **done** | 2026-09-13 |',
+  '| 5b | **CI 的瀏覽器層 job 是綠的,而且每個整合點至少一條場景在它裡面跑。** | I2 之後 | todo | |',
+  '| 6 | **一個人看到的答案照它該有的樣子排版,而不是滿螢幕的星號。** | I2 之後 | **done** | 2026-09-12 |',
+].join('\n');
+
+const AI_KM_APP_SHELL_REQUIREMENTS_TABLE = [
+  '| # | 要求 | 為什麼 |',
+  '|---|---|---|',
+  '| 1 | **只渲染助理訊息,不渲染使用者輸入** | 使用者打的 `**` 不該變粗體;**更重要的是把使用者輸入餵進渲染器是典型的注入面**。**這條寫進場景,不只寫進註解** |',
+  '| 2 | **關閉 raw HTML**(不要 `rehype-raw`);相依版本**釘死** | 模型可以吐 `<script>`,而我們正要把它的輸出丟進渲染器 |',
+  '| 3 | **與 `[N]` 引用記號的互動要有場景** | markdown 的 `[text]` 是**連結參考語法**,我們的 `[1]` 會不會被它吃掉、或反過來破壞引用的可點性 —— **這是最可能壞的一處,而且壞了之後答案看起來仍然正常**。場景要斷言:渲染後 `[1]` **仍然可點**,且**點下去打開的是對的那一段** |',
+].join('\n');
+
+const AI_KM_APP_SHELL_FEATURE = [
+  '# 11-app-shell',
+  '',
+  '## Phase',
+  '',
+  AI_KM_APP_SHELL_PHASE_TABLE,
+  '',
+  AI_KM_APP_SHELL_REQUIREMENTS_TABLE,
+  '',
+].join('\n');
+
 afterEach(() => {
   while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
 });
@@ -155,6 +191,20 @@ describe('check-next-gates:0 份 NEXT.md 一律 FAIL', () => {
 });
 
 describe('check-next-gates:引用解析(各種形狀)', () => {
+  it('AI_KM 11-app-shell 兩張表混合時仍保留 phase-2/3 的 done 狀態(先寫紅)', () => {
+    const root = makeRepo();
+    write(root, 'features/11-app-shell/FEATURE.md', AI_KM_APP_SHELL_FEATURE);
+
+    const rows = readFeaturePhaseRows(root, '11-app-shell');
+
+    expect(rows.filter((row) => row.phase === '2')).toEqual([
+      { phase: '2', status: 'done' },
+    ]);
+    expect(rows.filter((row) => row.phase === '3')).toEqual([
+      { phase: '3', status: 'done' },
+    ]);
+  }, SPAWN_TIMEOUT_MS);
+
   it('AI_KM 05-ingestion phase-2b 真實 gate 的三條 checklist 會被收進來(先寫紅)', () => {
     const gates = extractGateLines(
       '05-ingestion',
