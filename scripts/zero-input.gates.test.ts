@@ -74,7 +74,7 @@ const NO_ROOT_FLAG: Record<string, string> = {
 /** `check-dag.ts` 不套下面既有 gate 的共用探針表,放在專屬 describe——不是因為它的退出碼語意不同
  * (1.11.0 起它跟其他掃描器一樣,零輸入一律 FAIL),而是它**不讀 `gates.config.json`**,探針 (c)
  * (malformed config)對它天生不適用,套上去驗的東西是假的。 */
-const SPECIAL_ZERO_INPUT_GATE_FILES = ['check-dag.ts'];
+const SPECIAL_ZERO_INPUT_GATE_FILES = ['check-dag.ts', 'check-skills-mirror.ts'];
 
 /** `scripts/` 底下所有 `check-*.ts`(不含 `.test.ts`)——目錄列舉,不是手抄清單,
  *  新增一支 gate 檔案這裡自動看得到。 */
@@ -290,6 +290,30 @@ describe('check-dag 的零輸入語意', () => {
     expect(code).toBe(1);
     expect(output).toContain(NEW_PROJECT_MESSAGE);
     expect(output).toContain('gate=dag result=FAIL scanned=0');
+    assertNoBareStack(output);
+  });
+});
+
+describe('check-skills-mirror 的零輸入語意', () => {
+  it('找不到 .claude/skills/ → 印正本目錄路徑、exit 1、result=FAIL scanned=0', () => {
+    const root = makeTempDir('lc-zero-input-skills-mirror-missing-');
+    const { code, output } = run('check-skills-mirror.ts', root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('找不到正本目錄');
+    expect(output).toContain(join(root, '.claude', 'skills'));
+    expect(output).toContain('gate=skills-mirror result=FAIL scanned=0');
+    assertNoBareStack(output);
+  });
+
+  it('.claude/skills/ 存在但沒有 skill → exit 1、result=FAIL scanned=0', () => {
+    const root = makeTempDir('lc-zero-input-skills-mirror-empty-');
+    mkdirSync(join(root, '.claude', 'skills'), { recursive: true });
+
+    const { code, output } = run('check-skills-mirror.ts', root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('gate=skills-mirror result=FAIL scanned=0');
     assertNoBareStack(output);
   });
 });
