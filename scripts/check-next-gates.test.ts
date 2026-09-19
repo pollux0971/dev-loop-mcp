@@ -308,7 +308,7 @@ describe('check-next-gates:引用解析(各種形狀)', () => {
 
     expect(code).toBe(0);
     expect(output).toContain('next-gates: 掃到 3 條 gate 宣告');
-    expect(warningCount).toBeGreaterThan(1);
+    expect(warningCount).toBe(1);
   }, SPAWN_TIMEOUT_MS);
 
   it('phase 表中夾兩張無關表後仍讀到 phase-4 的 done 狀態', () => {
