@@ -19,6 +19,19 @@ HOTFIX_OLD_CONSUMER=""
 HOTFIX_LIST_CONSUMER=""
 HOTFIX_ROUTE_CONSUMER=""
 HOTFIX_VALID_ROUTE_CONSUMER=""
+MANAGED_CONSUMER=""
+MANAGED_NOOP_CONSUMER=""
+MANAGED_CONFLICT_CONSUMER=""
+PROTECTED_CONSUMER=""
+PROTECTED_PROBE=""
+
+mapfile -t MANAGED_FILES < <(
+  git -C "$TEMPLATE_DIR" ls-files -- \
+    '.claude/skills/**' \
+    '.agents/skills/**' \
+    'docs/templates/TASK.md.template' \
+    'scripts/py/.gitignore'
+)
 
 cleanup() {
   [ -n "$CONSUMER" ] && [ -d "$CONSUMER" ] && rm -rf "$CONSUMER"
@@ -28,6 +41,11 @@ cleanup() {
   [ -n "$HOTFIX_LIST_CONSUMER" ] && [ -d "$HOTFIX_LIST_CONSUMER" ] && rm -rf "$HOTFIX_LIST_CONSUMER"
   [ -n "$HOTFIX_ROUTE_CONSUMER" ] && [ -d "$HOTFIX_ROUTE_CONSUMER" ] && rm -rf "$HOTFIX_ROUTE_CONSUMER"
   [ -n "$HOTFIX_VALID_ROUTE_CONSUMER" ] && [ -d "$HOTFIX_VALID_ROUTE_CONSUMER" ] && rm -rf "$HOTFIX_VALID_ROUTE_CONSUMER"
+  [ -n "$MANAGED_CONSUMER" ] && [ -d "$MANAGED_CONSUMER" ] && rm -rf "$MANAGED_CONSUMER"
+  [ -n "$MANAGED_NOOP_CONSUMER" ] && [ -d "$MANAGED_NOOP_CONSUMER" ] && rm -rf "$MANAGED_NOOP_CONSUMER"
+  [ -n "$MANAGED_CONFLICT_CONSUMER" ] && [ -d "$MANAGED_CONFLICT_CONSUMER" ] && rm -rf "$MANAGED_CONFLICT_CONSUMER"
+  [ -n "$PROTECTED_CONSUMER" ] && [ -d "$PROTECTED_CONSUMER" ] && rm -rf "$PROTECTED_CONSUMER"
+  [ -n "$PROTECTED_PROBE" ] && [ -d "$PROTECTED_PROBE" ] && rm -rf "$PROTECTED_PROBE"
 }
 trap cleanup EXIT
 
@@ -115,6 +133,97 @@ add_hotfix_fixture() {
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
   else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
+make_empty_git_consumer() {
+  local dest
+  dest="$(mktemp -d)"
+  (
+    cd "$dest"
+    git init -q
+    git config user.email "sync-gates-managed-test@example.com"
+    git config user.name "sync-gates-managed-test"
+    git config commit.gpgsign false
+  )
+  echo "$dest"
+}
+
+file_observable_state() {
+  stat -c '%y:%i:%s' "$1"
+}
+
+manifest_has_path() {
+  local manifest="$1" path="$2"
+  node -e '
+    try {
+      const fs = require("fs");
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const hit = Array.isArray(manifest.files) && manifest.files.some((entry) => entry && entry.path === process.argv[2]);
+      process.exit(hit ? 0 : 1);
+    } catch (error) { process.exit(1); }
+  ' "$manifest" "$path"
+}
+
+assert_managed_files_present() {
+  local root="$1" label="$2" path
+  for path in "${MANAGED_FILES[@]}"; do
+    if [ -f "$root/$path" ]; then
+      pass "$label:受管檔已落地 $path"
+    else
+      fail "$label:受管檔缺少 $path"
+    fi
+  done
+}
+
+assert_manifest_managed_files() {
+  local manifest="$1" label="$2" path
+  if [ ! -f "$manifest" ]; then
+    fail "$label:manifest 不存在 $manifest"
+    return
+  fi
+  for path in "${MANAGED_FILES[@]}"; do
+    if manifest_has_path "$manifest" "$path"; then
+      pass "$label:manifest 登記 $path"
+    else
+      fail "$label:manifest 缺少登記 $path"
+    fi
+  done
+}
+
+write_seed_manifest() {
+  local manifest="$1" path="$2" recorded_hash="$3"
+  local template_version package_version
+  template_version="$(tr -d '[:space:]' < "$TEMPLATE_DIR/VERSION")"
+  package_version="$(node -p 'require(process.argv[1]).version' "$TEMPLATE_DIR/package/package.json" 2>/dev/null || echo 0.0.0)"
+  node -e '
+    const fs = require("fs");
+    const { createHash } = require("crypto");
+    const manifestPath = process.argv[1];
+    const body = {
+      manifestVersion: 1,
+      packageVersion: process.argv[4],
+      templateVersion: process.argv[5],
+      source: "VERSION",
+      generatedBy: "npx init",
+      files: [{ path: process.argv[2], sha256: process.argv[3] }],
+      manifestSha256: null,
+    };
+    body.manifestSha256 = createHash("sha256").update(JSON.stringify(body, null, 2) + "\n").digest("hex");
+    fs.writeFileSync(manifestPath, JSON.stringify(body, null, 2) + "\n");
+  ' "$manifest" "$path" "$recorded_hash" "$package_version" "$template_version"
+}
+
+assert_protected_files_unchanged() {
+  local root="$1" agents_hash="$2" claude_hash="$3" changed=0
+  if [ "$(sha256_of "$root/AGENTS.md")" != "$agents_hash" ]; then
+    echo "✗ protected file changed: AGENTS.md"
+    changed=1
+  fi
+  if [ "$(sha256_of "$root/CLAUDE.md")" != "$claude_hash" ]; then
+    echo "✗ protected file changed: CLAUDE.md"
+    changed=1
+  fi
+  return "$changed"
 }
 
 CONSUMER="$(mktemp -d)"
@@ -569,6 +678,102 @@ else
     echo "$valid_route_out"
     echo "--- 輸出結束 ---"
   fi
+fi
+
+echo
+echo "== 步驟 17(工單 #23,leg 1):受管非守門檔同步——fresh / no-op / 衝突 =="
+# 這四類檔案沒有 SOURCE 標頭,因此測的是 sync 與 npx init 共用的 manifest 管理紀錄,
+# 不是 scripts/*.ts 的舊版逐檔標頭邏輯。這裡的 fresh、no-op、衝突三組都是對 base
+# 應該真的失敗的紅測試;不能把機制不存在時的情境靜默跳過。
+MANAGED_CONSUMER="$(make_empty_git_consumer)"
+managed_fresh_out="$("$SYNC_GATES" "$MANAGED_CONSUMER" scripts --lang ts,py 2>&1)"
+managed_fresh_code=$?
+assert_exit_code "受管檔 fresh sync 本身要成功" "$managed_fresh_code" "0"
+assert_managed_files_present "$MANAGED_CONSUMER" "fresh sync"
+assert_manifest_managed_files "$MANAGED_CONSUMER/.npx-init-manifest.json" "fresh sync"
+
+MANAGED_NOOP_CONSUMER="$(make_empty_git_consumer)"
+noop_first_out="$("$SYNC_GATES" "$MANAGED_NOOP_CONSUMER" scripts --lang ts,py 2>&1)"
+noop_first_code=$?
+assert_exit_code "受管檔 no-op 的第一次 sync 要成功" "$noop_first_code" "0"
+noop_file="${MANAGED_FILES[0]}"
+if [ -f "$MANAGED_NOOP_CONSUMER/$noop_file" ]; then
+  noop_before="$(file_observable_state "$MANAGED_NOOP_CONSUMER/$noop_file")"
+  noop_before_hash="$(sha256_of "$MANAGED_NOOP_CONSUMER/$noop_file")"
+  pass "no-op 第一次 sync 已建立可觀察的受管檔 $noop_file"
+else
+  noop_before="MISSING"
+  noop_before_hash="MISSING"
+  fail "no-op 第一次 sync 已建立可觀察的受管檔 $noop_file"
+fi
+noop_second_out="$("$SYNC_GATES" "$MANAGED_NOOP_CONSUMER" scripts --lang ts,py 2>&1)"
+noop_second_code=$?
+assert_exit_code "受管檔 no-op 的第二次 sync 要成功" "$noop_second_code" "0"
+if [ -f "$MANAGED_NOOP_CONSUMER/$noop_file" ]; then
+  noop_after="$(file_observable_state "$MANAGED_NOOP_CONSUMER/$noop_file")"
+  noop_after_hash="$(sha256_of "$MANAGED_NOOP_CONSUMER/$noop_file")"
+else
+  noop_after="MISSING"
+  noop_after_hash="MISSING"
+fi
+if [ "$noop_before" != "MISSING" ] && [ "$noop_after" = "$noop_before" ] && [ "$noop_after_hash" = "$noop_before_hash" ]; then
+  pass "受管檔 no-op 第二次 sync 沒有覆寫 $noop_file"
+else
+  fail "受管檔 no-op 第二次 sync 沒有覆寫 $noop_file(第一次:$noop_before,第二次:$noop_after)"
+fi
+
+MANAGED_CONFLICT_CONSUMER="$(make_empty_git_consumer)"
+conflict_file="docs/templates/TASK.md.template"
+mkdir -p "$MANAGED_CONFLICT_CONSUMER/$(dirname "$conflict_file")"
+cp "$TEMPLATE_DIR/$conflict_file" "$MANAGED_CONFLICT_CONSUMER/$conflict_file"
+conflict_recorded_hash="$(sha256_of "$TEMPLATE_DIR/$conflict_file")"
+printf '\nconsumer 自己的修改\n' >> "$MANAGED_CONFLICT_CONSUMER/$conflict_file"
+conflict_before_hash="$(sha256_of "$MANAGED_CONFLICT_CONSUMER/$conflict_file")"
+write_seed_manifest "$MANAGED_CONFLICT_CONSUMER/.npx-init-manifest.json" "$conflict_file" "$conflict_recorded_hash"
+conflict_out="$("$SYNC_GATES" "$MANAGED_CONFLICT_CONSUMER" scripts --lang ts,py 2>&1)"
+conflict_code=$?
+assert_exit_code "受管檔內容與 manifest 不符時 sync 要失敗" "$conflict_code" "1"
+assert_contains "受管檔衝突訊息要含檔名" "$conflict_out" "$conflict_file"
+assert_contains "受管檔衝突訊息要說明內容被改過" "$conflict_out" "被改過"
+conflict_after_hash="$(sha256_of "$MANAGED_CONFLICT_CONSUMER/$conflict_file")"
+assert_eq "受管檔衝突時原檔逐位元組不被覆寫" "$conflict_after_hash" "$conflict_before_hash"
+
+echo
+echo "== 步驟 18(工單 #23,leg 1):AGENTS.md / CLAUDE.md 不可被 sync 碰觸(反向驗證) =="
+PROTECTED_CONSUMER="$(make_empty_git_consumer)"
+printf 'consumer AGENTS sentinel\n' > "$PROTECTED_CONSUMER/AGENTS.md"
+printf 'consumer CLAUDE sentinel\n' > "$PROTECTED_CONSUMER/CLAUDE.md"
+protected_agents_hash="$(sha256_of "$PROTECTED_CONSUMER/AGENTS.md")"
+protected_claude_hash="$(sha256_of "$PROTECTED_CONSUMER/CLAUDE.md")"
+protected_out="$("$SYNC_GATES" "$PROTECTED_CONSUMER" scripts --lang ts,py 2>&1)"
+protected_code=$?
+assert_exit_code "sync 不碰 AGENTS.md / CLAUDE.md 本身要成功" "$protected_code" "0"
+if assert_protected_files_unchanged "$PROTECTED_CONSUMER" "$protected_agents_hash" "$protected_claude_hash"; then
+  pass "sync 後 AGENTS.md / CLAUDE.md 逐位元組不變"
+else
+  fail "sync 後 AGENTS.md / CLAUDE.md 逐位元組不變"
+fi
+
+# 反向驗證測試本身:只在 temp probe 內模擬一段錯誤同步邏輯碰兩個檔案,
+# 先確認守門斷言會紅,再還原 probe 並確認同一斷言回綠;不改 sync-gates.sh 本體。
+PROTECTED_PROBE="$(mktemp -d)"
+printf 'probe AGENTS sentinel\n' > "$PROTECTED_PROBE/AGENTS.md"
+printf 'probe CLAUDE sentinel\n' > "$PROTECTED_PROBE/CLAUDE.md"
+probe_agents_hash="$(sha256_of "$PROTECTED_PROBE/AGENTS.md")"
+probe_claude_hash="$(sha256_of "$PROTECTED_PROBE/CLAUDE.md")"
+printf 'simulated forbidden write\n' > "$PROTECTED_PROBE/AGENTS.md"
+printf 'simulated forbidden write\n' > "$PROTECTED_PROBE/CLAUDE.md"
+if assert_protected_files_unchanged "$PROTECTED_PROBE" "$probe_agents_hash" "$probe_claude_hash" >/dev/null; then
+  fail "反向驗證:模擬碰觸 AGENTS.md / CLAUDE.md 時守門斷言應該變紅"
+else
+  pass "反向驗證:模擬碰觸 AGENTS.md / CLAUDE.md 時守門斷言真的變紅"
+fi
+printf 'probe AGENTS sentinel\n' > "$PROTECTED_PROBE/AGENTS.md"
+printf 'probe CLAUDE sentinel\n' > "$PROTECTED_PROBE/CLAUDE.md"
+if assert_protected_files_unchanged "$PROTECTED_PROBE" "$probe_agents_hash" "$probe_claude_hash"; then
+  pass "反向驗證:移除模擬誤觸後守門斷言回綠"
+else
+  fail "反向驗證:移除模擬誤觸後守門斷言回綠"
 fi
 
 echo
