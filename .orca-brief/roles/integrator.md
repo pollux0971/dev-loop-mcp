@@ -45,7 +45,7 @@ npm ci                                                # 新樹沒有 node_module
 4. **novel-line**(合併時憑空多出、兩個 parent 都沒有的行):對每顆 merge commit
    `git show --cc --format= <merge> | grep -E '^\+\+' | grep -vE '^\+\+\+ ' | wc -l`。
    0 = 乾淨。非 0 → 貼出那些行,標「要人看」。這個只縮小範圍,不判對錯。
-5. **全 gate**(README §5):合完如果 `git diff --name-only main HEAD` 有 `package-lock.json`,先 `npm ci`。再 `cat /proc/loadavg`,1 分鐘負載 > 16 就這輪不跑,下一輪再來。
+5. **全 gate**(README §5):合完如果 `git diff --name-only main HEAD` 有 `package-lock.json`,先 `npm ci`。再 `cat /proc/loadavg` 隔 30 秒量兩次,**兩次都 ≤ 16** 才跑,否則這輪不跑、下一輪再來。
    ```bash
    D=/data/python/dev-paradigm-briefs/integrate/gate-<時間>
    nice -n 10 setsid nohup bash -c 'cd ~/orca/workspaces/dev-paradigm/integrate && { npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot && (cd package && npm test) && bash scripts/sync-gates.test.sh; echo "core=$?"; npm run lint:docs; echo "docs=$?"; } ; echo done > '"$D"'.done' </dev/null > "$D".log 2>&1 & disown

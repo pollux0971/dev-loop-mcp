@@ -76,7 +76,8 @@ npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot \
   2026-09-19 發布前才發現 ADR-018 新增的 `{{ACTIVE_AGENT_CAP}}` 沒登記進 CHECKLIST,四條鏈與每次重驗都沒跑它。
 - 長跑一律:`nice -n 10 setsid nohup bash -c '<指令>; echo $? > <done檔>' </dev/null > <log> 2>&1 & disown`,
   用 Monitor 等 done 檔。一般 `run_in_background` 會被 session 記憶體管理砍掉。
-- 同一台機器**同時只跑一個全 gate**。跑前 `cat /proc/loadavg`,1 分鐘負載 > 16 就這輪不跑。
+- 同一台機器**同時只跑一個全 gate**。跑前 `cat /proc/loadavg`,**隔 30 秒量兩次都 ≤ 16** 才跑(AI_KM 實測單一峰值不可信:13.83 → 30 秒後 11.30)。
+- 所有狀態檔放 `/data/python/dev-paradigm-briefs/`,**不要放 `/tmp`**(AI_KM 09-16 開機被清兩次)。去重指紋用 sha256 或原字串,不要用 Python 內建 `hash()`(每次行程隨機)。
 
 ## 6. 角色守門(誰能改什麼)
 
