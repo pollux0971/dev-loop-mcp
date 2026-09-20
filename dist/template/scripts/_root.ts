@@ -10,8 +10,9 @@
  * 不在 git repo 裡(或找不到 git 執行檔)就退回 process.cwd() 本身。
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 export function resolveRoot(): string {
   try {
@@ -28,6 +29,18 @@ export function resolveRoot(): string {
 }
 
 export const ROOT: string = resolveRoot();
+
+const ISOLATED_TEMP_PACKAGE_JSON = '{"name":"dev-paradigm-test-fixture","private":true,"type":"commonjs"}';
+
+/** 建立隔離且可觀測的測試 fixture 根目錄,並用自己的 package.json 固定模組型別。 */
+export function makeIsolatedTempDir(prefix: string, base: string = tmpdir()): string {
+  const tempBase = resolve(base);
+  mkdirSync(tempBase, { recursive: true });
+  const tempDir = mkdtempSync(join(tempBase, prefix));
+  writeFileSync(join(tempDir, 'package.json'), ISOLATED_TEMP_PACKAGE_JSON, 'utf8');
+  console.log(`[makeIsolatedTempDir] ${tempDir}`);
+  return tempDir;
+}
 
 /**
  * P-84(來源 專案 A 協調者,2026-09-05):`--root` 明講了一個不存在的目錄時,

@@ -70,9 +70,11 @@
 # `--check` 能在 CI 上單獨跑,不必先 checkout 模板。要知道「有沒有跟上模板最新版」是另一件事,
 # 見 README.md「版本」段的採用節奏(讀 CHANGELOG 決定要不要升版),不是 `--check` 的工作。
 #
-# 本地急修:在檔頭第 2 行加 `// HOTFIX: YYYY-MM-DD <理由>`(Python 檔用 `# HOTFIX: ...`),
-# --check 只警告不紅;超過 24 小時未回流模板 → 紅。（HOTFIX 那行本身不算進 sha256 比對的
-# 「內容」裡——比對用的是「標頭 + HOTFIX 行(如果有)」之後的所有行。）
+# 本地急修:在檔頭第 2 行加 `// HOTFIX: YYYY-MM-DD <回流去向> <理由>`
+# (Python 檔用 `# HOTFIX: ...`),--check 只警告不紅;超過 24 小時未回流模板 → 紅。
+# 回流去向必須是非空、非佔位字元的工單/issue ID;舊格式(只有日期+理由)不再相容。
+# HOTFIX 那行本身不算進 sha256 比對的「內容」裡——比對用的是「標頭 + HOTFIX 行(如果有)」
+# 之後的所有行。
 #
 # 反向驗證:
 #   改目標 repo 裡任一守門檔一個字 → --check 紅(sha256 不符);加今天的 HOTFIX 行 →
@@ -154,7 +156,14 @@ DEST="$TARGET/$SUBDIR"
 PY_DEST="$DEST/py"
 # 設定檔:專案自己的東西,sync 不覆蓋、--check 不比對。
 CONFIG_FILES=(boundaries.allow.json boundaries.owners.json gates.config.json doc-rot.blacklist.json known-defects.json)
+MANIFEST_NAME=".npx-init-manifest.json"
+MANIFEST_PATH="$TARGET/$MANIFEST_NAME"
+declare -a MANAGED_PATHS=()
+declare -a MANAGED_SOURCES=()
+declare -a MANAGED_HASHES=()
+declare -a MANAGED_CONFLICTS=()
 fail=0; n=0; hotfix_n=0
+declare -a hotfix_reports=()
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -163,6 +172,26 @@ sha256_file() {
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
   else shasum -a 256 | awk '{print $1}'; fi
+}
+
+# $1=回流去向 → 0 = 符合白名單格式;1 = 格式不合法。
+# 新格式另要求後面還要有非空理由,用來拒絕舊的日期+單一理由字串。
+is_valid_hotfix_route() {
+  local route="$1"
+  [[ "$route" =~ ^(#[0-9]+|[A-Za-z][A-Za-z0-9_]*[-#][0-9]+)$ ]]
+}
+
+# --check 尾端的 HOTFIX 報表。這是資訊性輸出,不改變 exit code。
+print_hotfix_report() {
+  local entry report_name report_date report_route report_reason report_age
+  [ "${#hotfix_reports[@]}" -gt 0 ] || return 0
+  echo
+  echo "HOTFIX 清單:"
+  for entry in "${hotfix_reports[@]}"; do
+    IFS=$'\t' read -r report_name report_date report_route report_reason report_age <<< "$entry"
+    printf '  - 檔名:%s | 日期:%s | 回流去向:%s | 理由:%s | 經過:%s\n' \
+      "$report_name" "$report_date" "$report_route" "$report_reason" "$report_age"
+  done
 }
 
 # 同步單一檔案(非 --check 專用):$1=來源檔、$2=標頭註解字元(// 或 #)、$3=目的目錄。
@@ -185,29 +214,66 @@ sync_one() {
 check_one() {
   local name="$1" dst="$2"
   if [ ! -f "$dst" ]; then echo "✗ 缺 $dst"; fail=1; return; fi
-  local header embedded_hash hotfix_date skip_lines actual_hash age
+  local header embedded_hash hotfix_line hotfix_date hotfix_route hotfix_reason
+  local parsed_date parsed_route parsed_reason hotfix_epoch hotfix_invalid skip_lines actual_hash age
   header="$(sed -n '1p' "$dst")"
   if ! echo "$header" | grep -qE '^(//|#) SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}'; then
     echo "✗ $name 缺 SOURCE 標頭或格式不對(第一行:$header)"; fail=1; return
   fi
   embedded_hash="$(echo "$header" | grep -oE 'sha256=[0-9a-f]{64}' | cut -d= -f2)"
-  # 本地 hotfix 規則:檔頭第 2 行寫 `// HOTFIX: YYYY-MM-DD <理由>`(Python 檔用 `#`)
-  # 可暫時偏離模板,24 小時內要回流模板;過期即紅。HOTFIX 那行不算進雜湊比對的內容裡,
-  # 所以先偵測有沒有這行,決定雜湊要跳過標頭後的幾行。
-  hotfix_date="$(sed -n '2p' "$dst" | grep -oE '^(//|#) HOTFIX: [0-9]{4}-[0-9]{2}-[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)"
+  # 本地 hotfix 規則:第 2 行必須是 `// HOTFIX: YYYY-MM-DD <回流去向> <理由>`
+  # (Python 檔用 `#`).只有完整且有效的新格式才跳過雜湊;舊格式視同內容被改過,
+  # 但額外印出明確的格式錯誤,不悄悄相容成 HOTFIX。
+  hotfix_line="$(sed -n '2p' "$dst")"
+  hotfix_date=""; hotfix_route=""; hotfix_reason=""; hotfix_invalid=0
+  case "$hotfix_line" in
+    "// HOTFIX:"*|"# HOTFIX:"*)
+      if [[ "$hotfix_line" =~ ^(//|#)[[:space:]]HOTFIX:[[:space:]]([0-9]{4}-[0-9]{2}-[0-9]{2})[[:space:]]([^[:space:]]+)[[:space:]](.+)$ ]]; then
+        parsed_date="${BASH_REMATCH[2]}"
+        parsed_route="${BASH_REMATCH[3]}"
+        parsed_reason="${BASH_REMATCH[4]}"
+      else
+        parsed_date=""; parsed_route=""; parsed_reason=""
+      fi
+      if [ -n "$parsed_date" ] \
+        && is_valid_hotfix_route "$parsed_route" \
+        && [[ "$parsed_reason" =~ [^[:space:]] ]]; then
+        hotfix_date="$parsed_date"
+        hotfix_route="$parsed_route"
+        hotfix_reason="$parsed_reason"
+        if hotfix_epoch="$(date -d "$hotfix_date" +%s 2>/dev/null)"; then
+          age=$(( ( $(date +%s) - hotfix_epoch ) / 3600 ))
+          hotfix_reports+=("$name"$'\t'"$hotfix_date"$'\t'"$hotfix_route"$'\t'"$hotfix_reason"$'\t'"${age}h")
+        else
+          hotfix_date=""; hotfix_route=""; hotfix_reason=""; hotfix_invalid=1
+        fi
+      else
+        hotfix_invalid=1
+      fi
+      ;;
+  esac
   if [ -n "$hotfix_date" ]; then skip_lines=2; else skip_lines=1; fi
   actual_hash="$(tail -n +$((skip_lines+1)) "$dst" | sha256_stdin)"
+  if [ "$hotfix_invalid" = 1 ]; then
+    echo "✗ $name HOTFIX 行缺回流去向(格式:\`// HOTFIX: <日期> <回流去向> <理由>\`)"
+    fail=1
+    return
+  fi
+  if [ -n "$hotfix_date" ]; then
+    if [ "$age" -le 24 ]; then
+      echo "⚠ $name 有本地 HOTFIX($hotfix_date,${age}h),24 小時內要回流模板"
+      hotfix_n=$(( hotfix_n + 1 ))
+    else
+      echo "✗ $name 的 HOTFIX($hotfix_date)已超過 24 小時未回流模板"
+      fail=1
+    fi
+    return
+  fi
   if [ "$actual_hash" = "$embedded_hash" ]; then
     echo "✓ $name"
     return
   fi
-  if [ -n "$hotfix_date" ]; then
-    age=$(( ( $(date +%s) - $(date -d "$hotfix_date" +%s) ) / 3600 ))
-    if [ "$age" -le 24 ]; then echo "⚠ $name 有本地 HOTFIX($hotfix_date,${age}h),24 小時內要回流模板"; hotfix_n=$(( hotfix_n + 1 ))
-    else echo "✗ $name 的 HOTFIX($hotfix_date)已超過 24 小時未回流模板"; fail=1; fi
-  else
-    echo "✗ $name 內容被改過(sha256 不符;急修請在第 2 行加 HOTFIX 註解:<日期> <理由>)"; fail=1
-  fi
+  echo "✗ $name 內容被改過(sha256 不符;急修請在第 2 行加 HOTFIX 註解:<日期> <回流去向> <理由>)"; fail=1
 }
 
 # 語言選集是否含 $1(在 LANGS 全域陣列裡找)。
@@ -215,6 +281,284 @@ is_lang_selected() {
   local target="$1" l
   for l in "${LANGS[@]}"; do [ "$l" = "$target" ] && return 0; done
   return 1
+}
+
+# 受管非守門檔的集合由模板目前的檔案決定,不寫死 skill 數量。發布快照可能沒有 .git,
+# 所以有版本庫時取 tracked 集合,沒有版本庫時退回同一受管目錄的 filesystem 集合。
+list_managed_template_paths() {
+  local root file rel
+  if git -C "$TEMPLATE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$TEMPLATE_DIR" ls-files -- \
+      '.claude/skills/**' \
+      '.agents/skills/**' \
+      'docs/templates/TASK.md.template' \
+      'scripts/py/.gitignore'
+    return
+  fi
+  for root in .claude/skills .agents/skills; do
+    [ -d "$TEMPLATE_DIR/$root" ] || continue
+    while IFS= read -r file; do
+      rel="${file#"$TEMPLATE_DIR/$root/"}"
+      printf '%s/%s\n' "$root" "$rel"
+    done < <(find "$TEMPLATE_DIR/$root" -type f -print)
+  done
+  for rel in docs/templates/TASK.md.template scripts/py/.gitignore; do
+    [ -f "$TEMPLATE_DIR/$rel" ] && printf '%s\n' "$rel"
+  done
+}
+
+# `scripts/py/.gitignore` 跟 Python 守門工具走同一個語言選集;其餘受管檔與語言無關。
+collect_managed_paths() {
+  local rel
+  MANAGED_PATHS=()
+  MANAGED_SOURCES=()
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    if [ "$rel" = "scripts/py/.gitignore" ] && ! is_lang_selected py; then
+      continue
+    fi
+    [ -f "$TEMPLATE_DIR/$rel" ] || continue
+    MANAGED_PATHS+=("$rel")
+    MANAGED_SOURCES+=("$TEMPLATE_DIR/$rel")
+  done < <(list_managed_template_paths | sort -u)
+}
+
+# 讀取與 npx init 相同的 files[].sha256;找不到條目或條目沒有雜湊時返回 1。
+manifest_entry_hash() {
+  node -e '
+    const fs = require("fs");
+    try {
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      let found = false;
+      let value = "";
+      for (const entry of manifest.files ?? []) {
+        if (entry && entry.path === process.argv[2]) {
+          found = true;
+          value = typeof entry.sha256 === "string" ? entry.sha256 : "";
+        }
+      }
+      if (!found || !value) process.exit(1);
+      process.stdout.write(value);
+    } catch (error) {
+      process.exit(1);
+    }
+  ' "$1" "$2"
+}
+
+# 與 package/src/cli.mjs 的 INSTALL_MANIFEST schema 對齊;不在這裡驗 manifestSha256,
+# 因為 cli.mjs 的 managedPaths 也只信任 files[] 的逐檔雜湊。
+manifest_is_valid() {
+  node -e '
+    const fs = require("fs");
+    try {
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const valid = manifest && manifest.manifestVersion === 1
+        && typeof manifest.packageVersion === "string"
+        && typeof manifest.templateVersion === "string"
+        && manifest.source === "VERSION"
+        && manifest.generatedBy === "npx init"
+        && Array.isArray(manifest.files)
+        && manifest.files.every((entry) => entry && typeof entry.path === "string"
+          && typeof entry.sha256 === "string");
+      process.exit(valid ? 0 : 1);
+    } catch (error) {
+      process.exit(1);
+    }
+  ' "$1"
+}
+
+# 受管檔衝突先掃後寫。內容等於模板目前版本是 no-op,但仍要求已有 manifest
+# 記錄;沒有安裝紀錄的既有檔不能靠「剛好內容一樣」推測 ownership。
+prepare_managed() {
+  local i rel src dst template_hash current_hash recorded_hash
+  MANAGED_HASHES=()
+  MANAGED_CONFLICTS=()
+
+  if [ -e "$MANIFEST_PATH" ] && [ ! -f "$MANIFEST_PATH" ]; then
+    MANAGED_CONFLICTS+=("$MANIFEST_PATH 已存在但不是檔案,不覆蓋")
+    printf '%s\n' "${MANAGED_CONFLICTS[@]}"
+    return 1
+  fi
+  if [ -f "$MANIFEST_PATH" ] && ! manifest_is_valid "$MANIFEST_PATH"; then
+    echo "✗ $MANIFEST_PATH 存在但格式不是 npx init 的 manifest,不覆蓋"
+    return 1
+  fi
+
+  for i in "${!MANAGED_PATHS[@]}"; do
+    rel="${MANAGED_PATHS[$i]}"
+    src="${MANAGED_SOURCES[$i]}"
+    dst="$TARGET/$rel"
+    template_hash="$(sha256_file "$src")"
+    MANAGED_HASHES+=("$template_hash")
+    if [ -e "$dst" ] && [ ! -f "$dst" ]; then
+      MANAGED_CONFLICTS+=("$dst 已存在但不是檔案,受管同步不覆蓋")
+      continue
+    fi
+    [ -f "$dst" ] || continue
+
+    current_hash="$(sha256_file "$dst")"
+    recorded_hash="$(manifest_entry_hash "$MANIFEST_PATH" "$rel" 2>/dev/null || true)"
+    if [ -z "$recorded_hash" ]; then
+      MANAGED_CONFLICTS+=("✗ $rel 已存在但沒有 .npx-init-manifest.json 的安裝紀錄(是 consumer 自有檔);不覆蓋")
+    elif [ "$current_hash" != "$template_hash" ] && [ "$current_hash" != "$recorded_hash" ]; then
+      MANAGED_CONFLICTS+=("✗ $rel 內容被改過(與 .npx-init-manifest.json 記錄不符);不覆蓋")
+    fi
+  done
+
+  if [ "${#MANAGED_CONFLICTS[@]}" -gt 0 ]; then
+    printf '%s\n' "${MANAGED_CONFLICTS[@]}"
+    return 1
+  fi
+}
+
+# 用 Node 寫出與 cli.mjs manifestBody 相同的 JSON,暫存檔 fsync 後再 rename。
+# 已存在的 manifest 只更新受管檔的 files[].sha256,保留 npx init 的其他欄位與檔案紀錄。
+write_managed_manifest() {
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const { createHash } = require("crypto");
+    const [manifestPath, sourceRoot, packageFile, versionFile, ...managed] = process.argv.slice(1);
+    const hash = (value) => createHash("sha256").update(value).digest("hex");
+    const json = (value) => JSON.stringify(value, null, 2) + "\n";
+
+    let manifest;
+    if (fs.existsSync(manifestPath)) {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } else {
+      const packageInfo = JSON.parse(fs.readFileSync(packageFile, "utf8"));
+      manifest = {
+        manifestVersion: 1,
+        packageVersion: packageInfo.version,
+        templateVersion: fs.readFileSync(versionFile, "utf8").trim(),
+        source: "VERSION",
+        generatedBy: "npx init",
+        files: [],
+        manifestSha256: null,
+      };
+    }
+
+    const files = Array.isArray(manifest.files) ? manifest.files.map((entry) => ({ ...entry })) : [];
+    for (const relative of managed) {
+      const digest = hash(fs.readFileSync(path.join(sourceRoot, relative)));
+      let index = -1;
+      for (let i = 0; i < files.length; i += 1) {
+        if (files[i] && files[i].path === relative) index = i;
+      }
+      if (index >= 0) files[index] = { ...files[index], path: relative, sha256: digest };
+      else files.push({ path: relative, sha256: digest });
+    }
+
+    const next = { ...manifest, files, manifestSha256: null };
+    next.manifestSha256 = hash(json(next));
+    const body = json(next);
+    let unchanged = false;
+    try { unchanged = fs.readFileSync(manifestPath, "utf8") === body; } catch (error) { /* new file */ }
+    if (unchanged) {
+      console.log(`✓ ${manifestPath}(內容相同,不重寫)`);
+      process.exit(0);
+    }
+
+    const temporary = `${manifestPath}.sync-${process.pid}-${Date.now()}`;
+    let fd;
+    try {
+      fd = fs.openSync(temporary, "wx", 0o644);
+      fs.writeFileSync(fd, body, "utf8");
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      fs.renameSync(temporary, manifestPath);
+      try {
+        const directory = fs.openSync(path.dirname(manifestPath), "r");
+        fs.fsyncSync(directory);
+        fs.closeSync(directory);
+      } catch (error) { /* directory fsync is not available on every platform */ }
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+      try { fs.unlinkSync(temporary); } catch (error) { /* already renamed */ }
+    }
+    console.log(`→ ${manifestPath}(manifest)`);
+  ' "$MANIFEST_PATH" "$TEMPLATE_DIR" "$TEMPLATE_DIR/package/package.json" \
+    "$TEMPLATE_DIR/VERSION" "${MANAGED_PATHS[@]}"
+}
+
+sync_managed() {
+  local i rel src dst dstdir tmp template_hash current_hash
+  for i in "${!MANAGED_PATHS[@]}"; do
+    rel="${MANAGED_PATHS[$i]}"
+    src="${MANAGED_SOURCES[$i]}"
+    dst="$TARGET/$rel"
+    template_hash="${MANAGED_HASHES[$i]}"
+    if [ -f "$dst" ]; then
+      current_hash="$(sha256_file "$dst")"
+      if [ "$current_hash" = "$template_hash" ]; then
+        echo "✓ $rel(內容相同,不重寫)"
+        continue
+      fi
+    fi
+    dstdir="$(dirname "$dst")"
+    mkdir -p "$dstdir"
+    tmp="$(mktemp "$dstdir/.sync-managed.XXXXXX")"
+    cp "$src" "$tmp"
+    chmod --reference="$src" "$tmp" 2>/dev/null || true
+    mv "$tmp" "$dst"
+    echo "→ $rel(受管檔)"
+  done
+  write_managed_manifest
+}
+
+# --check 不讀模板,只以安裝紀錄中的受管檔逐檔驗證,因此可在沒有模板 checkout 的 CI 執行。
+check_managed() {
+  local rel dst recorded_hash current_hash
+  local -a recorded_paths=()
+  if [ ! -f "$MANIFEST_PATH" ]; then
+    echo "✗ $MANIFEST_PATH 不存在,無法檢查受管檔"
+    fail=1
+    return
+  fi
+  if ! manifest_is_valid "$MANIFEST_PATH"; then
+    echo "✗ $MANIFEST_PATH 格式不是 npx init 的 manifest"
+    fail=1
+    return
+  fi
+  mapfile -t recorded_paths < <(
+    node -e '
+      const fs = require("fs");
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const managed = (value) => value.startsWith(".claude/skills/")
+        || value.startsWith(".agents/skills/")
+        || value === "docs/templates/TASK.md.template"
+        || value === "scripts/py/.gitignore";
+      for (const entry of manifest.files ?? []) {
+        if (entry && typeof entry.path === "string" && managed(entry.path)) console.log(entry.path);
+      }
+    ' "$MANIFEST_PATH" | sort -u
+  )
+  if [ "${#recorded_paths[@]}" -eq 0 ]; then
+    echo "ℹ $MANIFEST_PATH 沒有受管非守門檔紀錄"
+    return
+  fi
+  for rel in "${recorded_paths[@]}"; do
+    dst="$TARGET/$rel"
+    if [ ! -f "$dst" ]; then
+      echo "✗ $rel 缺 $dst"
+      fail=1
+      continue
+    fi
+    recorded_hash="$(manifest_entry_hash "$MANIFEST_PATH" "$rel" 2>/dev/null || true)"
+    if [ -z "$recorded_hash" ]; then
+      echo "✗ $rel manifest 缺少逐檔 sha256"
+      fail=1
+      continue
+    fi
+    current_hash="$(sha256_file "$dst")"
+    if [ "$current_hash" = "$recorded_hash" ]; then
+      echo "✓ $rel"
+    else
+      echo "✗ $rel 內容被改過(sha256 不符;manifest 記錄不一致)"
+      fail=1
+    fi
+  done
 }
 
 # $1 = gates.config.json 路徑 → 有 sync.languages 陣列就把逗號分隔的清單印到 stdout、
@@ -402,6 +746,7 @@ is_wired_in_package_json() {
 
 if [ "$MODE" = "--check" ]; then
   # --check 是自包含的:不讀 $TEMPLATE_DIR,只讀已經裝好的那份檔案本身;不需要語言選集。
+  check_managed
   is_config_file() {
     local base="$1" c
     for c in "${CONFIG_FILES[@]}"; do [ "$base" = "$c" ] && return 0; done
@@ -522,6 +867,11 @@ else
   [ "$has_ts" = 1 ] || LANGS=(ts "${LANGS[@]}")
   echo "選集 $(IFS=,; echo "${LANGS[*]}")(${LANGS_BASIS})"
 
+  collect_managed_paths
+  if ! prepare_managed; then
+    exit 1
+  fi
+
   # 先掃後寫(CHANGELOG 1.5.0,P-85):寫任何檔之前,先對本次選集的每一支來源檔,
   # 算出目的檔路徑,檢查「已存在且第一行不是 SOURCE 標頭」——那代表 consumer 自己
   # 寫了同名的檔案,不是模板裝的。任一命中就列出全部命中,exit 1,一個檔都不寫。
@@ -555,6 +905,8 @@ else
       sync_one "$src" "#" "$PY_DEST"
     done
   fi
+
+  sync_managed
 
   if [ "$PRUNE" = 1 ]; then
     prune_unselected
@@ -633,10 +985,18 @@ if [ "$MODE" = "--check" ]; then
   # 而摘要行的功能就是「讓人不必讀全部」,所以它必須自己就是對的。
   # 【驗】consumer 用 `tail -8` 只看到這行的 ✓,據此下了「check:gates 沒有比對 _root.ts」
   # 的錯誤結論,還從那個結論反推了一個不存在的機制。
-  if [ "$fail" != 0 ]; then exit 1
-  elif [ "${hotfix_n:-0}" -gt 0 ]; then echo "⚠ 守門內容有 ${hotfix_n} 處本地 HOTFIX(見上),其餘自同步以來未被更動"
-  else echo "✓ 守門內容自同步以來未被更動"; fi
+  if [ "$fail" != 0 ]; then
+    exit_code=1
+  elif [ "${hotfix_n:-0}" -gt 0 ]; then
+    echo "⚠ 守門內容有 ${hotfix_n} 處本地 HOTFIX(見上),其餘自同步以來未被更動"
+    exit_code=0
+  else
+    echo "✓ 守門內容自同步以來未被更動"
+    exit_code=0
+  fi
+  print_hotfix_report
+  exit "$exit_code"
 else
   if is_lang_selected py; then py_note="含 $PY_DEST 底下的 Python 版工具;"; else py_note=""; fi
-  echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的 CLAUDE.md 記「採用模板 v${VERSION}」"
+  echo "已同步 $n 支守門到 $DEST(${py_note}template v${VERSION} ${COMMIT});目標 repo 的規則入口記「採用模板 v${VERSION}」"
 fi

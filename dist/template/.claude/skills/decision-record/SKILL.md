@@ -3,15 +3,21 @@ name: decision-record
 description: 記錄一個技術或設計決策到 decision map。當任何有取捨的選擇被做出時使用——包含 AI 自己在實作過程中做的選擇,例如選了某個資料結構、某個錯誤處理策略、某個預設值,而那個選擇本來可以是別的樣子。也在使用者說「就這樣決定」「我們用 X 不用 Y」時使用。先評估會不會動到契約。
 ---
 
-# /decide — 記錄決策
+# decision-record — 記錄決策
 
 描述:
 
-> $ARGUMENTS
+> 使用者給的輸入
+
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
+<!-- CLAUDE-ONLY-END -->
 
 ## 第一步:讀取
 
-- `docs/02-decision-map.md` 全部,記下最大 ADR 編號
+- `docs/02-decision-map.md` 全部,記下最大 ADR 編號。
+  **新號取「現有 ≥101 的最大號 + 1」,沒有就是 ADR-101**——`ADR-001`~`ADR-099`
+  是範式保留段,不要接在範式最後一號後面編(升模板會撞號)
 - `contracts/types.md`——判斷這個決策會不會動到契約
 - 相關的 `FEATURE.md` 與 `NEXT.md`
 
@@ -78,7 +84,8 @@ description: 記錄一個技術或設計決策到 decision map。當任何有取
 ```
 
 同時:
-1. 更新頂部 mermaid 依賴圖:加節點,有 Related 就畫箭頭(被依賴的指向新的)
+1. 把相關 ADR 寫進 **Related** 欄(1.4.0 起 `docs/02-decision-map.md` 已經沒有 mermaid
+   依賴圖,依賴關係只靠各筆的 Related 欄,不要再去畫圖或找那個區塊)
 2. 推翻的話更新舊 ADR 的 Status 與「已推翻」索引
 3. 「待決」表有對應項目 → 移除
 
@@ -89,7 +96,7 @@ description: 記錄一個技術或設計決策到 decision map。當任何有取
 - 改變某功能的技術棧 → 提示更新該 `FEATURE.md`
 - 改變某 phase 的 gate → 提示更新該 `NEXT.md`
 - 改變設計文件內容 → 在 `docs/00-design.md` 頂部的「已知不同之處」加一行,**不改正文**
-- 讓某些 `.feature` 場景不再正確 → 列出受影響的場景,提示用 `/feature` 處理
+- 讓某些 `.feature` 場景不再正確 → 列出受影響的場景,提示用 feature workflow 處理
 
 ## 第七步:回報
 
@@ -97,7 +104,7 @@ description: 記錄一個技術或設計決策到 decision map。當任何有取
 ✓ ADR-NNN 已記錄:<標題>
 - 契約影響:無 / 升版至 X.Y.Z,需重驗:…
 - 推翻 / 修正 / 無關:…
-- 依賴圖已更新
+- Related 欄已連結:ADR-…
 - 連動提示:…
 ```
 

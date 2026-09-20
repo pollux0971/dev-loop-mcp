@@ -1,8 +1,8 @@
 import { setWorldConstructor, World, IWorldOptions, Before, After } from '@cucumber/cucumber';
-import { readFileSync, mkdtempSync, cpSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, cpSync, rmSync, existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from '../../scripts/_root.js';
 
 /** repo 根目錄(features/steps/ 的上兩層) */
 export const ROOT = resolve(import.meta.dirname, '../..');
@@ -72,7 +72,7 @@ export class ProjectWorld extends World {
   /** 把一份唯讀 fixture 複製到暫存目錄,回傳新路徑 */
   useFixture(name: string): string {
     const src = join(ROOT, 'contracts/fixtures', name);
-    const dst = mkdtempSync(join(tmpdir(), 'proj-'));
+    const dst = makeIsolatedTempDir('proj-');
     cpSync(src, dst, { recursive: true });
     this.dir = dst;
     return dst;

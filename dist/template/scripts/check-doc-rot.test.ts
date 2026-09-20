@@ -6,9 +6,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_DOC_ROT_TS = resolve(import.meta.dirname, 'check-doc-rot.ts');
 const ROOT_TS = resolve(import.meta.dirname, '_root.ts');
@@ -18,7 +18,7 @@ const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 const tmpDirs: string[] = [];
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-doc-rot-'));
+  const dir = makeIsolatedTempDir('lc-doc-rot-');
   tmpDirs.push(dir);
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   return dir;
@@ -182,6 +182,9 @@ describe('check-doc-rot:0 目標一律 FAIL', () => {
   it('掃到 0 個檔案(副檔名都不符)→ exit 1,scanned=0', () => {
     const root = makeRoot();
     writeBlacklist(root, ONE_RULE);
+    // makeIsolatedTempDir() 會在 fixture 根寫入自己的 package.json；這個案例要驗的是
+    // 排除後確實沒有可掃檔案,不是要把 helper 的模組邊界誤算成測試目標。
+    writeGatesConfig(root, { docRot: { exclude: ['package.json', 'scripts/gates.config.json'] } });
     write(root, 'notes.unknownext', 'llm-learning-cards-57\n');
 
     const { code, output } = run(root);
@@ -343,7 +346,7 @@ describe('check-doc-rot:S9 設定檔壞掉', () => {
   it('一筆帶選填的 "note" 欄位 → 合法,照常運作(S13 (d))', () => {
     const root = makeRoot();
     writeBlacklist(root, [
-      { pattern: 'x', reason: 'r', since: '2026-01-01', incident: 'P-1', note: '收斂時的判斷依據' },
+      { pattern: 'sentinel-rule-\\d+', reason: 'r', since: '2026-01-01', incident: 'P-1', note: '收斂時的判斷依據' },
     ]);
     write(root, 'docs/notes.md', '沒有可疑字串。\n');
 
@@ -434,6 +437,27 @@ describe('check-doc-rot:S13 (a) 事故日誌 / 決策記錄預設排除', () => 
 // ---------------------------------------------------------------------------
 
 describe('check-doc-rot:S13 (c) --self-test', () => {
+  it('--self-test 暫存根上層有 type=module 時仍建立自己的 CommonJS 邊界', () => {
+    const contaminatedBase = makeIsolatedTempDir('lc-doc-rot-self-test-parent-');
+    tmpDirs.push(contaminatedBase);
+    writeFileSync(join(contaminatedBase, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8');
+
+    const root = makeRoot();
+    writeBlacklist(root, ONE_RULE);
+    const r = spawnSync('npx', ['tsx', CHECK_DOC_ROT_TS, '--root', root, '--self-test'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
+      env: { ...process.env, GATES_CONFIG_DIR: join(root, 'scripts'), TMPDIR: contaminatedBase },
+    });
+    const code = r.status ?? -1;
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+
+    expect(code).toBe(0);
+    expect(output).toContain('gate=doc-rot result=PASS');
+    expect(output).toContain(`[makeIsolatedTempDir] ${contaminatedBase}/doc-rot-self-test-`);
+  }, SPAWN_TIMEOUT_MS);
+
   it('對出貨的黑名單(3 條規則)跑 --self-test → 全部命中自己的探針,exit 0', () => {
     const root = makeRoot();
     writeBlacklist(root, [

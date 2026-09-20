@@ -59,6 +59,10 @@ import { ROOT as GIT_ROOT, loadGatesConfig, lookupConfig, requireRootDir } from 
 /** 三支掃描器共用的那句話(這支也共用)。0 個目標的紅,方向永遠是「掃描器壞了」。 */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
+/** `features/` 已初始化但還沒有第一個功能時,告訴使用者下一步該做什麼。 */
+const NEW_PROJECT_MESSAGE =
+  '新專案剛完成初始化,目前沒有任何 features/NN-name 資料夾;這不是掃描器錯誤,下一步請依 README 建立第一個 features/01-xxx/';
+
 /** 這支腳本在 gate 機器可讀標記裡的名字。 */
 const GATE_NAME = 'next-gates';
 
@@ -662,8 +666,12 @@ function main(): void {
   console.log(`next-gates: features/ 底下掃到 ${nextFiles.length} 份 NEXT.md(nextGates.mode=${mode})`);
 
   if (nextFiles.length === 0) {
-    console.log(`\n✗ next-gates: 掃到 0 份 NEXT.md`);
-    console.log(`${SCANNER_BROKEN}。features/ 底下沒有任何 NN-name 資料夾有 NEXT.md,或 --root 指錯路徑時就長這樣。`);
+    if (existsSync(join(ROOT, 'features')) && folders.length === 0) {
+      console.log(`\nℹ next-gates: ${NEW_PROJECT_MESSAGE}`);
+    } else {
+      console.log(`\n✗ next-gates: 掃到 0 份 NEXT.md`);
+      console.log(`${SCANNER_BROKEN}。features/ 底下沒有任何 NN-name 資料夾有 NEXT.md,或 --root 指錯路徑時就長這樣。`);
+    }
     console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
     process.exit(1);
   }

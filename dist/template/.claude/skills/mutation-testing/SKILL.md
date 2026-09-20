@@ -1,6 +1,6 @@
 ---
 name: mutation-testing
-description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的有在測東西。當使用者要求跑 mutation testing、變異測試、檢查測試品質、確認測試有沒有效、覆蓋率很高但不確定測試是否真的有用,或是在 /phase-done 之前驗收一個 phase 的測試時使用。也在寫完屬於「嚴格級」的純邏輯模組(見下方分級表)的單元測試後主動使用。
+description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的有在測東西。當使用者要求跑 mutation testing、變異測試、檢查測試品質、確認測試有沒有效、覆蓋率很高但不確定測試是否真的有用,或是在 phase 驗收之前驗收一個 phase 的測試時使用。也在寫完屬於「嚴格級」的純邏輯模組(見下方分級表)的單元測試後主動使用。
 ---
 
 # Mutation Testing
@@ -35,10 +35,19 @@ description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的
 
 ```bash
 npm run mutate                                                    # 全部,慢
-npm run mutate -- --mutate "<某個模組的路徑>/**/*.ts"             # 單一模組
-npm run mutate -- --mutate "<某個檔案的路徑>.ts"                  # 單一檔案
 npm run mutate -- --incremental                                   # 只跑變動過的,日常用這個
 ```
+
+⚠️ **`--mutate` 會整個取代設定檔的 `mutate` 陣列,不是在它上面再篩一次**——設定檔裡那些
+`"!…test.ts"`、`"!…index.ts"` 的排除**會一起消失**,測試檔自己就被拿去突變,分數變得沒有意義
+(1.11.0 實測:兩個平台的試跑都踩到)。要縮小範圍就**把排除一起帶上**,用逗號分隔:
+
+```bash
+npm run mutate -- --mutate "<模組路徑>/**/*.ts,!<模組路徑>/**/*.test.ts,!<模組路徑>/**/index.ts"
+```
+
+**跑完先看 Stryker 印出的檔案清單**:出現 `*.test.ts` 就是排除被蓋掉了,那次分數作廢重跑。
+不確定要帶哪些排除,就照 `stryker.config.json` 的 `mutate` 陣列裡以 `!` 開頭的每一條原樣抄過來。
 
 報告在 `reports/mutation/index.html`。
 

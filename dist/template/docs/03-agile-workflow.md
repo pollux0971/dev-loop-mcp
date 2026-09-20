@@ -65,11 +65,11 @@
 
 | 時間 | 做什麼 | 指令 |
 |---|---|---|
-| 週一 | 規劃:挑 2–4 個 ready 的 phase | `/sprint` |
+| 週一 | 規劃:挑 2–4 個 ready 的 phase | `sprint-planning` |
 | 每天 | 做一個 phase 的一部分,小 commit | — |
-| phase 快做完 | 跑變異測試 | `/mutate <folder>` |
-| phase 做完 | 驗收 | `/phase-done` |
-| 整合點所有 phase 都 done | 整合驗收 | `/integrate <IN>` |
+| phase 快做完 | 跑變異測試 | `mutation-testing <folder>` |
+| phase 做完 | 驗收 | `phase-acceptance` |
+| 整合點所有 phase 都 done | 整合驗收 | `integration-check <IN>` |
 | 週五 | 回顧(5 分鐘,寫進 sprint 檔) | 手動 |
 
 Retro 三題:這週哪個 phase 比預期難?為什麼?下週要改估法或拆法嗎?
@@ -80,7 +80,7 @@ Retro 三題:這週哪個 phase 比預期難?為什麼?下週要改估法或拆�
 想法
  │
  ▼
-/feature <描述>            判斷:新資料夾 / 改既有 / 衝突 / 跨功能
+feature workflow <描述>    判斷:新資料夾 / 改既有 / 衝突 / 跨功能
  │                          提案 → 你確認 → 寫檔
  ▼
 .feature 存在,狀態 todo
@@ -89,22 +89,22 @@ Retro 三題:這週哪個 phase 比預期難?為什麼?下週要改估法或拆�
 NEXT.md 的 gate 全部滿足 ──► 狀態 ready
  │
  ▼
-/sprint 挑進本週 ─────────► 狀態 in-progress
+sprint-planning 挑進本週 ─► 狀態 in-progress
  │
  ▼
 實作 + 單元測試 + gherkin
  │
  ▼
-/mutate ──────────────────► 達門檻才往下
+mutation-testing ────────► 達門檻才往下
  │
  ▼
-/phase-done ──────────────► 全過:done,更新 NEXT.md  /  沒過:仍 in-progress
+phase-acceptance ─────────► 全過:done,更新 NEXT.md  /  沒過:仍 in-progress
  │
  ▼
-一個整合點的 phase 全 done ─► /integrate
+一個整合點的 phase 全 done ─► integration-check
  │
  ▼
-過程中的取捨 ─────────────► /decide
+過程中的取捨 ─────────────► decision-record
 ```
 
 ## Definition of Ready
@@ -142,10 +142,10 @@ NEXT.md 的 gate 全部滿足 ──► 狀態 ready
 - [ ] Wave 0:`npm run boundaries` 沒有跨資料夾 import
 - [ ] `FEATURE.md` 狀態與完成日已更新
 - [ ] `NEXT.md` 的「目前」與 gate 已更新
-- [ ] 過程中的取捨已 `/decide`
+- [ ] 過程中的取捨已由 decision-record 記錄
 - [ ] 沒有留下 TODO / FIXME 註解
 
-選配的東西維護得好,`/sprint` 的建議會準;不維護也不會壞掉,只是要自己記得誰在等誰。
+選配的東西維護得好,sprint-planning 的建議會準;不維護也不會壞掉,只是要自己記得誰在等誰。
 
 ## Definition of Integrated
 
@@ -200,15 +200,16 @@ commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會�
 |---|---|
 | `contracts/` | 沒有它就沒有平行,而且協作者會跨 session 漂移 |
 | 每個 phase 的 `.feature` | 規格即測試。這是防止「做完了但不知道做對沒」的唯一機制 |
-| `/phase-done` 的核心清單 | 測試過、單獨跑得起來、嚴格級變異達標、人工場景確認過(以 `/phase-done` skill 當下的核心清單為準) |
+| phase-acceptance 的核心清單 | 測試過、單獨跑得起來、嚴格級變異達標、人工場景確認過(以 phase-acceptance skill 當下的核心清單為準) |
 | `@e2e` 場景 | 「系統可用」的唯一判準 |
 
 **可以先關掉的:**
 
-- sprint 檔與 `/sprint` — 自己知道下一個要做什麼就不用它(nightmare-assault 從頭到尾沒用過 sprint 檔,
+- sprint 檔與 sprint-planning — 自己知道下一個要做什麼就不用它(nightmare-assault 從頭到尾沒用過 sprint 檔,
   改用 autopilot 每輪回報當進度追蹤,見 `docs/07-practices.md`「三個專案都刻意不遵守的範式條文」)
-- `/integrate` 的完整清單 — 只跑 `@e2e` 與 `@regression` 也行
-- decision map 的 mermaid 圖 — ADR 本身要記,圖可以不畫
+- integration-check 的完整清單 — 只跑 `@e2e` 與 `@regression` 也行
+- (1.4.0 起已經沒有這一項:decision map 的 mermaid 依賴圖整塊拿掉了,
+  依賴關係讀各筆 ADR 的 **Related** 欄就好,不用再維護一張圖)
 - 標準級的變異測試 — 嚴格級一定要跑,其他看心情
 - `NEXT.md` 的維護 — 不維護的話規劃建議會給爛建議,但不影響開發
 - 多角色分工的儀式 — 單人開發時角色只是提醒自己「現在戴哪頂帽子」,不需要真的切換 session
@@ -227,7 +228,7 @@ commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會�
    前面的整合點需要它就不能(那是「切錯」,回去重切)。
 2. 把跟它有關的場景**搬出**目前要做的 phase(搬到既有的後段 phase,或新開一個 phase),不要留在原 phase 裡標 `@manual` 混過去。
 3. `NEXT.md` 的 gate 寫成**一個人做的決定**,例如「使用者決定要裝本機模型」「使用者決定支援第二平台」,
-   不寫「有空再做」。`/sprint` 會把這種 gate 特別標出來,因為它是使用者一句話就能解除的阻塞。
+   不寫「有空再做」。sprint-planning 會把這種 gate 特別標出來,因為它是使用者一句話就能解除的阻塞。
 4. 契約如果本來就有「這個能力不存在」的路徑(例如路由表的「無本機模型」欄、某個 optional 欄位),
    系統就照那條路徑跑,**不改契約**。契約沒有這條路徑才需要 ADR。
 5. 記一筆 ADR:延後什麼、為什麼、哪些整合點跟著延、gate 是什麼。措辭是「延後」不是「不做」,門要留著。
@@ -241,8 +242,8 @@ commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會�
 - 修一個明顯 bug 且不改行為:直接改,commit 寫 `fix`,但**要補一個會失敗的測試**
 - 小的行為調整(改個預設值、加個旗標):直接改,順手更新對應的 gherkin
 - **改動任何影響輸出品質但測試抓不到的東西(例如 LLM prompt):一定要跑對應的品質檢查流程**,
-  如果你的 CLAUDE.md 有這條硬規則就沒有例外
-- 其他建議走 `/feature`,但你想直接動手也可以——只要記得回頭補 gherkin
+  如果你的 AGENTS.md 有這條硬規則就沒有例外
+- 其他建議走 feature workflow,但你想直接動手也可以——只要記得回頭補 gherkin
 
 ## 什麼時候要停下來問人
 

@@ -18,7 +18,14 @@
       "include": [
         "CLAUDE.md"
       ],
-      "purpose": "【驗】consumer 的規則層與決策權表骨架。"
+      "purpose": "【驗】consumer 的 Claude Code 入口(第一行 @AGENTS.md,展開讀規則正本)。"
+    },
+    {
+      "root": "AGENTS.md",
+      "include": [
+        "AGENTS.md"
+      ],
+      "purpose": "【驗】ADR-020:規則正本,Claude Code 與 Codex 共用(consumer 的決策權表骨架在這裡,不在 CLAUDE.md)。"
     },
     {
       "root": "CHECKLIST.md",
@@ -83,6 +90,13 @@
         "**/*"
       ],
       "purpose": "【驗】可供 consumer 使用的 Claude Code skill 集合；以 glob 隨現況增減。"
+    },
+    {
+      "root": ".agents/skills/",
+      "include": [
+        "**/*"
+      ],
+      "purpose": "【驗】可供 consumer 使用的 Codex skill 集合；逐位元組鏡像 `.claude/skills/`。"
     },
     {
       "root": "contracts/",
@@ -176,6 +190,13 @@
       "purpose": "【驗】README 引用的可重用實戰做法。"
     },
     {
+      "root": "docs/templates/TASK.md.template",
+      "include": [
+        "docs/templates/TASK.md.template"
+      ],
+      "purpose": "【驗】#23:工單樣板,協調者寫工單時照抄的骨架;sync-gates.sh 的受管非守門檔同一份也靠 .npx-init-manifest.json 出貨(見 ADR-020 第 4 點)。"
+    },
+    {
       "root": "docs/integration/",
       "include": [
         "**/*"
@@ -199,6 +220,7 @@
         "*.json",
         "py/README.md",
         "py/*.py",
+        "py/.gitignore",
         "hooks/pre-commit"
       ],
       "purpose": "【驗】守門程式、設定、sync／verify 腳本與 Python 反向驗證工具；以 glob 隨集合增減。"

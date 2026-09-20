@@ -3,9 +3,13 @@ name: sprint-planning
 description: 規劃本週要做哪幾個 phase。當使用者問「接下來做什麼」「下一步」「哪些可以開始了」,或要求規劃本週時使用。讀所有 NEXT.md 算出哪些 phase 的 gate 已滿足,特別標出卡在「契約待決事項」的那些——那是使用者可以立刻解除的阻塞。
 ---
 
-# /sprint — 規劃本週
+# sprint-planning — 規劃本週
 
-指定週(可空):`$ARGUMENTS`
+指定週(可空):使用者給的輸入
+
+<!-- CLAUDE-ONLY-BEGIN -->
+Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
+<!-- CLAUDE-ONLY-END -->
 
 ## 第一步:決定週
 

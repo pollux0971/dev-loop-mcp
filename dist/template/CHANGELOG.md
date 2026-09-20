@@ -1,8 +1,79 @@
 # CHANGELOG
 
-版本規則(semver):PITFALLS / docs / 措辭改動升 **patch**;新增或改變檔案結構、腳本、CLAUDE.md 固定段落升 **minor**;改硬規則或落地步驟升 **major**。
-採用模板的專案在自己的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;升版時用
+版本規則(semver):PITFALLS / docs / 措辭改動升 **patch**;新增或改變檔案結構、腳本、規則層固定段落升 **minor**;改硬規則或落地步驟升 **major**。
+**1.11.0 起規則正本是 `AGENTS.md`,`CLAUDE.md` 只是 Claude Code 的相容入口**(見下方 1.11.0 條目);
+1.11.0 之前的條目寫「`CLAUDE.md` 固定段落」時,指的是當時唯一的規則檔,不用回頭改寫。
+採用模板的專案在自己的 `AGENTS.md` 記「採用模板 vX.Y.Z」;升版時用
 `git diff <採用版 tag>..<新版 tag>` 決定要不要跟。每個版本打 tag `vX.Y.Z`;發布給 npx 用的另打 `npx-vX.Y.Z`(見 `README.md`「安裝」段)。
+
+## 1.11.0 — 2026-09-21(已發布)
+
+**minor。** 1.10.0 發布(tag `v1.10.0`)之後的第一批變更,不算進已發布的 1.10.0——那個 tag 已經
+推出去了,不能回頭改內容;版本號往前跳一個。發布時機另定。
+
+- 規則正本搬到 `AGENTS.md`(ADR-020)。
+
+- **清掉兩條指向不存在東西的指令**(試跑卡點):`decision-record` skill 的「更新頂部 mermaid
+  依賴圖」與 `docs/03-agile-workflow.md`「可以先關掉的」清單裡的同一項——那張圖 1.4.0 就整塊
+  拿掉了,照著做的人會在 `docs/02-decision-map.md` 裡找一個不存在的區塊。改成寫 **Related** 欄。
+
+- **ADR 編號分段**:`ADR-001`~`ADR-099` 保留給範式,採用專案自己的 ADR 從 `ADR-101` 起編。
+  原本兩邊共用一條號線,升模板時範式新增的 ADR 會跟採用專案已寫的撞號(例如兩邊都出現
+  `ADR-021`),而 ADR「只增不刪」又不允許事後改號。分段之後升版不再撞號;要推翻範式 ADR
+  照常寫一筆自己的並在原條目標 `superseded by`。改了 `docs/02-decision-map.md` 的「怎麼讀」、
+  `AGENTS.md` 目錄慣例、`decision-record` skill 取號步驟(雙目錄鏡像)。
+
+- **清死代碼**:`check-dag.ts` 的 `ExternalBlocker`(型別宣告未用)、`check-doc-rot.ts` 的未用
+  `mkdirSync` import 與 `DEFAULT_SKIP_DIRS` 常數。`npx tsc --noEmit --noUnusedLocals
+  --noUnusedParameters` 從 4 條降到 1 條(剩 `check-boundaries.test.ts` 的 `SCANNER_BROKEN`,
+  在測試檔裡,依規則刻意不處理)。
+  **過程記一件事**:工單原本另外列了 `_root.ts` 的 `featurePhaseRowExists`/`adrExists`,協調者用
+  `grep` 驗證「零呼叫」,但 dev 棒用 `tsc` 交叉核對發現 `check-known-defects.ts` 真的呼叫它們,
+  正確拒絕刪除並 RETURN。事後查明根因:`check-known-defects.ts` 裡有兩個字面 NUL 位元組
+  (`U+0000`),`grep` 把整支檔案當二進位靜默跳過匹配——不是協調者下錯指令,是那支檔案本身的
+  怪異之處。範圍已更正,那兩個函式維持不動(它們確實有用,只是舊版的 phase 表解析,已知要另案
+  換掉,見下一輪待辦);merge commit `c58afab`。
+- **零輸入一律保持 FAIL,只把訊息改清楚**(`DECISIONS_NEEDED.md` #31,取代 #30)。範式通則是
+  「0 個目標一律 FAIL,不是 PASS」(空集合恆真,見 `docs/07-practices.md` 陽性對照段、
+  `PITFALLS.md` P-44/P-70)。技術顧問先前建議讓某些零輸入情況改印 PASS(#30),自己發現違反這條
+  通則、撤回並修正(#31):`check:next-gates` 三種零輸入情況全部維持 FAIL/exit 1,只在「真的是
+  新專案、一個 NN-name 資料夾都沒有」這種情況換一句更清楚的訊息;`check:dag` 的零輸入行為也一併
+  修正——1.9.0 規格把它設計成 PASS/exit 0 是技術顧問寫錯的方向,這次改成跟 `check:next-gates`
+  同一種做法(FAIL,但訊息清楚),並比照拆成三種情況(`--root` 指錯 / 新專案沒有任何 NN-name
+  資料夾 / 有資料夾但讀不到 phase)分別給訊息,不再三種情況共用同一句話誤導使用者。
+  **過程記兩件事,協調者自己的失誤**:①第一版工單(#30 方向)已開工但還沒 commit 就被技術顧問
+  自己推翻,協調者清掉未提交的改動重寫,沒有浪費任何 commit;②`check:dag` 的第一輪修法(fix
+  `next-gates-new-project`)只把 PASS 改成 FAIL,沒有比照 `check:next-gates` 拆三種情況,技術顧問
+  重驗時親自造三個一次性 repo 抓到「--root 指錯」跟「有資料夾但沒 phase」兩種情況被誤判成「新
+  專案剛完成初始化」——協調者確認後另開 `dag-zero-input-message` fix-forward 補上,merge commit
+  `66eb2dd`(前一輪 next-gates-new-project 的 merge commit 是 `0b9ddbc`)。
+  審核棒額外記錄:`check-dag`/`check-next-gates` 判斷「零輸入」用的量尺不同(phase 節點數 vs.
+  NEXT.md 檔案數),混合情境下可能不同步進入零輸入分支,留給之後動 `check-next-gates.ts` 的人
+  參考,非本輪範圍。
+  **本 repo 自己**(只有 `features/_template/`)的 `check:dag`/`check:next-gates` 因此從「已知綠/
+  已知紅各一支」變成「兩支都是已知紅」,直到有第一個真的 `features/01-xxx/` 為止——這是刻意的
+  行為變更,不是回歸。
+- **規則正本搬到 `AGENTS.md`,`CLAUDE.md` 變成 Claude Code 相容入口**(`DECISIONS_NEEDED.md` #32,
+  使用者選 A)。技術顧問實測 Codex 0.155.1 會讀專案根 `AGENTS.md`、會讀 `.agents/skills/<name>/SKILL.md`
+  (frontmatter 格式跟 Claude skill 相同)——模板原本只有 `CLAUDE.md` 與 `.claude/skills/`,Codex
+  兩者都不讀。盤點(`claude-codex-survey`,一份 259 行的唯讀調查報告,147 處 `CLAUDE.md` 引用逐條
+  分類)另外發現 `#23`(sync 送不了非守門檔)是同一件事的另一面——`.agents/skills/` 也是非守門檔;
+  且 `scripts/shipping-coverage.test.ts` 把兩個出貨管道取聯集,「npx 有、sync 沒有」的檔會被判成
+  已出貨,這個 union 語意的洞後續要收(`#23` 仍待批示)。
+  設計定案為 `ADR-020`:規則正本 `AGENTS.md`;`CLAUDE.md` 第一行 `@AGENTS.md` + 一段 Claude 專用
+  (斜線指令別名、Claude 工具對照),用 `<!-- CLAUDE-ONLY-BEGIN/END -->` 標記區段;9 支 skill 與
+  規則層引用逐條改成跨平台語彙,Claude 專屬機制(`SendMessage`/`ListAgents`/`CronCreate`/`Monitor`/
+  `$ARGUMENTS`/Orca terminal 操作)全部收進 `CLAUDE-ONLY` 標記;工單樣板從 `.orca-brief/TASK.md.template`
+  搬到 `docs/templates/TASK.md.template`(真正的 `git mv`,內容逐位元組核對沒有遺失)。
+  `.agents/skills/` 雙目錄鏡像、`#23` 非守門檔共用安裝紀錄是後續兩條鏈(鏈 2、鏈 3),**依序做,
+  不並行**(canonical 路徑與 hash 要序列化)。
+  **過程記三件事**:①這條鏈一如既往落後 main,協調者 `git merge main` 同步;②技術顧問審核時抓到
+  `AGENTS.md` 完全沒進出貨分類、合進去會讓 consumer 拿到指向不存在檔案的 `CLAUDE.md`,裁決現在補
+  不留到後面,協調者同批加 `package/payload-manifest.json` 的 `AGENTS.md` payload root;③一句
+  KNOWN_GAPS 理由文字被機械式路徑取代(`.orca-brief/` → `docs/templates/`)連句意一起取代壞掉,
+  變成自相矛盾,另開小棒修正。整合/清樹 agent 除了跑全 gate,額外做了真的 `npm pack` + `init` 實測
+  (不只看 blackbox gate 綠燈):`AGENTS.md` 真的裝上、`CLAUDE.md` 第一行逐字 `@AGENTS.md`、9 支
+  `SKILL.md` frontmatter 完好;merge commit `57e83e9`。
 
 ## 1.10.0 — 2026-09-19(已發布)
 
@@ -89,6 +160,8 @@ session 帶多個 worktree 的專案不必開這 4 個常駐 session,`docs/03-ag
   重用 `check-next-gates.ts` 既有解析(private 函式改 export、回傳值重組),沒有另寫平行 parser。
   有環 → `exit 1` 印出完整環路;無環 → 印拓撲分層(平行寬度)、ready 集合、被外部阻擋(ADR/§/sha)卡住的 phase 另列。
   `npm run check:dag`;零輸入(只有 `features/_template/`)印「沒有 phase」、`exit 0`;`scripts/zero-input.gates.test.ts` 涵蓋。
+  **這條「零輸入 PASS」的方向 1.11.0 已修正成 FAIL**(違反「0 目標一律 FAIL」通則,見 1.11.0 條目)——
+  這裡保留原文不改,是這次(1.9.0)實際出貨的行為紀錄。
   本 repo 這條是走 ADR-018 四角色鏈(test→dev→非作者審核)落地的第一條,審核棒獨立合併到臨時樹重做反向驗證
   (環路 fixture 必紅、拿掉一條真依賴分層必變),結論 PASS;merge commit bcfc58a。
 - **修 `check-next-gates.ts` 既有 bug:三種 header 句型解析錯誤**(2026-09-15,fix-forward,不 revert check-dag)。

@@ -1,9 +1,9 @@
 ---
 name: product-pm
-description: 使用者的產品需求入口。當使用者提出或調整功能、執行 /feature、探索產品想法、要求 brainstorming、party-mode、product brief 或 PRD 時優先使用；它主持需求對話，再呼叫內部 feature-triage，不讓兩支 skill 同時直接承接使用者。
+description: 使用者的產品需求入口。當使用者提出或調整功能、要求 feature workflow、探索產品想法、要求 brainstorming、party-mode、product brief 或 PRD 時優先使用；它主持需求對話，再呼叫內部 feature-triage，不讓兩支 skill 同時直接承接使用者。
 ---
 
-# /product-pm — 產品需求入口
+# product-pm — 產品需求入口
 
 ## 角色
 
@@ -11,7 +11,7 @@ description: 使用者的產品需求入口。當使用者提出或調整功能�
 
 ## 路由優先權（不得臨場猜測）
 
-1. 使用者直接提出新功能、需求調整、產品想法或 `/feature` 時，**本 skill 是唯一使用者入口，優先於 `feature-triage`**。
+1. 使用者直接提出新功能、需求調整、產品想法或要求 feature workflow 時，**本 skill 是唯一使用者入口，優先於 `feature-triage`**。
 2. `feature-triage` 是本 skill 呼叫的內部 A／B／C／D／E 分流 workflow，不直接主持使用者對話。
 3. 使用者明確要求 brainstorming、party-mode、brief、PRD 或需求改向時，由本 skill 先建立 L0／L1 產物；需要落成可開發規格時再呼叫 `feature-triage`。
 4. 若路由器同時認為本 skill 與 `feature-triage` 都命中，**只啟動本 skill**；不得平行產生兩份提案。
@@ -26,16 +26,16 @@ description: 使用者的產品需求入口。當使用者提出或調整功能�
 
 ## 原則
 
-1. PRD、brief、brainstorm 與 party 結論都是 `/feature` 的上游素材，不是開工授權。
+1. PRD、brief、brainstorm 與 party 結論都是 feature workflow 的上游素材，不是開工授權。
 2. 新功能、新需求、產品範圍變更與推翻既有決策由使用者批准。
 3. 技術可行性、介面、gate 例外與現有範圍內的技術取捨交給技術顧問。
 4. 協調者是唯一 session/worktree scheduler；PM 只能提交探索請求。L3 規格交付是排程輸入，不是 PM 的派工命令。
-5. L2 `/feature` 提案通過確認 gate 後才成為 L3 權威規格；未確認前不得寫入權威檔案。
+5. L2 feature 提案通過確認 gate 後才成為 L3 權威規格；未確認前不得寫入權威檔案。
 6. 不建立與 contracts、ADR、Gherkin、`FEATURE.md`、`NEXT.md` 平行的第二套事實來源。
 
 ## 啟動
 
-1. 依 `CLAUDE.md` 開工規則，每次都完整讀取 `contracts/types.md`；可以判讀，不能自行修改。
+1. 依 `AGENTS.md` 開工規則，每次都完整讀取 `contracts/types.md`；可以判讀，不能自行修改。
 2. 讀取 `DECISIONS_NEEDED.md` 的待批示與已批示項目。
 3. 讀取 `docs/02-decision-map.md` 的 accepted ADR、`docs/01-roadmap.md` 現況、`features/README.md` 索引，以及相關 `FEATURE.md`／`NEXT.md` 與 `.feature`。
 4. 直接承接使用者已明確表達的意圖；只有沒有明確任務時才顯示選單。
@@ -47,7 +47,7 @@ description: 使用者的產品需求入口。當使用者提出或調整功能�
 
 | Code | 意圖 | 動作 |
 |---|---|---|
-| `FE` | 新功能／變更功能／`/feature` | 呼叫內部 `feature-triage`，先產 L2 提案、等適格批准者確認、再寫 L3 權威規格 |
+| `FE` | 新功能／變更功能／feature workflow | 呼叫內部 `feature-triage`，先產 L2 提案、等適格批准者確認、再寫 L3 權威規格 |
 | `BP` | 腦力激盪 | 產生 L0 探索證據，最後整理假設、候選方案與未解問題 |
 | `PM` | 多觀點 party | 定義探索問題與 roster，提交協調者建立 session/worktree 的請求；PM 不自行啟動 worker |
 | `FR` | 技術可行性 | 以結構化 envelope 向技術顧問請求 feasibility review |
@@ -57,7 +57,7 @@ description: 使用者的產品需求入口。當使用者提出或調整功能�
 
 意圖已明確時直接執行對應項目；只有兩個項目確實難以區分時才問一個短問題。選單不賦予任何批准權。
 
-## `/feature` 權威流程
+## feature workflow 權威流程
 
 1. **L0/L1 輸入**：整理使用者原話、探索證據、假設與未解問題。
 2. **內部分流**：把下列 envelope 交給 `feature-triage`，由它讀取現況、拆解 capability 並依 E→C→D→A→B 判定。

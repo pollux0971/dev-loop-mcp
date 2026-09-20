@@ -7,9 +7,9 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_DAG_TS = resolve(import.meta.dirname, 'check-dag.ts');
 const CHECK_NEXT_GATES_TS = resolve(import.meta.dirname, 'check-next-gates.ts');
@@ -23,7 +23,7 @@ function runGit(cwd: string, ...args: string[]): void {
 }
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-check-dag-'));
+  const dir = makeIsolatedTempDir('lc-check-dag-');
   tmpDirs.push(dir);
   runGit(dir, 'init', '-q');
   runGit(dir, 'config', 'user.email', 'check-dag-test@example.com');
@@ -106,6 +106,48 @@ function outputSection(output: string, startMarker: string, endMarker?: string):
 function layerSection(output: string, layer: number, nextLayer?: number): string {
   return outputSection(output, `第 ${layer} 層`, nextLayer === undefined ? '目前 ready 集合' : `第 ${nextLayer} 層`);
 }
+
+describe('check-dag:零輸入訊息(先寫紅)', () => {
+  it('情況 1: features/ 不存在時指出路徑或初始化問題', () => {
+    const root = makeRepo();
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('掃描器壞了');
+    expect(output).toContain('features/');
+    expect(output).toContain('--root');
+    expect(output).not.toContain('新專案剛完成初始化');
+    expect(output).toContain('gate=dag result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('情況 2: 只有 features/_template/ 時維持新專案訊息', () => {
+    const root = makeRepo();
+    write(root, 'features/_template/README.md', '# template\n');
+    commitAll(root, 'empty feature template');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('新專案剛完成初始化');
+    expect(output).not.toContain('掃描器壞了');
+    expect(output).toContain('gate=dag result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('情況 3: 有 NN-name 資料夾但讀不到 phase 時指出資料夾與 phase 問題', () => {
+    const root = makeRepo();
+    write(root, 'features/01-foo/FEATURE.md', '# 01-foo\n\n尚未填寫 phase 表。\n');
+    commitAll(root, 'feature folder without phase table');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('1 個功能資料夾');
+    expect(output).toContain('讀不到任何 phase');
+    expect(output).not.toContain('新專案剛完成初始化');
+    expect(output).toContain('gate=dag result=FAIL scanned=0');
+  }, SPAWN_TIMEOUT_MS);
+});
 
 const HEADER_FIXTURES = [
   {

@@ -7,9 +7,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_MODULE_CAST_TS = resolve(import.meta.dirname, 'check-module-cast.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -36,7 +36,7 @@ const CLEAN_STEPS = [
 ].join('\n');
 
 function makeRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'lc-module-cast-'));
+  const root = makeIsolatedTempDir('lc-module-cast-');
   tmpDirs.push(root);
   writeRaw(root, 'scripts/gates.config.json', '{}');
   writeRaw(root, 'features/steps/_world.ts', 'export interface World { result?: unknown }\n');

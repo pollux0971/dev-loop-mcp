@@ -9,7 +9,7 @@
  *   npx tsx scripts/check-dag.ts
  *   npx tsx scripts/check-dag.ts --root <dir>
  *
- * 退出碼:0 = 無環並完成分層；1 = 有環，或 --root 指向不存在的目錄。
+ * 退出碼:0 = 無環並完成分層；1 = 沒有 phase、有環，或 --root 指向不存在的目錄。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -27,6 +27,12 @@ import {
 import { ROOT as GIT_ROOT, requireRootDir } from './_root.js';
 
 const GATE_NAME = 'dag';
+
+/** `_template`-only 的新專案沒有 phase 是預期狀態,但仍須以 FAIL 保護零輸入語意。 */
+const NEW_PROJECT_MESSAGE =
+  '新專案剛完成初始化,目前沒有任何 features/NN-name 資料夾;這不是掃描器錯誤,下一步請依 README 建立第一個 features/01-xxx/';
+
+const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -55,11 +61,6 @@ type Node = PhaseNode | IntegrationNode;
 interface Edge {
   source: string;
   target: string;
-}
-
-interface ExternalBlocker {
-  target: string;
-  token: string;
 }
 
 interface Dag {
@@ -329,9 +330,19 @@ function main(): void {
   const nodes = collectNodes(ROOT, folders, resolvers);
 
   if (![...nodes.values()].some((node) => node.kind === 'phase')) {
-    console.log('沒有 phase');
-    console.log('gate=dag result=PASS scanned=0');
-    process.exit(0);
+    const featuresDir = join(ROOT, 'features');
+    if (!existsSync(featuresDir)) {
+      console.log('✗ dag: 掃到 0 個 phase');
+      console.log(`${SCANNER_BROKEN}。features/ 目錄不存在,可能是 --root 指錯路徑或專案尚未初始化。`);
+    } else if (folders.length === 0) {
+      console.log(`ℹ dag: ${NEW_PROJECT_MESSAGE}`);
+    } else {
+      console.log(
+        `✗ dag: features/ 底下有 ${folders.length} 個功能資料夾,但讀不到任何 phase;請檢查各資料夾的 FEATURE.md 是否有可解析的 Phase 表。`,
+      );
+    }
+    console.log('gate=dag result=FAIL scanned=0');
+    process.exit(1);
   }
 
   const dag = buildDag(ROOT, folders, nodes, resolvers);

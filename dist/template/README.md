@@ -13,8 +13,8 @@
 
 ## 這是什麼、不是什麼
 
-**是**:一套文件骨架 + 一組可同步的 TypeScript 守門腳本(包含邊界、單獨執行與一致性檢查)+ Claude Code skill。
-落地後你會有 `contracts/`、`features/`、`docs/`、`.claude/skills/` 這些東西,馬上可以開始寫
+**是**:一套文件骨架 + 一組可同步的 TypeScript 守門腳本(包含邊界、單獨執行與一致性檢查)+ Claude Code/Codex 共用 skill。
+落地後你會有 `contracts/`、`features/`、`docs/`、`.claude/skills/`、`.agents/skills/` 這些東西,馬上可以開始寫
 第一份契約與第一個 `.feature`。
 
 **不是**:不是某個技術棧的專案模板(不綁定前端框架、不綁定雲端 provider)。
@@ -52,16 +52,19 @@
 
 ## 版本
 
-`VERSION` 是模板版本(semver),`CHANGELOG.md` 記每版動了什麼。專案的 `CLAUDE.md` 記「採用模板 vX.Y.Z」;
+`VERSION` 是模板版本(semver),`CHANGELOG.md` 記每版動了什麼。專案的 `AGENTS.md` 記「採用模板 vX.Y.Z」;
+`CLAUDE.md` 只作為 Claude Code 的相容入口;
 之後模板升版,在模板 repo 裡用 `git diff v<採用版>..v<新版> --stat` 看差異決定要不要跟
 (1.5.0 以前的 tag 叫 `template/vX.Y.Z`,見檔頭說明)。
 三個專案用同一套東西,沒有版本一週後就是三套。
 
 守門腳本用 `scripts/sync-gates.sh <你的 repo 根>` 複製進去(檔頭會寫來源版本),CI 才自包含;升版重跑一次,`--check` 可放進 CI 抓手改。不要直接呼叫模板路徑(CI 與別台機器沒有它)。sync 若印「已存在且沒有 SOURCE 標頭」就是它撞到你們自己寫的同名檔,它不會蓋、也一個檔都沒寫:把你們的檔改名 `<base>.local.<ext>`(例如 `check-boundaries.local.test.ts`)再跑一次(1.5.0,P-85)。
 
+`sync-gates.sh` 還會同步「受管非守門檔」,例如 `.claude/skills/*/SKILL.md`、`.agents/skills/*/SKILL.md`、`docs/templates/TASK.md.template` 與 `scripts/py/.gitignore`。這些檔案不用守門腳本的 SOURCE 標頭 + sha256 那套,而是用跟 `npx init` 共用的 `.npx-init-manifest.json` 判斷所有權:檔案不存在就建立,內容仍符合 manifest 記錄就能隨升版覆蓋,被使用者改過就視為衝突。只要任何一個受管檔衝突,整支 sync 就會 `exit 1`,連本來每次都要同步的 `.ts`/`.py` 守門腳本也不會落地。
+
 `boundaries.allow.json`、`boundaries.owners.json` 這兩份是專案自己的設定(見 `scripts/README.md`),sync 只在目標不存在時建一次,之後永遠不覆蓋——升版不會把你填好的落點表洗掉。
 
-**單一入口:`npm run check:all`。** 合併前、CI 裡、`/phase-done` 收尾,都跑這一個指令,不要各自
+**單一入口:`npm run check:all`。** 合併前、CI 裡、phase-acceptance 收尾,都跑這一個指令,不要各自
 背一串 `&&` 串起來的 npm script 名字。它讀 `scripts/gates.config.json` 的 `chain` 陣列(依序執行的
 npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡真的存在,不存在就算失敗——
 新加一支守門,永遠是「先掛 npm script,再寫進 `chain`」,不是反過來。`gates.config.json` 認得的
@@ -114,7 +117,7 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 ```bash
 mkdir my-project && cd my-project
 git init
-npx github:pollux0971/dev-paradigm#npx-v1.10.0 init .
+npx github:pollux0971/dev-paradigm#npx-v1.11.0 init .
 ```
 
 - 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
@@ -139,7 +142,7 @@ init 只落地 consumer 該拿到的那一份,收件匣也是空白的。
 
 ### 步驟 1:使用者親口填「做決定時」那張表,然後填 `CHECKLIST.md`
 
-先做 `CLAUDE.md` 的「做決定時」表:誰定什麼、什麼才問使用者——**由使用者本人改、本人 commit 進 main**。
+先做 `AGENTS.md` 的「做決定時」表:誰定什麼、什麼才問使用者——**由使用者本人改、本人 commit 進 main**。
 這是三個專案都證明過的第一步:沒有它,協調者對任何轉述的「使用者說」都會正確地拒絕,切換會停兩三次。
 同時把 `DECISIONS_NEEDED.md` 放到根目錄。然後才填 CHECKLIST。
 
@@ -171,12 +174,12 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 寫完問自己:「十個不同的功能,看著這份契約,會不會對同一個型別長出不同的理解?」
 如果會,契約還不夠具體。
 
-**這一步定案之後,硬約定就凍結了**——不是說不能改,是改了要走 `/decide`。
+**這一步定案之後,硬約定就凍結了**——不是說不能改,是改了要走 decision-record。
 
-### 步驟 3:用 `/feature` 開第一批資料夾,寫 phase-1 gherkin
+### 步驟 3:用 feature workflow 開第一批資料夾,寫 phase-1 gherkin
 
 依你的領域拆出能力(每個能力一句「系統能夠 ___」描述、能獨立驗收),對每個能力跑
-`/feature <描述>`。它會提案該開新資料夾還是加進既有的,**先看提案再確認**。
+feature workflow `<描述>`。它會提案該開新資料夾還是加進既有的,**先看提案再確認**。
 確認後它會從 `features/_template/` 建立 `FEATURE.md`、`NEXT.md`、`phase-1.feature`。
 
 每個 phase-1 的 `.feature` 應該:只依賴 contracts 與自己的目錄、有一個「單獨跑起來會怎樣」
@@ -198,7 +201,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 - [ ] `scripts/boundaries.owners.json` 的 `owners` 填好每個 Wave 0 能力的落點(**不是** `scripts/check-boundaries.ts`——那是受 sync 管理的守門檔,改了 `--check` 會紅)
 - [ ] `scripts/gates.config.json` 加上 `chain`(例:`["typecheck", "test", "boundaries", "standalone"]`),`npm run check:all` 最後一行是 `gate=all result=PASS`
 - [ ] `standalone.json` 每個 Wave 0 能力都有一行(先寫預期指令,即使還跑不起來也要列出來,
-      這樣 `/phase-done` 才知道要驗什麼)
+      這樣 phase-acceptance 才知道要驗什麼)
 - [ ] `docs/01-roadmap.md` 的 Wave 0 表與各 `features/*/FEATURE.md` 對得起來
 
 之後每個 worktree 只跑 `npm ci`,不再動這些共用檔——共用檔只有協調者改
@@ -207,7 +210,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 ### 步驟 5:開 worktree 派工
 
 Wave 0 的每個 phase-1 一個 worktree,可以同時開工,順序自由。**每張工單照
-`.orca-brief/TASK.md.template` 的形狀寫**(第 0 件事確認模型、絕對不能碰的用路徑列舉、
+`docs/templates/TASK.md.template` 的形狀寫**(第 0 件事確認模型、絕對不能碰的用路徑列舉、
 每項驗收自帶反向驗證、要求 worker 自己 grep 不信任何人的列舉、回報格式含「工單哪裡說不通」)
 ——這是專案 B 實戰用出來的形狀,每一段都對應一次沒寫它就出事的紀錄,見
 `docs/07-practices.md` (i)。角色分工:
@@ -238,9 +241,9 @@ git diff --name-only main...<branch> | grep -E '\.test\.ts$|^features/steps/'
 
 ## 之後呢
 
-Wave 0 全部 `done` 之後用 `/integrate I1` 做第一次整合驗收。之後嚴格依序:`I1 → I2 → …`,
+Wave 0 全部 `done` 之後用 integration-check `I1` 做第一次整合驗收。之後嚴格依序:`I1 → I2 → …`,
 每個整合點通過才能開下一個。整合的節奏、gate、驗收清單見 `docs/03-agile-workflow.md`
-與 `.claude/skills/integration-check/SKILL.md`。
+與 `integration-check` skill。
 
 ## 常見問題
 
@@ -263,7 +266,7 @@ Wave 0 全部 `done` 之後用 `/integrate I1` 做第一次整合驗收。之後
 
 **我的專案沒有 LLM / 沒有桌面 UI / 沒有跨平台,一堆東西看起來不適用怎麼辦?**
 這套範式的骨頭是「契約 + gherkin + Wave 0 + 整合點 + ADR」,跟你做什麼產品無關。
-`CLAUDE.md` 與 skill 裡凡是提到「LLM」「golden run」「router」之類的地方都只是範例,
+`AGENTS.md` 與 skill 裡凡是提到「LLM」「golden run」「router」之類的地方都只是範例,
 看不懂就直接刪掉那一條,不影響其他部分運作。
 
 **為什麼工具鏈是 TypeScript + vitest + cucumber + stryker,可以換嗎?**

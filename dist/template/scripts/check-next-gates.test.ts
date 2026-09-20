@@ -8,14 +8,15 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 import { extractGateLines, readFeaturePhaseRows } from './check-next-gates.js';
 
 const CHECK_NEXT_GATES_TS = resolve(import.meta.dirname, 'check-next-gates.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
-const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
+const NEW_PROJECT_MESSAGE =
+  '新專案剛完成初始化,目前沒有任何 features/NN-name 資料夾;這不是掃描器錯誤,下一步請依 README 建立第一個 features/01-xxx/';
 
 const tmpDirs: string[] = [];
 
@@ -25,7 +26,7 @@ function runGit(cwd: string, ...args: string[]): void {
 }
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-next-gates-'));
+  const dir = makeIsolatedTempDir('lc-next-gates-');
   tmpDirs.push(dir);
   runGit(dir, 'init', '-q');
   runGit(dir, 'config', 'user.email', 'next-gates-test@example.com');
@@ -230,15 +231,16 @@ afterEach(() => {
 });
 
 describe('check-next-gates:0 份 NEXT.md 一律 FAIL', () => {
-  it('features/ 底下沒有任何 NEXT.md → exit 1', () => {
+  it('features/ 只有 _template、沒有 NN-name 資料夾 → exit 1 並印新專案訊息', () => {
     const root = makeRepo();
-    write(root, 'features/.gitkeep', '');
+    write(root, 'features/_template/FEATURE.md', '# template\n');
+    write(root, 'features/_template/NEXT.md', '# template next\n');
     commitAll(root, 'init');
 
     const { code, output } = run(root);
 
     expect(code).toBe(1);
-    expect(output).toContain(SCANNER_BROKEN);
+    expect(output).toContain(NEW_PROJECT_MESSAGE);
     expect(output).toContain('gate=next-gates result=FAIL scanned=0');
   }, SPAWN_TIMEOUT_MS);
 });

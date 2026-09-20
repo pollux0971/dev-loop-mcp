@@ -12,9 +12,9 @@
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_KNOWN_DEFECTS_TS = resolve(import.meta.dirname, 'check-known-defects.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -23,7 +23,7 @@ const tmpDirs: string[] = [];
 let originalEnumerateCmd: string | undefined;
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-known-defects-'));
+  const dir = makeIsolatedTempDir('lc-known-defects-');
   tmpDirs.push(dir);
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   return dir;
@@ -327,7 +327,7 @@ describe('check-known-defects:real cucumber 列舉(唯讀,對照真實環境)', 
     // consumer 還沒採用)——複製這支腳本跟 _root.ts 到一個臨時目錄,`--root` 指向
     // 真的 consumer,`--cwd` 指向真的 consumer(cucumber.js 在那裡),但登記表用
     // 一個空的臨時檔案(GATES_CONFIG_DIR 指過去),不寫入 consumer 自己的樹。
-    const scratchDir = mkdtempSync(join(tmpdir(), 'lc-known-defects-real-'));
+    const scratchDir = makeIsolatedTempDir('lc-known-defects-real-');
     tmpDirs.push(scratchDir);
     mkdirSync(join(scratchDir, 'scripts'), { recursive: true });
     writeFileSync(join(scratchDir, 'scripts', 'known-defects.json'), '[]', 'utf8');
