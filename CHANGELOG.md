@@ -13,6 +13,14 @@
 
 - 規則正本搬到 `AGENTS.md`(ADR-020)。
 
+- **範式規則以一把不存在的鎖為前提,連帶放寬了安全限制**(P-103,試跑卡點的延伸)。四處
+  (`mutation-testing` skill 整節、`autopilot` §2.3、`docs/07-practices.md`、`CHECKLIST.md`)都寫
+  「`npm run mutate` 包了跨 worktree 的檔案鎖」——那是**來源專案 A 自己寫的 wrapper**,模板從來
+  沒出貨。最嚴重的後果:審核輪並行數原本 ≤ 1,1.8.0 以「鎖會自己排隊」為由放寬回
+  `{{PARALLEL_CAP}}`,等於在沒有鎖的情況下正式授權併發跑 Stryker = 重演 P-34($25 的 OOM 互殺)。
+  **1.11.0 起改回 ≤ 1**,四處一起講實話並寫明補上鎖之後要改回去。通則寫進 P-103:規則檔寫
+  「有 X 守著」必須指名實作檔案,引用 PITFALLS 修法欄前要先確認那個修法在本 repo 落地了沒有。
+
 - **規則檔別說謊**(試跑卡點):兩支 skill 寫「`npm run mutate` 包了跨 worktree 的檔案鎖(P-34),
   裸的 `stryker run` 會繞過鎖」——【驗】模板出貨的 `package.json` 是 `"mutate": "stryker run"`,
   沒有任何 wrapper,有鎖的是另一支獨立的 `scripts/py/mutate.py`(它會直接改工作區的檔)。

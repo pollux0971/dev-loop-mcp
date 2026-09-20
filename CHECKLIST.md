@@ -274,8 +274,10 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 - **在 main 上改任何檔案之前**,對每一個目前 in-progress 的分支跑一次
   `git diff --name-only main...<branch> | grep <要改的檔案>`,全部為空才動手——這條跟上一條是同一個
   「main 是共用資源」的問題在不同層面的檢查(pid 層 vs 分支內容層),兩個都要做(來源 nightmare-assault D14)。
-- **含子行程探針 + 逾時的測試(真跑 cucumber 那類)跟 `npm run mutate` 共用同一把跨 worktree 的檔案鎖**
-  (PITFALLS P-82,`.claude/skills/mutation-testing/SKILL.md` 有完整說明)——負載下(同機另一個
-  worktree 在跑 Stryker)這類測試會因為逾時假紅,假紅跟真紅退出碼與訊息一模一樣;**單檔
-  `vitest run <單一檔案>` 不用搶鎖**,只有子行程探針類測試與 `npm run mutate` 本身要排隊;
-  看到這類測試紅先確認是不是卡在等鎖,**不要用放寬逾時當修法**。
+- **含子行程探針 + 逾時的測試(真跑 cucumber 那類)在負載下會假紅**(PITFALLS P-82):同機另一個
+  worktree 在跑 Stryker 時,探針的子行程在逾時內跑不完,而**假紅跟真紅的退出碼與訊息一模一樣**。
+  ⚠️【驗,2026-09-21】**本模板目前沒有任何 JS/TS 端的檔案鎖在擋這件事**——`package.json` 的
+  `mutate` 就是裸的 `stryker run`,唯一實作 `.mutate.lock` 的是 `scripts/py/mutate.py`(獨立的
+  Python 定向工具)。所以這裡只能靠排程:**同一時間只讓一個 worktree 跑變異測試或這類探針測試**,
+  看到這類測試紅先問「當時同機有沒有人在跑 Stryker」,**不要用放寬逾時當修法**。
+  (補上真正的鎖是待辦,補上之後這段要改回「靠鎖排隊」。)
