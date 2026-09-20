@@ -72,6 +72,9 @@ import {
 /** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
 const GATE_NAME = 'doc-links';
 
+/** 已發布的歷史文件整檔不再當成現況文件掃描。 */
+const HISTORICAL_DOCS = ['CHANGELOG.md'];
+
 /** 遞迴掃描這些目錄底下的 *.md。根目錄的 *.md 另外處理(不遞迴)。 */
 export const SCAN_DIRS = ['docs', 'features', 'contracts', '.claude'];
 
@@ -94,7 +97,7 @@ const EXTRA_SKIP_SEGMENTS = ['archive'];
 const EXTRA_SKIP_PREFIXES = ['contracts/fixtures'];
 
 interface GatesConfig {
-  docLinks?: { skipSegments?: unknown; skipPrefixes?: unknown };
+  docLinks?: { skipSegments?: unknown; skipPrefixes?: unknown; historicalFiles?: unknown };
   skipDirs?: unknown;
 }
 
@@ -135,6 +138,8 @@ function stringArray(v: unknown): string[] {
 export interface SkipConfig {
   skipSegments: string[];
   skipPrefixes: string[];
+  /** 相對 repo 根目錄、精確比對的歷史檔清單。 */
+  historicalFiles?: string[];
 }
 
 /**
@@ -158,6 +163,9 @@ export function resolveSkipConfig(root: string): SkipConfig {
   const shared = splitSkipDirs(new Set(sharedExtra));
 
   if (config.docLinks !== undefined) requireConfigType(config.docLinks, 'docLinks', 'object', GATE_NAME);
+  if (docLinks.historicalFiles !== undefined) {
+    requireConfigType(docLinks.historicalFiles, 'docLinks.historicalFiles', 'array', GATE_NAME);
+  }
 
   const skipSegments = [
     ...new Set([...base.segments, ...EXTRA_SKIP_SEGMENTS, ...shared.segments, ...stringArray(docLinks.skipSegments)]),
@@ -165,7 +173,10 @@ export function resolveSkipConfig(root: string): SkipConfig {
   const skipPrefixes = [
     ...new Set([...base.prefixes, ...EXTRA_SKIP_PREFIXES, ...shared.prefixes, ...stringArray(docLinks.skipPrefixes)]),
   ];
-  return { skipSegments, skipPrefixes };
+  const historicalFiles = [
+    ...new Set([...HISTORICAL_DOCS, ...stringArray(docLinks.historicalFiles)]),
+  ];
+  return { skipSegments, skipPrefixes, historicalFiles };
 }
 
 interface BrokenLink { file: string; line: number; target: string }
@@ -176,6 +187,8 @@ export interface DocLinkResult {
   /** 掃到的相對連結條數(外部連結與純錨點不算) */
   links: number;
   broken: BrokenLink[];
+  /** 從實際掃描範圍整檔跳過的歷史檔數 */
+  skippedHistoricalFiles?: number;
 }
 
 /** 一層還沒收尾的圍欄。len 記長度是因為收尾的圍欄不可以比開頭短。 */
@@ -478,7 +491,9 @@ export function checkDocLinks(root: string, skip: SkipConfig = resolveSkipConfig
   const broken: BrokenLink[] = [];
   let links = 0;
 
-  const files = markdownFiles(root, skip);
+  const allFiles = markdownFiles(root, skip);
+  const historicalPaths = new Set((skip.historicalFiles ?? []).map(toPosix));
+  const files = allFiles.filter((file) => !historicalPaths.has(toPosix(relative(root, file))));
   for (const file of files) {
     const raw = readFileSync(file, 'utf8');
 
@@ -501,7 +516,7 @@ export function checkDocLinks(root: string, skip: SkipConfig = resolveSkipConfig
     }
   }
 
-  return { files: files.length, links, broken };
+  return { files: files.length, links, broken, skippedHistoricalFiles: allFiles.length - files.length };
 }
 
 /**
@@ -527,10 +542,13 @@ export function main(argv: string[]): { code: number; output: string } {
 
   const skip = resolveSkipConfig(root);
 
-  const { files, links, broken } = checkDocLinks(root, skip);
+  const { files, links, broken, skippedHistoricalFiles = 0 } = checkDocLinks(root, skip);
   const out: string[] = [];
 
-  out.push(`doc-links: 排除片段 [${skip.skipSegments.join(', ')}]、排除前綴 [${skip.skipPrefixes.join(', ')}]`);
+  out.push(
+    `doc-links: 排除片段 [${skip.skipSegments.join(', ')}]、排除前綴 [${skip.skipPrefixes.join(', ')}]、` +
+      `跳過歷史檔 ${skippedHistoricalFiles} 個`,
+  );
 
   // 0 條連結跟「全部都對」的退出碼一樣是 0。掃描範圍打錯、副檔名清單改掉、
   // 或 stripCode 挖太多的時候就長這樣,所以一律當 FAIL。
