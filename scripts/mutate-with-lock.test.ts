@@ -4,7 +4,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
-const DRIVER = resolve(import.meta.dirname, 'mutate-with-lock.mjs');
+const DRIVER = resolve(import.meta.dirname, 'mutate-with-lock.ts');
 const LOCK_FILE = '.stryker.lock';
 const DRIVER_TIMEOUT_MS = 5_000;
 

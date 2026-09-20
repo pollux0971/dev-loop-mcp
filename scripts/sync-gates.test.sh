@@ -253,6 +253,36 @@ assert_contains "plain sync 印出 needs-config 清單(consumer 一開始什麼�
 assert_contains "plain sync 建議接線 check-boundaries.ts" "$sync_out" "check:boundaries"
 
 echo
+echo "== 步驟 1a(修補記錄,leg 2r2):mutate-with-lock.ts 必須同步、SOURCE 正確、改動後 --check 要紅 =="
+MUTATE_WITH_LOCK="$CONSUMER/scripts/mutate-with-lock.ts"
+if [ -f "$MUTATE_WITH_LOCK" ]; then
+  pass "同步後 scripts/mutate-with-lock.ts 存在"
+else
+  fail "同步後 scripts/mutate-with-lock.ts 應該存在"
+fi
+
+mutate_version="$(tr -d '[:space:]' < "$TEMPLATE_DIR/VERSION")"
+mutate_header="$(sed -n '1p' "$MUTATE_WITH_LOCK" 2>/dev/null || true)"
+if echo "$mutate_header" \
+  | grep -qE '^// SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}' \
+  && echo "$mutate_header" | grep -qF "template v$mutate_version "; then
+  pass "mutate-with-lock.ts 的 SOURCE 標頭含目前版本與 sha256"
+else
+  fail "mutate-with-lock.ts 的 SOURCE 標頭應含目前版本與 sha256"
+  echo "--- 實際標頭 ---"
+  echo "$mutate_header"
+  echo "--- 標頭結束 ---"
+fi
+
+if [ -f "$MUTATE_WITH_LOCK" ]; then
+  printf '\n// sync-gates test mutation\n' >> "$MUTATE_WITH_LOCK"
+fi
+mutate_check_out="$("$SYNC_GATES" "$CONSUMER" scripts --check 2>&1)"
+mutate_check_code=$?
+assert_exit_code "改動 mutate-with-lock.ts 後 --check 要失敗" "$mutate_check_code" "1"
+assert_contains "--check 要明講 mutate-with-lock.ts 內容被改過" "$mutate_check_out" "✗ mutate-with-lock.ts 內容被改過"
+
+echo
 echo "== 步驟 2:--check,check-boundaries.ts 還沒接線 → 要紅 =="
 check_out_1="$("$SYNC_GATES" "$CONSUMER" scripts --check 2>&1)"
 check_code_1=$?
