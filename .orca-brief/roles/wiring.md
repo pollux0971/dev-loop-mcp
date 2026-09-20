@@ -22,6 +22,16 @@
    - `git -C <worktree路徑> log -1 --format='%H %s'` 有這一棒的 commit(審核棒例外,審核只寫報告)。
    - 審核棒如果**有** commit(`git log <branch> --not <base>` 非空)→ 照樣接棒/轉交,但 SendMessage 協調者一行「<worktree> 審核棒違規 commit 了報告」,清樹時要走顧問的單次授權。
    - 三樣缺一樣 → 不接棒。終端還在動就等下一輪;停住了就 SendMessage 協調者「<worktree> 停住但沒交件」。
+   - ⚠️ **「停住了」不能只看終端有沒有新輸出**(P-104):`codex` 一輪之內可以好幾分鐘不印任何東西
+     (在想、在跑不印東西的工具),**輸出靜默與行程結束在終端上長得一模一樣**。判死活要看行程:
+     ```bash
+     for p in $(pgrep -u "$USER" -f codex); do [ "$(readlink /proc/$p/cwd)" = "<worktree路徑>" ] && echo "還活著: $p"; done
+     ```
+     有行程 → 還在動,等下一輪,**不要**重派、不要報異常。沒行程才算停住。
+   - 同理,worktree 出現「沒看到終端印出來」的 commit **不是安全事件**,是同一個誤判:
+     先比對三件事(該 worktree 的 `git reflog` 時間序列、worker 行程的起始時間、commit 的 author/committer),
+     三者一致就是正常工作。真的對不上再上報——**但保留現場、暫停該鏈、先問不自己下結論的處置是對的**,
+     誤判一次的成本是幾分鐘,漏報一次的成本是整個環境的信任。
 4. **PASS → 照 `on_pass` 接棒**:
    - `on_pass: leg <N>` → 先做「開棒前檢查」,再開:
      ```bash
