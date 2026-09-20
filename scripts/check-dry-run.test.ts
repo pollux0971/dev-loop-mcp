@@ -38,8 +38,8 @@ function writeRaw(root: string, relPath: string, content: string): void {
 /** 一個能跑真 cucumber 的最小 consumer:cucumber.json + 兩個資料夾各一個 phase 檔 +
  *  兩個 steps 檔(CJS,fixture 沒有 package.json 所以 .js 就是 CJS)。預設狀態是乾淨的:
  *  每句恰好一個定義。 */
-function makeCleanRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'lc-dry-run-'));
+function makeCleanRoot(parentDir = tmpdir()): string {
+  const root = mkdtempSync(join(parentDir, 'lc-dry-run-'));
   tmpDirs.push(root);
   symlinkSync(TEMPLATE_NODE_MODULES, join(root, 'node_modules'), 'dir');
   writeRaw(
@@ -180,6 +180,16 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
     const root = makeCleanRoot();
     const { code, output } = run(root);
     expect(output).toContain('2 scenarios');
+    expect(output).toContain('gate=dry-run result=PASS scanned=2');
+    expect(code).toBe(0);
+  }, SPAWN_TIMEOUT_MS);
+
+  it('fixture 根目錄上層有 type=module package.json 仍然通過', () => {
+    const fixtureParent = mkdtempSync(join(tmpdir(), 'lc-dry-run-parent-'));
+    tmpDirs.push(fixtureParent);
+    writeFileSync(join(fixtureParent, 'package.json'), JSON.stringify({ type: 'module' }));
+    const root = makeCleanRoot(fixtureParent);
+    const { code, output } = run(root);
     expect(output).toContain('gate=dry-run result=PASS scanned=2');
     expect(code).toBe(0);
   }, SPAWN_TIMEOUT_MS);
