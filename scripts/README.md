@@ -16,6 +16,13 @@ P-86 / P-88)是掃描器,`_root.ts` 是它們共用的 repo 根解析,
 `$TEMPLATE_DIR`**——sync(寫入新內容)才需要模板路徑,`--check` 只需要問已安裝的檔案
 自己「有沒有被動過」,答案就寫在檔案自己身上,所以能在沒有模板 checkout 的 CI 環境單獨跑。
 
+`sync-gates.sh` 也會同步四類「受管非守門檔」: `.claude/skills/*/SKILL.md`、
+`.agents/skills/*/SKILL.md`、`docs/templates/TASK.md.template` 與 `scripts/py/.gitignore`。
+它們不用 SOURCE 標頭,而是用跟 `npx init` 共用的 `.npx-init-manifest.json` 裡的檔案雜湊判斷
+所有權;檔案不存在就建立,manifest 記錄相符就能在升版時覆蓋,內容被使用者改過就衝突。受管檔
+採先掃後寫,只要有一個衝突,整支 `sync-gates.sh` 都會 `exit 1`,連 `.ts`/`.py` 守門腳本也不會
+落地,不會只跳過那一個檔案。
+
 每支掃描器結尾都會印一行機器可讀標記 `gate=<name> result=PASS|FAIL scanned=<N>`(CHANGELOG
 1.3.2 (C)),`<name>` 是 `boundaries` / `doc-links` / `gherkin-dup` / `phase-coverage` /
 `standalone` / `step-dup` / `dry-run` / `module-cast`(以及 `all` / `doc-rot` / `known-defects` /
