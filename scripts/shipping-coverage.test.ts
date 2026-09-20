@@ -3,7 +3,7 @@
  *
  * 問的問題:**repo 裡每一個 tracked 檔,都要能回答「它靠什麼到 consumer 手上」。**
  * 答案只有三種:
- *   (1) 真的被出貨了——`sync-gates.sh` 落地了它,或 `npx init` 的 tarball 裝了它;
+ *   (1) 真的被出貨了——依該檔案的管道契約,`sync-gates.sh` 與/或 `npx init` 的 tarball 裝了它;
  *   (2) 刻意不出貨——列在 `NOT_SHIPPED`,附理由;
  *   (3) 已知缺口——列在 `KNOWN_GAPS`,**必須指向一件還在待批示的 DECISIONS_NEEDED**。
  * 三種都不是 → 紅,訊息列出是哪幾個檔。
@@ -26,8 +26,8 @@
  *
  *   - `NOT_SHIPPED` 每一筆:理由有最短長度;至少要比對到一個 tracked 檔(改名後殘留 → 紅);
  *     **不准比對到實際有出貨的檔**(宣告「不出貨」卻出貨了,兩個說法打架 → 紅)。
- *   - `KNOWN_GAPS` 每一筆:檔案必須 tracked;**必須真的沒出貨**(缺口已經補上卻還掛著 → 紅);
- *     **指向的 DECISIONS_NEEDED 編號必須還在「待批示」**——那件裁決一離開待批示,這支就紅,
+ *   - `KNOWN_GAPS` 每一筆按管道登記:檔案必須 tracked;該管道必須真的沒出貨(缺口已經補上卻還掛著
+ *     → 紅);**指向的 DECISIONS_NEEDED 編號必須還在「待批示」**——那件裁決一離開待批示,這支就紅,
  *     逼人回頭把缺口改成「已出貨」或「刻意不出貨」。這是 #11「暫時措施要有退場條件,而且退場條件
  *     要是一個可查的事實」在這裡的實作。
  *   - `KNOWN_GAPS` 與 `NOT_SHIPPED` 刻意分開:前者是**欠帳**,後者是**決定**。混在一起的話,
@@ -39,6 +39,8 @@
  * 所以豁免逐項列具體子路徑;`.orca-brief/` 底下出現一個新檔,會以「未分類」紅出來。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+// @ts-expect-error cli.mjs is JavaScript-only and has no declaration file; its named export is runtime-verified below.
+import { transportAlias } from '../package/src/cli.mjs';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -48,6 +50,17 @@ import { makeIsolatedTempDir } from './_root.js';
 const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SETUP_TIMEOUT_MS = 300_000;
 const MIN_REASON_LENGTH = 40;
+type Pipeline = 'npx' | 'sync';
+type PipelineGap = { decision: number; reason: string };
+type KnownGap = Partial<Record<Pipeline, PipelineGap>>;
+
+/** 這四類是兩個管道都必須出貨的受管非守門檔,不可用 KNOWN_GAPS 豁免。 */
+const REQUIRED_BOTH_SHIPPED = [
+  '.claude/skills/',
+  '.agents/skills/',
+  'docs/templates/TASK.md.template',
+  'scripts/py/.gitignore',
+] as const;
 
 /** 刻意不出貨。每一筆是「路徑或目錄前綴」→ 理由。 */
 const NOT_SHIPPED: Record<string, string> = {
@@ -81,25 +94,15 @@ const NOT_SHIPPED: Record<string, string> = {
     '本檔:依賴模板 repo 的 git ls-files、package/ 發布殼與 sync-gates.sh 原始碼,只在上游有意義;在 consumer 那裡根本沒有 package/。',
 };
 
-/** 已知缺口:**欠帳,不是決定**。每一筆必須指向一件還在待批示的裁決。 */
-const KNOWN_GAPS: Record<string, { decision: number; reason: string }> = {
-  'docs/templates/TASK.md.template': {
-    decision: 23,
-    reason:
-      '樣板已搬到 `docs/templates/`(P-95);工單樣板應該出貨但兩個管道都沒送——sync 送不了 `.md`(SOURCE 標頭格式是兩個出貨管道共用的契約);仍待 `#23` 讓 sync 也出貨。',
-  },
-  'scripts/py/.gitignore': {
-    decision: 23,
-    reason:
-      '擋 scripts/py/ 底下的 __pycache__;sync 只出貨 py/*.py、npx manifest 只含 py/*.py 與 py/README.md,consumer 跑 mutate.py 後會留下未追蹤的快取檔。',
-  },
-};
+/** 已知缺口是欠帳,不是決定;每一筆按 npx/sync 管道標記,且必須指向待批示裁決。 */
+const KNOWN_GAPS: Record<string, KnownGap> = {};
 
 const tmpDirs: string[] = [];
 let tracked: string[] = [];
 let npxShipped = new Set<string>();
 let syncShipped = new Set<string>();
-let shipped = new Set<string>();
+let anyPipelineShipped = new Set<string>();
+let requiredBothFiles: string[] = [];
 
 function run(cmd: string, args: string[], cwd: string): { code: number; out: string } {
   const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: SETUP_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
@@ -159,23 +162,23 @@ beforeAll(() => {
   if (!tgz) throw new Error(`npm pack 沒有產出 tarball:\n${pack.out}`);
   const tar = run('tar', ['-tzf', join(art, tgz)], base);
   if (tar.code !== 0) throw new Error(`tar -tzf 失敗:\n${tar.out}`);
-  const alias = new Map([['gitignore', '.gitignore'], ['npmrc', '.npmrc']]);
   npxShipped = new Set(
     tar.out
       .split('\n')
       .map((l) => l.match(/^package\/dist\/template\/(.+)$/)?.[1])
       .filter((p): p is string => Boolean(p))
-      .map((p) => alias.get(p) ?? p),
+      .map((p) => transportAlias(p, 'to-logical')),
   );
 
   // (2) sync:真的跑一次,看 consumer 落地了哪些檔。
   const init = run('git', ['init', '-q', '.'], consumer);
   if (init.code !== 0) throw new Error(`git init 失敗:\n${init.out}`);
-  const sync = run('bash', [join(repo, 'scripts', 'sync-gates.sh'), consumer, 'scripts'], repo);
+  const sync = run('bash', [join(repo, 'scripts', 'sync-gates.sh'), consumer, 'scripts', '--lang', 'ts,py'], repo);
   if (sync.code !== 0) throw new Error(`sync-gates.sh 失敗:\n${sync.out}`);
   syncShipped = new Set(listFiles(consumer));
 
-  shipped = new Set([...npxShipped, ...syncShipped]);
+  anyPipelineShipped = new Set([...npxShipped, ...syncShipped]);
+  requiredBothFiles = tracked.filter((file) => REQUIRED_BOTH_SHIPPED.some((prefix) => matchesPrefix(file, prefix)));
 }, SETUP_TIMEOUT_MS);
 
 afterAll(() => {
@@ -189,10 +192,25 @@ describe('出貨覆蓋名冊:每個 tracked 檔都要能回答「它靠什麼到
     expect(syncShipped.size, 'sync-gates.sh 沒有落地任何檔').toBeGreaterThan(10);
   });
 
+  it.each(REQUIRED_BOTH_SHIPPED)('受管檔類別 %s 至少有一個 tracked 檔', (prefix) => {
+    expect(tracked.some((file) => matchesPrefix(file, prefix)), prefix + ' 沒有對到任何 tracked 檔').toBe(true);
+  });
+
+  it('每一個受管非守門檔都必須由 npx 與 sync 兩個管道都出貨', () => {
+    expect(requiredBothFiles.length, '受管非守門檔清單量到 0,測試資料或追蹤清單壞了').toBeGreaterThan(0);
+    const missingNpx = requiredBothFiles.filter((file) => !npxShipped.has(file));
+    const missingSync = requiredBothFiles.filter((file) => !syncShipped.has(file));
+    expect(
+      { npx: missingNpx, sync: missingSync },
+      '受管檔雙管道出貨缺口(npx / sync)',
+    ).toEqual({ npx: [], sync: [] });
+  });
+
   it('沒有未分類的 tracked 檔(不是出貨、不是刻意不出貨、也不是已知缺口)', () => {
     const unclassified = tracked.filter(
       (f) =>
-        !shipped.has(f) &&
+        !anyPipelineShipped.has(f) &&
+        !requiredBothFiles.includes(f) &&
         !Object.keys(NOT_SHIPPED).some((p) => matchesPrefix(f, p)) &&
         !Object.prototype.hasOwnProperty.call(KNOWN_GAPS, f),
     );
@@ -208,18 +226,27 @@ describe('出貨覆蓋名冊:每個 tracked 檔都要能回答「它靠什麼到
     expect(reason.trim().length, `${prefix} 的理由太短——豁免要貴一點`).toBeGreaterThanOrEqual(MIN_REASON_LENGTH);
     const hits = tracked.filter((f) => matchesPrefix(f, prefix));
     expect(hits.length, `${prefix} 沒有對到任何 tracked 檔(改名或刪檔後殘留的豁免)`).toBeGreaterThan(0);
-    const contradicted = hits.filter((f) => shipped.has(f));
+    const contradicted = hits.filter((f) => anyPipelineShipped.has(f));
     expect(contradicted, `${prefix} 宣告「不出貨」,但這些檔實際有出貨——兩個說法打架`).toEqual([]);
   });
 
-  it.each(Object.entries(KNOWN_GAPS))('已知缺口 %s:仍是 tracked、仍然沒出貨、指向的裁決仍在待批示', (file, gap) => {
-    expect(gap.reason.trim().length, `${file} 的缺口理由太短`).toBeGreaterThanOrEqual(MIN_REASON_LENGTH);
-    expect(tracked.includes(file), `${file} 已不是 tracked 檔(改名或刪檔後殘留的缺口登記)`).toBe(true);
-    expect(shipped.has(file), `${file} 已經有出貨了——缺口補上了,把這筆從 KNOWN_GAPS 拿掉`).toBe(false);
-    expect(
-      pendingDecisionNumbers().has(gap.decision),
-      `${file} 指向 DECISIONS_NEEDED #${gap.decision},但那件已不在「待批示」。` +
-        `裁決已經做了,回頭把這個缺口改成「已出貨」或「刻意不出貨」——欠帳不能在裁決之後繼續掛著。`,
-    ).toBe(true);
+  it.each(Object.entries(KNOWN_GAPS))('已知缺口 %s:按管道仍沒出貨、指向的裁決仍在待批示', (file, gap) => {
+    expect(tracked.includes(file), file + ' 已不是 tracked 檔(改名或刪檔後殘留的缺口登記)').toBe(true);
+    const entries = (['npx', 'sync'] as const).filter((pipeline) => gap[pipeline]);
+    expect(entries.length, file + ' 沒有標記任何管道缺口').toBeGreaterThan(0);
+    for (const pipeline of entries) {
+      const detail = gap[pipeline]!;
+      const shippedByPipeline = pipeline === 'npx' ? npxShipped : syncShipped;
+      expect(detail.reason.trim().length, file + '(' + pipeline + ') 的缺口理由太短').toBeGreaterThanOrEqual(MIN_REASON_LENGTH);
+      expect(
+        shippedByPipeline.has(file),
+        file + '(' + pipeline + ') 已經有出貨了——缺口補上了,把這筆從 KNOWN_GAPS 拿掉',
+      ).toBe(false);
+      expect(
+        pendingDecisionNumbers().has(detail.decision),
+        file + '(' + pipeline + ') 指向 DECISIONS_NEEDED #' + detail.decision + ',但那件已不在「待批示」。' +
+          '裁決已經做了,回頭把這個缺口改成「已出貨」或「刻意不出貨」——欠帳不能在裁決之後繼續掛著。',
+      ).toBe(true);
+    }
   });
 });

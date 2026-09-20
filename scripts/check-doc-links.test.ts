@@ -164,3 +164,31 @@ describe('check-doc-links:S9 設定檔壞掉', () => {
     expect(output).not.toContain('nope.md');
   }, SPAWN_TIMEOUT_MS);
 });
+
+// ---------------------------------------------------------------------------
+// 歷史文件整檔跳過:內建 CHANGELOG + consumer 可追加的 historicalFiles。
+// ---------------------------------------------------------------------------
+
+describe('check-doc-links:歷史文件', () => {
+  it('跳過 CHANGELOG 與 consumer 指定檔,但 PITFALLS 仍報錯並在摘要列出跳過數', () => {
+    const root = makeRoot();
+    process.env.GATES_CONFIG_DIR = join(root, 'scripts');
+    writeFileSync(
+      join(root, 'scripts', 'gates.config.json'),
+      JSON.stringify({ docLinks: { historicalFiles: ['LEGACY-NOTES.md'] } }),
+      'utf8',
+    );
+    write(root, 'README.md', '[self](README.md)\n');
+    write(root, 'CHANGELOG.md', '歷史條目:`docs/changelog-missing.md:12`\n');
+    write(root, 'PITFALLS.md', '現行指引:`docs/pitfalls-missing.md:13`\n');
+    write(root, 'LEGACY-NOTES.md', '舊紀錄:`docs/legacy-missing.md:14`\n');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).not.toContain('CHANGELOG.md:');
+    expect(output).toContain('PITFALLS.md:');
+    expect(output).not.toContain('LEGACY-NOTES.md:');
+    expect(output).toMatch(/跳過歷史檔\s+2\s*個/);
+  });
+});
