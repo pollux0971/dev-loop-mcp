@@ -13,6 +13,12 @@
 
 - 規則正本搬到 `AGENTS.md`(ADR-020)。
 
+- **ADR 編號分段**:`ADR-001`~`ADR-099` 保留給範式,採用專案自己的 ADR 從 `ADR-101` 起編。
+  原本兩邊共用一條號線,升模板時範式新增的 ADR 會跟採用專案已寫的撞號(例如兩邊都出現
+  `ADR-021`),而 ADR「只增不刪」又不允許事後改號。分段之後升版不再撞號;要推翻範式 ADR
+  照常寫一筆自己的並在原條目標 `superseded by`。改了 `docs/02-decision-map.md` 的「怎麼讀」、
+  `AGENTS.md` 目錄慣例、`decision-record` skill 取號步驟(雙目錄鏡像)。
+
 - **清死代碼**:`check-dag.ts` 的 `ExternalBlocker`(型別宣告未用)、`check-doc-rot.ts` 的未用
   `mkdirSync` import 與 `DEFAULT_SKIP_DIRS` 常數。`npx tsc --noEmit --noUnusedLocals
   --noUnusedParameters` 從 4 條降到 1 條(剩 `check-boundaries.test.ts` 的 `SCANNER_BROKEN`,

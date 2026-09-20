@@ -56,7 +56,8 @@
 - `phase-N.feature` 從 1 開始
 - `FEATURE.md` 的 phase 表是唯一狀態來源:`todo` `ready` `in-progress` `done` `blocked`
 - `NEXT.md` 的 gate 決定下一個 phase 何時變 ready
-- ADR 編號 `ADR-NNN`,只增不刪,被推翻標 `superseded by`
+- ADR 編號 `ADR-NNN`,只增不刪,被推翻標 `superseded by`;
+  `ADR-001`~`ADR-099` 是範式保留段,**本專案自己的 ADR 從 `ADR-101` 起編**
 - 整合 `.feature` 在 `docs/integration/`,tag `@integration @iN`
 
 ## 技術棧
