@@ -40,7 +40,7 @@ function writeRaw(root: string, relPath: string, content: string): void {
  *  兩個 steps 檔(CJS,fixture 沒有 package.json 所以 .js 就是 CJS)。預設狀態是乾淨的:
  *  每句恰好一個定義。 */
 function makeCleanRoot(parentDir = tmpdir()): string {
-  const root = makeIsolatedTempDir('lc-dry-run-');
+  const root = makeIsolatedTempDir('lc-dry-run-', parentDir);
   tmpDirs.push(root);
   symlinkSync(TEMPLATE_NODE_MODULES, join(root, 'node_modules'), 'dir');
   writeRaw(
