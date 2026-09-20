@@ -14,6 +14,12 @@
 #     就跳過上面「自己的 commit 已在 main」兩條(B 類定義上永遠不會進 main),其他檢查一條都不少;
 #     刪 worktree 後分支若還在(orca 會保留沒合入的分支),用 `git branch -D` 刪——此時 archive tag 已核過等於 tip。
 #     登記檔一行:`<branch>\t<tip 完整 sha>\t<誰判定>\t<理由>`,由協調者寫(判 B 類是它的排程決定)。
+#   - **C 類(scratch 驗證樹)**:路徑在 allowed_scratch_worktree_roots 底下(顧問/worker 為了驗證臨時開的樹)。
+#     這類樹沒有分支可打 tag,改用同等強度的四條:①必須 detached、沒有分支(有分支 = 不是純驗證樹,人工判);
+#     ②HEAD 必須是 main 的祖先(刪掉不會失去任何 commit);③未追蹤的東西只准是 symlink(例:指向主 repo 的
+#     node_modules),真的檔案一律拒絕;④對追蹤檔的修改必須先原樣存成 archive/scratch/<名>.diff 才准刪。
+#     刪完不碰任何分支。設這一類的理由:驗證樹是常態需求(例:手動變異證明測試有牙齒),
+#     沒有機械路徑就會變成一次次的口頭例外,而口頭例外正是這套護欄要消滅的東西。
 # 任一行不過 → 整批不動。全過才逐一 orca-ide worktree rm --force(先存 porcelain)。
 set -euo pipefail
 
@@ -29,6 +35,7 @@ ABANDONED="${SAFE_ABANDONED:-/data/python/dev-paradigm-briefs/ledger/abandoned.t
 mapfile -t RAW < <(grep -vE '^\s*(#.*)?$' "$PLAN")
 [[ ${#RAW[@]} -gt 0 ]] || { echo "REFUSED: 計畫檔沒有任何路徑" >&2; exit 1; }
 mapfile -t ROOTS < <(jq -r '.allowed_worktree_roots[]' "$POLICY")
+mapfile -t SCRATCH_ROOTS < <(jq -r '.allowed_scratch_worktree_roots[]? // empty' "$POLICY")
 mapfile -t PROT < <(jq -r '.protected_path_exact_or_prefix[]' "$POLICY")
 HANDOFF_RE="$(jq -r '.handoff_file_regex' "$POLICY")"
 
@@ -46,7 +53,16 @@ for p in "${RAW[@]}"; do
     [[ "$n" == "$r" ]] && { echo "REFUSED: 等於允許根目錄本身: $p" >&2; fail=1; ok=2; break; }
     [[ "$n" == "$r"/* ]] && ok=1
   done
-  [[ $ok -eq 1 ]] || { [[ $ok -eq 2 ]] || { echo "REFUSED: 不在 allowed_worktree_roots 底下: $p" >&2; fail=1; }; continue; }
+  scratch=0
+  if [[ $ok -eq 0 ]]; then
+    for r in "${SCRATCH_ROOTS[@]}"; do
+      [[ -z "$r" ]] && continue
+      r="$(realpath -m -- "$r")"
+      [[ "$n" == "$r" ]] && { echo "REFUSED: 等於允許根目錄本身: $p" >&2; fail=1; ok=2; break; }
+      [[ "$n" == "$r"/* ]] && { ok=1; scratch=1; }
+    done
+  fi
+  [[ $ok -eq 1 ]] || { [[ $ok -eq 2 ]] || { echo "REFUSED: 不在 allowed_worktree_roots / allowed_scratch_worktree_roots 底下: $p" >&2; fail=1; }; continue; }
   hit=0
   for pr in "${PROT[@]}"; do
     pr="$(realpath -m -- "$pr")"
@@ -57,6 +73,29 @@ for p in "${RAW[@]}"; do
     echo "REFUSED: 不是 git worktree: $p" >&2; fail=1; continue
   fi
   b="$(git -C "$n" symbolic-ref --short -q HEAD || true)"
+  if [[ $scratch -eq 1 ]]; then
+    # C 類:驗證樹。開在 scratchpad、detached、HEAD 已在 main 裡,所以刪掉不會失去任何 commit。
+    # 沒有分支就沒有 archive tag 可打,改用「HEAD 是 main 的祖先」當同等強度的保證。
+    [[ -z "$b" ]] || { echo "REFUSED: scratch 樹有分支 $b(不是純驗證樹,人工判): $p" >&2; fail=1; continue; }
+    h="$(git -C "$n" rev-parse HEAD)"
+    if ! git -C "$MAIN" merge-base --is-ancestor "$h" main 2>/dev/null; then
+      echo "REFUSED: scratch 樹的 HEAD $h 不是 main 的祖先(裡面可能有沒進 main 的東西): $p" >&2; fail=1; continue
+    fi
+    # 未追蹤檔只准是 symlink(例:指向主 repo 的 node_modules);真的檔案代表可能有沒存下來的東西。
+    while IFS= read -r rel; do
+      [[ -z "$rel" ]] && continue
+      [[ -L "$n/$rel" ]] || { echo "REFUSED: scratch 樹有未追蹤的實體檔 $rel(先自己收好): $p" >&2; fail=1; }
+    done < <(git -C "$n" status --porcelain --untracked-files=all | sed -n 's/^?? \(.*\)$/\1/p')
+    # 對追蹤檔的修改必須先原樣存進 archive/scratch/<名>.diff,存了才准刪(不准靜默丟掉)。
+    d="$(git -C "$n" diff HEAD || true)"
+    if [[ -n "$d" ]]; then
+      snap="$ARCHIVE/scratch/$(basename "$n").diff"
+      if [[ ! -f "$snap" ]] || ! diff -q <(printf '%s\n' "$d") "$snap" >/dev/null 2>&1; then
+        echo "REFUSED: scratch 樹有未歸檔的修改,先寫進 $snap(內容要等於 git diff HEAD): $p" >&2; fail=1; continue
+      fi
+    fi
+    NORM+=("$n"); BRANCH+=("-"); KIND+=("scratch"); continue
+  fi
   [[ -n "$b" ]] || { echo "REFUSED: detached HEAD,不知道分支: $p" >&2; fail=1; continue; }
   bad="$(git -C "$n" status --porcelain --untracked-files=all | grep -vE "$HANDOFF_RE" || true)"
   if [[ -n "$bad" ]]; then
@@ -107,6 +146,10 @@ for i in "${!NORM[@]}"; do
   n="${NORM[$i]}"; b="${BRANCH[$i]}"
   echo "--- $n ($b) porcelain:"; git -C "$n" status --porcelain --untracked-files=all | sed 's/^/    /'
   orca-ide worktree rm --worktree "path:$n" --force --json
+  if [[ "${KIND[$i]}" == scratch ]]; then
+    echo "removed: $n (scratch 驗證樹,HEAD 已在 main)"
+    continue
+  fi
   if [[ "${KIND[$i]}" == abandoned ]] && git -C "$MAIN" rev-parse -q --verify "refs/heads/$b" >/dev/null; then
     git -C "$MAIN" branch -D "$b"
   fi
