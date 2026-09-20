@@ -11,7 +11,8 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 export function resolveRoot(): string {
   try {
@@ -29,13 +30,13 @@ export function resolveRoot(): string {
 
 export const ROOT: string = resolveRoot();
 
-const ISOLATED_TEMP_ROOT = join(ROOT, 'node_modules', '.cache', 'dev-paradigm-tests');
 const ISOLATED_TEMP_PACKAGE_JSON = '{"name":"dev-paradigm-test-fixture","private":true,"type":"commonjs"}';
 
-/** 建立不受系統暫存目錄影響的、隔離且可觀測的測試 fixture 根目錄。 */
-export function makeIsolatedTempDir(prefix: string): string {
-  mkdirSync(ISOLATED_TEMP_ROOT, { recursive: true });
-  const tempDir = mkdtempSync(join(ISOLATED_TEMP_ROOT, prefix));
+/** 建立隔離且可觀測的測試 fixture 根目錄,並用自己的 package.json 固定模組型別。 */
+export function makeIsolatedTempDir(prefix: string, base: string = tmpdir()): string {
+  const tempBase = resolve(base);
+  mkdirSync(tempBase, { recursive: true });
+  const tempDir = mkdtempSync(join(tempBase, prefix));
   writeFileSync(join(tempDir, 'package.json'), ISOLATED_TEMP_PACKAGE_JSON, 'utf8');
   console.log(`[makeIsolatedTempDir] ${tempDir}`);
   return tempDir;
