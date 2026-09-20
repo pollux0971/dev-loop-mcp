@@ -15,7 +15,9 @@ Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
 
 ## 第一步:讀取
 
-- `docs/02-decision-map.md` 全部,記下最大 ADR 編號
+- `docs/02-decision-map.md` 全部,記下最大 ADR 編號。
+  **新號取「現有 ≥101 的最大號 + 1」,沒有就是 ADR-101**——`ADR-001`~`ADR-099`
+  是範式保留段,不要接在範式最後一號後面編(升模板會撞號)
 - `contracts/types.md`——判斷這個決策會不會動到契約
 - 相關的 `FEATURE.md` 與 `NEXT.md`
 
