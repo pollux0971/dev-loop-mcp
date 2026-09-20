@@ -33,9 +33,24 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
 | `{{DOC_LANGUAGE}}` | 文件用的語言 | 繁體中文 |
 | `{{STRICT_MODULES}}` | 嚴格級變異測試涵蓋的模組清單 | scheduler、grading 前兩層、驗證器、weekly 計數、路徑防護 |
 | `{{CORE_LANGUAGE}}` | 核心邏輯的程式語言 | TypeScript |
-| `{{CORE_PACKAGE_PATH}}` | 核心邏輯共用套件的路徑(monorepo 才有) | `packages/core` |
+| `{{CORE_PACKAGE_PATH}}` | 核心邏輯共用套件的路徑。**骨架預設就是 monorepo**(見下方「不要 monorepo 的話」) | `packages/core` |
 | `{{SCRIPT_RUNTIME}}` | 腳本的執行方式 | TypeScript,`tsx` 執行 |
 | `{{PLATFORM_LAYER_LINE}}` | 平台層一行說明,沒有原生殼層就整行刪掉 | 桌面:Tauri 2 + Svelte 5,Rust 只做視窗、系統列、fs、自啟 |
+
+### 不要 monorepo 的話
+
+骨架**預設就是 monorepo**,不是「有需要才開」。【驗,2026-09-21】要改成單一 `src/`,
+下面四處要一起改,少改一處就會出現「測試找不到 alias」或「boundaries 永遠掃不到檔案」
+這種很難查的症狀:
+
+| 檔案 | 改什麼 |
+|---|---|
+| `package.json` | 拿掉 `workspaces` 欄 |
+| `tsconfig.json` | `compilerOptions.paths` 從 `packages/*` 改成你的實際路徑 |
+| `vitest.config.ts` | `resolve.alias` 的 `@contracts`/`@core` 與 `test.include` 的 glob |
+| `scripts/boundaries.owners.json` | owners 表裡所有 `packages/...` 開頭的路徑 |
+
+沒有特別理由就**留著 monorepo**(阻力最小,而且 Wave 0 的跨資料夾 import 檢查是照這個結構設計的)。
 
 ## contracts/README.md
 

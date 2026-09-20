@@ -13,6 +13,14 @@
 
 - 規則正本搬到 `AGENTS.md`(ADR-020)。
 
+- **兩條試跑卡點**:①`AGENTS.md` 技術棧寫死一行「schema:`zod`」,而【驗】模板的
+  `package.json` **完全沒有 `dependencies`**,zod 從來沒裝過——因為它不是 `{{}}` 形式,CHECKLIST
+  也沒提過要確認它,是個沒人會注意到的假斷言。改成講清楚「模板不裝 schema 套件,要就自己挑」。
+  ②`CHECKLIST.md` 對 `{{CORE_PACKAGE_PATH}}` 只註「monorepo 才有」,但骨架**預設就是 monorepo**,
+  而要拆成單一 `src/` 得同時改 4 個檔(`package.json` workspaces、`tsconfig.json` paths、
+  `vitest.config.ts` alias 與 include、`boundaries.owners.json` owners),少改一處會出現很難查的
+  症狀。補一節「不要 monorepo 的話」列出這四處,並說明沒理由就留著。
+
 - **範式規則以一把不存在的鎖為前提,連帶放寬了安全限制**(P-103,試跑卡點的延伸)。四處
   (`mutation-testing` skill 整節、`autopilot` §2.3、`docs/07-practices.md`、`CHECKLIST.md`)都寫
   「`npm run mutate` 包了跨 worktree 的檔案鎖」——那是**來源專案 A 自己寫的 wrapper**,模板從來

@@ -69,7 +69,10 @@
   (範例:桌面用某個殼層框架 + 前端框架,原生層只做視窗、系統列、fs、自啟;
   如果是純後端或純 CLI 專案,刪掉這行。)
 - 驗收:`@cucumber/cucumber`;單元:`vitest`;變異:`@stryker-mutator/core`
-- schema:`zod`
+  (這三個是模板真的裝了的 devDependencies,守門腳本依賴它們)
+- schema 驗證:**模板本身不裝任何 schema 套件**(`package.json` 沒有 `dependencies`)。
+  契約先靠型別 + `contracts/fixtures/` 守;真的需要執行期驗證再自己挑(TS 生態常見 `zod`),
+  挑了就把這行改成你挑的那個,沒挑就刪掉這行
 - 步驟定義先讀 `features/steps/_world.ts`,照那個結構寫,不要自己發明模式
 
 ## 覺得流程太重的時候
