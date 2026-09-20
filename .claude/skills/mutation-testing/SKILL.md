@@ -30,8 +30,17 @@ description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的
 
 ## 怎麼跑
 
-**`npm run mutate` 是唯一入口**——它包了跨 worktree 的檔案鎖(P-34),裸的 `stryker run` 會繞過鎖,
+**`npm run mutate` 是唯一入口**——理由是設定檔與排除清單都掛在那個 script 上,裸的
+`stryker run` 很容易漏掉(下面那個 `--mutate` 取代陣列的陷阱就是這樣踩到的)。
 不管是不是加了 `--mutate` 縮小範圍都一樣要走這個入口,用 `npm run` 的 `--` 傳額外旗標:
+
+⚠️ **這個入口目前沒有鎖。**【驗,2026-09-21 上游】模板出貨的 `package.json` 裡
+`"mutate": "stryker run"`,就這樣,沒有任何 wrapper。有檔案鎖的是 `scripts/py/mutate.py`
+(另一支獨立的 Python 定向工具,它會直接改工作區的檔案,所以非鎖不可),跟 Stryker 這條路
+無關。**所以 P-34 那件事會再發生**:多個 worktree 同時跑變異測試會互相 OOM 掉
+(exit 137/144),而且 agent 可能把殘缺結果當分數回報 = 靜默假驗收。在加上鎖之前,靠排程
+避免同時跑:**一次只讓一個 worktree 跑變異測試**,拿到 exit 137/144 一律當「沒跑完」重跑,
+不准拿那次的分數當數字。
 
 ```bash
 npm run mutate                                                    # 全部,慢

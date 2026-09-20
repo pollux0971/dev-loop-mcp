@@ -13,6 +13,12 @@
 
 - 規則正本搬到 `AGENTS.md`(ADR-020)。
 
+- **規則檔別說謊**(試跑卡點):兩支 skill 寫「`npm run mutate` 包了跨 worktree 的檔案鎖(P-34),
+  裸的 `stryker run` 會繞過鎖」——【驗】模板出貨的 `package.json` 是 `"mutate": "stryker run"`,
+  沒有任何 wrapper,有鎖的是另一支獨立的 `scripts/py/mutate.py`(它會直接改工作區的檔)。
+  改成講實話:入口理由是設定與排除清單掛在那個 script 上,並明寫「**目前沒有鎖,所以 P-34 會再
+  發生**,同時間只讓一個 worktree 跑、exit 137/144 一律當沒跑完」。真正補上鎖另案處理。
+
 - **清掉兩條指向不存在東西的指令**(試跑卡點):`decision-record` skill 的「更新頂部 mermaid
   依賴圖」與 `docs/03-agile-workflow.md`「可以先關掉的」清單裡的同一項——那張圖 1.4.0 就整塊
   拿掉了,照著做的人會在 `docs/02-decision-map.md` 裡找一個不存在的區塊。改成寫 **Related** 欄。
