@@ -8,9 +8,9 @@
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_PHASE_STATUS_TS = resolve(import.meta.dirname, 'check-phase-status.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -19,7 +19,7 @@ const tmpDirs: string[] = [];
 let originalRunCmd: string | undefined;
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-phase-status-'));
+  const dir = makeIsolatedTempDir('lc-phase-status-');
   tmpDirs.push(dir);
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   return dir;

@@ -8,9 +8,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_STANDALONE_TS = resolve(import.meta.dirname, 'check-standalone.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -19,7 +19,7 @@ const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 const tmpDirs: string[] = [];
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-standalone-'));
+  const dir = makeIsolatedTempDir('lc-standalone-');
   tmpDirs.push(dir);
   return dir;
 }

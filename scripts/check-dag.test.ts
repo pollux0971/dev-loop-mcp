@@ -7,9 +7,9 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_DAG_TS = resolve(import.meta.dirname, 'check-dag.ts');
 const CHECK_NEXT_GATES_TS = resolve(import.meta.dirname, 'check-next-gates.ts');
@@ -23,7 +23,7 @@ function runGit(cwd: string, ...args: string[]): void {
 }
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-check-dag-'));
+  const dir = makeIsolatedTempDir('lc-check-dag-');
   tmpDirs.push(dir);
   runGit(dir, 'init', '-q');
   runGit(dir, 'config', 'user.email', 'check-dag-test@example.com');

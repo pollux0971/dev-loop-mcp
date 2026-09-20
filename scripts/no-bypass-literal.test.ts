@@ -27,9 +27,9 @@
  * 應該要抓到——確認掃描器本身真的會動,不是因為「掃到 0 個檔案」才 0 命中。
  */
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 /** 這份測試檔自己所在的目錄,就是 `template/scripts/`——掃描的目標根目錄。 */
 const SCRIPTS_ROOT = resolve(import.meta.dirname);
@@ -114,7 +114,7 @@ describe('no-bypass-literal:template/scripts/** 不准含可照抄的 Stryker CL
   });
 
   it('反向驗證:臨時目錄裡放一個含串接組出來的違規字串的檔案 → 掃描器要抓到,不是因為 0 個檔案才 0 命中', () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'no-bypass-literal-probe-'));
+    const tmpDir = makeIsolatedTempDir('no-bypass-literal-probe-');
     try {
       mkdirSync(join(tmpDir, 'nested'), { recursive: true });
       const bypassCmd = ['npx', 'stryker', 'run'].join(' ');
@@ -131,7 +131,7 @@ describe('no-bypass-literal:template/scripts/** 不准含可照抄的 Stryker CL
   });
 
   it('反向驗證:只有 stryker 執行檔的 run 子指令(沒有 npx 前綴)一樣算命中(直接呼叫本機執行檔一樣繞得過鎖)', () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'no-bypass-literal-probe-'));
+    const tmpDir = makeIsolatedTempDir('no-bypass-literal-probe-');
     try {
       const literalOnly = ['stryker', 'run'].join(' ');
       writeFileSync(join(tmpDir, 'probe.sh'), `${literalOnly} --mutate src/foo.ts\n`, 'utf8');
@@ -146,7 +146,7 @@ describe('no-bypass-literal:template/scripts/** 不准含可照抄的 Stryker CL
   });
 
   it('反向驗證:node_modules 底下的命中不算(排除清單)', () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'no-bypass-literal-probe-'));
+    const tmpDir = makeIsolatedTempDir('no-bypass-literal-probe-');
     try {
       mkdirSync(join(tmpDir, 'node_modules', 'somepkg'), { recursive: true });
       const bypassCmd = ['npx', 'stryker', 'run'].join(' ');

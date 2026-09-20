@@ -84,8 +84,7 @@
  *       不該被報(ADR 檔排除)。
  *   (c) `--self-test` 對出貨的黑名單跑一次 → 每條規則都命中自己的探針。
  */
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import {
   ROOT as GIT_ROOT,
@@ -95,6 +94,7 @@ import {
   requireConfigType,
   requireKnownTopLevelKeys,
   requireRootDir,
+  makeIsolatedTempDir,
   resolveSkipDirs,
   splitSkipDirs,
 } from './_root.js';
@@ -400,7 +400,7 @@ function runSelfTest(): number {
     return 1;
   }
 
-  const tmpDir = mkdtempSync(join(tmpdir(), 'doc-rot-self-test-'));
+  const tmpDir = makeIsolatedTempDir('doc-rot-self-test-');
   try {
     const probeFile = join(tmpDir, 'probes.md');
     writeFileSync(probeFile, `${probes.map((p) => p.probe).join('\n')}\n`, 'utf8');

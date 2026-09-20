@@ -11,9 +11,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_STEP_DUP_TS = resolve(import.meta.dirname, 'check-step-dup.ts');
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -53,7 +53,7 @@ const BETA_STEPS = [
 /** 乾淨的 fixture:兩個能力資料夾 + 一個整合場景,每句恰好一個定義,`it exits with status`
  *  跨三個資料夾但只定義在 common(反向驗證 (c) 的情境)。 */
 function makeCleanRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'lc-step-dup-'));
+  const root = makeIsolatedTempDir('lc-step-dup-');
   tmpDirs.push(root);
   const git = spawnSync('git', ['init', '-q', root], { encoding: 'utf8' });
   if (git.status !== 0) throw new Error(`git init 失敗:${git.stderr}`);

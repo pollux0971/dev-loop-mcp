@@ -4,8 +4,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
-import os from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import "tsx";
+
+const { makeIsolatedTempDir } = await import("../../scripts/_root.ts");
 
 const PACKAGE_ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, "..");
@@ -117,7 +120,26 @@ async function runRaw(command, args, options = {}) {
 function output(result) { return `${result.stdout}${result.stderr}`; }
 function requireLine(result, line) { assert.match(output(result), new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"), `missing explicit success line: ${line}`); }
 
-async function makeTemp(label) { return fs.mkdtemp(path.join(os.tmpdir(), `npx-init-${label}-`)); }
+async function makeTemp(label) { return makeIsolatedTempDir(`npx-init-${label}-`); }
+
+async function assertIsolatedFixtureAgainstModuleAncestor() {
+  const moduleParent = await fs.mkdtemp(path.join(tmpdir(), "npx-init-module-parent-"));
+  try {
+    await fs.writeFile(path.join(moduleParent, "package.json"), JSON.stringify({ type: "module" }));
+    const fixture = makeIsolatedTempDir("npx-init-module-fixture-", moduleParent);
+    await fs.writeFile(path.join(fixture, "fixture.js"), "module.exports = 42;\n");
+    const result = await run(
+      process.execPath,
+      ["-e", "process.stdout.write(String(require('./fixture.js')))"],
+      { cwd: fixture },
+    );
+    assert.equal(result.code, 0, `fixture failed under module ancestor:\n${output(result)}`);
+    assert.equal(result.stdout.trim(), "42", `fixture output changed:\n${output(result)}`);
+    console.log("✓ isolated fixture survives type=module ancestor");
+  } finally {
+    await fs.rm(moduleParent, { recursive: true, force: true });
+  }
+}
 
 async function copyRepo(destination) {
   await fs.cp(REPO_ROOT, destination, {
@@ -516,6 +538,7 @@ async function main() {
   const probe = process.argv.find((arg) => arg.startsWith("--probe="))?.slice("--probe=".length);
   const only = process.argv.find((arg) => arg.startsWith("--gate="))?.slice("--gate=".length);
   assert.ok(only === undefined || ["transport-alias", "tarball", "clean-init", "conflict", "reinstall", "rollback"].includes(only), `unknown gate: ${only}`);
+  await assertIsolatedFixtureAgainstModuleAncestor();
   const artifact = await packArtifact();
   const { manifest, payload } = await artifactData(artifact);
   if (only === "transport-alias") {
