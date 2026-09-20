@@ -8,9 +8,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_BOUNDARIES_TS = resolve(import.meta.dirname, 'check-boundaries.ts');
 const ROOT_TS = resolve(import.meta.dirname, '_root.ts');
@@ -20,7 +20,7 @@ const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 const tmpDirs: string[] = [];
 
 function makeFixture(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-boundaries-'));
+  const dir = makeIsolatedTempDir('lc-boundaries-');
   tmpDirs.push(dir);
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   return dir;
@@ -450,7 +450,7 @@ describe('check-boundaries:S14 --root 明講時的設定檔解析(P-73)', () => 
 
   it('GATES_CONFIG_DIR 仍然贏過 --root 與腳本自身目錄兩者(明講的覆蓋管道不受這次修改影響)', () => {
     const dir = makeFixture();
-    const overrideDir = mkdtempSync(join(tmpdir(), 'lc-boundaries-override-'));
+    const overrideDir = makeIsolatedTempDir('lc-boundaries-override-');
     tmpDirs.push(overrideDir);
     writeFileSync(
       join(overrideDir, 'boundaries.owners.json'),

@@ -52,9 +52,10 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const SCRIPTS_DIR = import.meta.dirname;
 const SPAWN_TIMEOUT_MS = 60_000;
@@ -87,7 +88,7 @@ function listGateFiles(): string[] {
 const tmpDirs: string[] = [];
 
 function makeTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = makeIsolatedTempDir(prefix);
   tmpDirs.push(dir);
   return dir;
 }

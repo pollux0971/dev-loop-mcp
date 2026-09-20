@@ -6,9 +6,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_DOC_ROT_TS = resolve(import.meta.dirname, 'check-doc-rot.ts');
 const ROOT_TS = resolve(import.meta.dirname, '_root.ts');
@@ -18,7 +18,7 @@ const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 const tmpDirs: string[] = [];
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-doc-rot-'));
+  const dir = makeIsolatedTempDir('lc-doc-rot-');
   tmpDirs.push(dir);
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   return dir;

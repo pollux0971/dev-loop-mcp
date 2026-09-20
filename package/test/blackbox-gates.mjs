@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import "tsx";
+
+const { makeIsolatedTempDir } = await import("../../scripts/_root.ts");
 
 const PACKAGE_ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, "..");
@@ -100,7 +102,7 @@ async function runRaw(command, args, options = {}) {
 function output(result) { return `${result.stdout}${result.stderr}`; }
 function requireLine(result, line) { assert.match(output(result), new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"), `missing explicit success line: ${line}`); }
 
-async function makeTemp(label) { return fs.mkdtemp(path.join(os.tmpdir(), `npx-init-${label}-`)); }
+async function makeTemp(label) { return makeIsolatedTempDir(`npx-init-${label}-`); }
 
 async function copyRepo(destination) {
   await fs.cp(REPO_ROOT, destination, {

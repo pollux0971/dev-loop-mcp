@@ -13,9 +13,9 @@
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 import { main } from './check-doc-links.js';
 
 const CHECK_DOC_LINKS_TS = resolve(import.meta.dirname, 'check-doc-links.ts');
@@ -25,7 +25,7 @@ const tmpDirs: string[] = [];
 let originalEnv: string | undefined;
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-doc-links-'));
+  const dir = makeIsolatedTempDir('lc-doc-links-');
   tmpDirs.push(dir);
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   return dir;

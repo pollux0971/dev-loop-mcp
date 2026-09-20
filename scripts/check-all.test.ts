@@ -14,9 +14,10 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { makeIsolatedTempDir } from './_root.js';
 
 const CHECK_ALL_TS = resolve(import.meta.dirname, 'check-all.ts');
 
@@ -32,7 +33,7 @@ interface FixtureOpts {
 
 /** 造一個一次性的假 consumer 根:package.json + scripts/gates.config.json。 */
 function makeFixture({ scripts, gatesConfig }: FixtureOpts): string {
-  const dir = mkdtempSync(join(tmpdir(), 'lc-check-all-'));
+  const dir = makeIsolatedTempDir('lc-check-all-');
   tmpDirs.push(dir);
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts }, null, 2), 'utf8');
   mkdirSync(join(dir, 'scripts'), { recursive: true });

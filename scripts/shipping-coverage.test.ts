@@ -40,10 +40,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeIsolatedTempDir } from './_root.js';
 
 const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SETUP_TIMEOUT_MS = 300_000;
@@ -138,7 +138,7 @@ beforeAll(() => {
   if (ls.code !== 0) throw new Error(`git ls-files 失敗(這支只能在模板 repo 裡跑):\n${ls.out}`);
   tracked = ls.out.split('\n').filter(Boolean).sort();
 
-  const base = mkdtempSync(join(tmpdir(), 'dp-shipping-coverage-'));
+  const base = makeIsolatedTempDir('dp-shipping-coverage-');
   tmpDirs.push(base);
   const repo = join(base, 'repo');
   const art = join(base, 'art');
