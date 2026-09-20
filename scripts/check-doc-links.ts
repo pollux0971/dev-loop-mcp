@@ -189,6 +189,8 @@ export interface DocLinkResult {
   broken: BrokenLink[];
   /** 從實際掃描範圍整檔跳過的歷史檔數 */
   skippedHistoricalFiles?: number;
+  /** 目標含未填 placeholder、因此不做存在性檢查的連結數 */
+  skippedPlaceholderLinks?: number;
 }
 
 /** 一層還沒收尾的圍欄。len 記長度是因為收尾的圍欄不可以比開頭短。 */
@@ -323,6 +325,9 @@ const LINK_RE =
 
 /** 有 scheme 的(http: https: mailto: file:)一律當外部連結。 */
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+/** 未填的模板 placeholder:只接受雙大括號內的全大寫 ASCII 名稱。 */
+const UNFILLED_PLACEHOLDER_RE = /\{\{[A-Z0-9_]+\}\}/;
 
 /**
  * 從已經挖掉 code 的內文找出相對連結。
@@ -490,6 +495,7 @@ function targetToPath(target: string): string {
 export function checkDocLinks(root: string, skip: SkipConfig = resolveSkipConfig(root)): DocLinkResult {
   const broken: BrokenLink[] = [];
   let links = 0;
+  let skippedPlaceholderLinks = 0;
 
   const allFiles = markdownFiles(root, skip);
   const historicalPaths = new Set((skip.historicalFiles ?? []).map(toPosix));
@@ -499,6 +505,10 @@ export function checkDocLinks(root: string, skip: SkipConfig = resolveSkipConfig
 
     const stripped = stripCode(raw);
     for (const { target, line } of findRelativeLinks(stripped)) {
+      if (UNFILLED_PLACEHOLDER_RE.test(target)) {
+        skippedPlaceholderLinks++;
+        continue;
+      }
       links++;
       const abs = resolve(dirname(file), targetToPath(target));
       if (existsSync(abs)) continue;
@@ -509,6 +519,10 @@ export function checkDocLinks(root: string, skip: SkipConfig = resolveSkipConfig
     // block,保留 inline code 讓 findBacktickPathRefs 去看。
     const fencesOnly = stripCode(raw, { blankInlineCode: false });
     for (const { target, raw: rawSpan, line } of findBacktickPathRefs(fencesOnly)) {
+      if (UNFILLED_PLACEHOLDER_RE.test(target)) {
+        skippedPlaceholderLinks++;
+        continue;
+      }
       links++;
       const abs = resolve(dirname(file), target);
       if (existsSync(abs)) continue;
@@ -516,7 +530,13 @@ export function checkDocLinks(root: string, skip: SkipConfig = resolveSkipConfig
     }
   }
 
-  return { files: files.length, links, broken, skippedHistoricalFiles: allFiles.length - files.length };
+  return {
+    files: files.length,
+    links,
+    broken,
+    skippedHistoricalFiles: allFiles.length - files.length,
+    skippedPlaceholderLinks,
+  };
 }
 
 /**
@@ -542,19 +562,27 @@ export function main(argv: string[]): { code: number; output: string } {
 
   const skip = resolveSkipConfig(root);
 
-  const { files, links, broken, skippedHistoricalFiles = 0 } = checkDocLinks(root, skip);
+  const { files, links, broken, skippedHistoricalFiles = 0, skippedPlaceholderLinks = 0 } = checkDocLinks(root, skip);
   const out: string[] = [];
 
   out.push(
     `doc-links: 排除片段 [${skip.skipSegments.join(', ')}]、排除前綴 [${skip.skipPrefixes.join(', ')}]、` +
-      `跳過歷史檔 ${skippedHistoricalFiles} 個`,
+      `跳過歷史檔 ${skippedHistoricalFiles} 個、跳過未填 placeholder 的連結 ${skippedPlaceholderLinks} 個` +
+      '(新專案填完 `CHECKLIST.md` 就會消失)',
   );
 
   // 0 條連結跟「全部都對」的退出碼一樣是 0。掃描範圍打錯、副檔名清單改掉、
   // 或 stripCode 挖太多的時候就長這樣,所以一律當 FAIL。
   if (links === 0) {
-    out.push(`doc-links: 掃描 ${files} 個 markdown 檔,掃描到 0 條相對連結`);
-    out.push(`${SCANNER_BROKEN}。掃描範圍 SCAN_DIRS、副檔名、或 stripCode 挖太多時就長這樣。`);
+    if (skippedPlaceholderLinks > 0) {
+      out.push(
+        `doc-links: 掃描 ${files} 個 markdown 檔,掃描到 0 條相對連結(全部 ${skippedPlaceholderLinks} 條都是未填 placeholder)`,
+      );
+      out.push('未填 placeholder 的連結沒有可檢查的目標,因此維持 FAIL。');
+    } else {
+      out.push(`doc-links: 掃描 ${files} 個 markdown 檔,掃描到 0 條相對連結`);
+      out.push(`${SCANNER_BROKEN}。掃描範圍 SCAN_DIRS、副檔名、或 stripCode 挖太多時就長這樣。`);
+    }
     out.push(`gate=${GATE_NAME} result=FAIL scanned=0`);
     return { code: 1, output: out.join('\n') };
   }
