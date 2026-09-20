@@ -3,6 +3,7 @@
 import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { transportAlias } from "./cli.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.resolve(packageRoot, "..");
@@ -59,12 +60,11 @@ for (const entry of manifest.payload ?? []) {
   const root = path.resolve(sourceRoot, entry.root);
   for (const include of entry.include ?? ["**/*"]) {
     for (const source of await expand(root, include)) {
-      const relative = path.relative(sourceRoot, source);
-      // npm-packlist reserves .gitignore. Keep the canonical payload path in
-      // the manifest, but use a transport-safe name inside the npm archive.
-      const transportRelative = relative === ".gitignore" || relative === ".npmrc"
-        ? relative.slice(1)
-        : relative;
+      const relative = path.relative(sourceRoot, source).split(path.sep).join("/");
+      // npm-packlist reserves .gitignore/.npmrc at every directory depth.
+      // Keep canonical payload paths in the manifest, but use transport-safe
+      // basenames inside the npm archive.
+      const transportRelative = transportAlias(relative);
       const destination = path.join(outputRoot, transportRelative);
       await fs.mkdir(path.dirname(destination), { recursive: true });
       await fs.copyFile(source, destination);

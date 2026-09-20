@@ -7,10 +7,21 @@ import path from "node:path";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL_MANIFEST = ".npx-init-manifest.json";
-const TRANSPORT_ALIASES = new Map([[".gitignore", "gitignore"], [".npmrc", "npmrc"]]);
 const SOURCE_RE = /^(\/\/|#) SOURCE: template v/;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => JSON.stringify(value, null, 2) + "\n";
+
+export function transportAlias(payloadPath, direction = "to-transport") {
+  const normalized = payloadPath.replaceAll(path.sep, "/");
+  const basename = path.posix.basename(normalized);
+  if (direction === "to-logical") {
+    if (basename !== "gitignore" && basename !== "npmrc") return normalized;
+    return path.posix.join(path.posix.dirname(normalized), `.${basename}`);
+  }
+  if (direction !== "to-transport") throw new Error(`不認得的 transport alias 方向: ${direction}`);
+  if (basename !== ".gitignore" && basename !== ".npmrc") return normalized;
+  return path.posix.join(path.posix.dirname(normalized), basename.slice(1));
+}
 
 async function readJson(file) { return JSON.parse(await fs.readFile(file, "utf8")); }
 async function exists(file) { try { await fs.access(file); return true; } catch { return false; } }
@@ -46,20 +57,20 @@ function globToRegExp(glob) {
 
 async function expandEntry(sourceRoot, entry) {
   let root = path.resolve(sourceRoot, entry.root);
-  if (TRANSPORT_ALIASES.has(entry.root) && !await isFile(root)) {
-    const transportAlias = path.resolve(sourceRoot, TRANSPORT_ALIASES.get(entry.root));
-    if (await isFile(transportAlias)) root = transportAlias;
+  if (!await isFile(root)) {
+    const transportPath = transportAlias(entry.root);
+    const transportRoot = path.resolve(sourceRoot, transportPath);
+    if (transportPath !== entry.root && await isFile(transportRoot)) root = transportRoot;
   }
   const includes = entry.include ?? ["**/*"];
   const files = [];
   if (await isFile(root)) return [root];
   for (const include of includes) {
-    const exact = path.resolve(root, include);
-    if (!/[?*]/.test(include) && await isFile(exact)) { files.push(exact); continue; }
     const matcher = globToRegExp(include.replaceAll(path.sep, "/"));
     for (const candidate of await filesUnder(root)) {
       const relative = path.relative(root, candidate).split(path.sep).join("/");
-      if (matcher.test(relative)) files.push(candidate);
+      const logical = transportAlias(relative, "to-logical");
+      if (matcher.test(logical)) files.push(candidate);
     }
   }
   const expanded = [...new Set(files)].sort();
@@ -144,7 +155,7 @@ async function buildPlan(context, target) {
     for (const source of await expandEntry(sourceRoot, entry)) {
       const sourceRelative = path.relative(sourceRoot, source).split(path.sep).join("/");
       // 1.7.1:單檔條目可用 `dest` 指定落地路徑(例:空白骨架 package/skeleton/DECISIONS_NEEDED.md → DECISIONS_NEEDED.md)。
-      const relative = entry.dest ?? (TRANSPORT_ALIASES.get(entry.root) === sourceRelative ? entry.root : sourceRelative);
+      const relative = entry.dest ?? transportAlias(sourceRelative, "to-logical");
       let body = render((await fs.readFile(source)).toString("utf8"), target);
       if (relative.startsWith("scripts/") && (relative.endsWith(".ts") || relative.endsWith(".py"))) body = sourceHeader(version, commit, body, path.extname(relative));
       add(relative, body);
@@ -265,4 +276,6 @@ async function main(argv) {
   await init(path.resolve(positional[0] ?? process.cwd()), { dryRun: args.includes("--dry-run") });
 }
 
-main(process.argv.slice(2)).catch((error) => { console.error(`✗ ${error.message}`); process.exitCode = 1; });
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).catch((error) => { console.error(`✗ ${error.message}`); process.exitCode = 1; });
+}
