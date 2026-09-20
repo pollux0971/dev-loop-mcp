@@ -208,7 +208,8 @@ commit,不是用 `test.fails` / `.skip` 把紅測試藏起來——藏起來會�
 - sprint 檔與 sprint-planning — 自己知道下一個要做什麼就不用它(nightmare-assault 從頭到尾沒用過 sprint 檔,
   改用 autopilot 每輪回報當進度追蹤,見 `docs/07-practices.md`「三個專案都刻意不遵守的範式條文」)
 - integration-check 的完整清單 — 只跑 `@e2e` 與 `@regression` 也行
-- decision map 的 mermaid 圖 — ADR 本身要記,圖可以不畫
+- (1.4.0 起已經沒有這一項:decision map 的 mermaid 依賴圖整塊拿掉了,
+  依賴關係讀各筆 ADR 的 **Related** 欄就好,不用再維護一張圖)
 - 標準級的變異測試 — 嚴格級一定要跑,其他看心情
 - `NEXT.md` 的維護 — 不維護的話規劃建議會給爛建議,但不影響開發
 - 多角色分工的儀式 — 單人開發時角色只是提醒自己「現在戴哪頂帽子」,不需要真的切換 session

@@ -84,7 +84,8 @@ Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
 ```
 
 同時:
-1. 更新頂部 mermaid 依賴圖:加節點,有 Related 就畫箭頭(被依賴的指向新的)
+1. 把相關 ADR 寫進 **Related** 欄(1.4.0 起 `docs/02-decision-map.md` 已經沒有 mermaid
+   依賴圖,依賴關係只靠各筆的 Related 欄,不要再去畫圖或找那個區塊)
 2. 推翻的話更新舊 ADR 的 Status 與「已推翻」索引
 3. 「待決」表有對應項目 → 移除
 
@@ -103,7 +104,7 @@ Claude Code 會以 `$ARGUMENTS` 帶入上面的使用者給的輸入。
 ✓ ADR-NNN 已記錄:<標題>
 - 契約影響:無 / 升版至 X.Y.Z,需重驗:…
 - 推翻 / 修正 / 無關:…
-- 依賴圖已更新
+- Related 欄已連結:ADR-…
 - 連動提示:…
 ```
 
