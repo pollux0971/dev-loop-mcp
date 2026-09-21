@@ -291,8 +291,7 @@ grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
   「main 是共用資源」的問題在不同層面的檢查(pid 層 vs 分支內容層),兩個都要做(來源 nightmare-assault D14)。
 - **含子行程探針 + 逾時的測試(真跑 cucumber 那類)在負載下會假紅**(PITFALLS P-82):同機另一個
   worktree 在跑 Stryker 時,探針的子行程在逾時內跑不完,而**假紅跟真紅的退出碼與訊息一模一樣**。
-  ⚠️【驗,2026-09-21】**本模板目前沒有任何 JS/TS 端的檔案鎖在擋這件事**——`package.json` 的
-  `mutate` 就是裸的 `stryker run`,唯一實作 `.mutate.lock` 的是 `scripts/py/mutate.py`(獨立的
-  Python 定向工具)。所以這裡只能靠排程:**同一時間只讓一個 worktree 跑變異測試或這類探針測試**,
-  看到這類測試紅先問「當時同機有沒有人在跑 Stryker」,**不要用放寬逾時當修法**。
-  (補上真正的鎖是待辦,補上之後這段要改回「靠鎖排隊」。)
+  1.11.0 起 `npm run mutate` 走 `scripts/mutate-with-lock.ts`,在倉庫根目錄取跨 worktree 的
+  `.stryker.lock`,所以「同機同時有兩份 Stryker」這個成因已經被機械擋住;**單檔
+  `vitest run <單一檔案>` 不受影響**。看到這類測試紅仍然先問「當時同機有沒有別的重工作」,
+  **不要用放寬逾時當修法**。(1.11.0 之前這段宣稱有鎖但模板其實沒出貨,見 PITFALLS P-103。)

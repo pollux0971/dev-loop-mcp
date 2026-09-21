@@ -30,17 +30,11 @@ description: 用 Stryker 做變異測試,驗證這個專案的測試是否真的
 
 ## 怎麼跑
 
-**`npm run mutate` 是唯一入口**——理由是設定檔與排除清單都掛在那個 script 上,裸的
-`stryker run` 很容易漏掉(下面那個 `--mutate` 取代陣列的陷阱就是這樣踩到的)。
+**`npm run mutate` 是唯一入口**——兩個理由:①設定檔與排除清單都掛在那個 script 上,裸的
+`stryker run` 很容易漏掉(下面那個 `--mutate` 取代陣列的陷阱就是這樣踩到的);②**它包了跨
+worktree 的檔案鎖**(1.11.0 起,`scripts/mutate-with-lock.ts`),裸的 `stryker run` 會繞過鎖,
+於是重演 P-34(多個 worktree 同時跑互相 OOM、exit 137/144、殘缺結果被當分數回報 = 靜默假驗收)。
 不管是不是加了 `--mutate` 縮小範圍都一樣要走這個入口,用 `npm run` 的 `--` 傳額外旗標:
-
-⚠️ **這個入口目前沒有鎖。**【驗,2026-09-21 上游】模板出貨的 `package.json` 裡
-`"mutate": "stryker run"`,就這樣,沒有任何 wrapper。有檔案鎖的是 `scripts/py/mutate.py`
-(另一支獨立的 Python 定向工具,它會直接改工作區的檔案,所以非鎖不可),跟 Stryker 這條路
-無關。**所以 P-34 那件事會再發生**:多個 worktree 同時跑變異測試會互相 OOM 掉
-(exit 137/144),而且 agent 可能把殘缺結果當分數回報 = 靜默假驗收。在加上鎖之前,靠排程
-避免同時跑:**一次只讓一個 worktree 跑變異測試**,拿到 exit 137/144 一律當「沒跑完」重跑,
-不准拿那次的分數當數字。
 
 ```bash
 npm run mutate                                                    # 全部,慢
@@ -79,12 +73,16 @@ npm run mutate -- --mutate "<模組路徑>/**/*.ts,!<模組路徑>/**/*.test.ts,
 **單檔 `vitest run <單一檔案>` 不受影響**——只有會跑子行程探針、或本身就是 `npm run mutate`
 的動作才需要排隊,日常改一個檔案跑它自己的測試照常。
 
-⚠️ **排隊目前靠人,不靠鎖。**【驗,2026-09-21 上游】這段原本寫「跟 `npm run mutate` 共用同一把
-跨 worktree 的檔案鎖」,那是**來源專案 A 的現況**(它自己寫了 `scripts/mutate.ts` wrapper),
-**本模板從來沒有出貨那把鎖**:`package.json` 的 `mutate` 就是裸的 `stryker run`,整個 repo 裡
-唯一實作 `.mutate.lock` 的是 `scripts/py/mutate.py`(獨立的 Python 定向工具,走另一條路)。
-在補上鎖之前:**同一時間只讓一個 worktree 跑變異測試或這類探針測試**,由派工端節流;
-拿到 exit 137/144 一律當「沒跑完」重跑,不准拿那次分數。補上鎖之後這段改回「靠鎖排隊」。
+**靠鎖排隊**(1.11.0 起真的有了):`npm run mutate` = `tsx scripts/mutate-with-lock.ts`,它在
+**倉庫根目錄**取 `.stryker.lock`(跨 worktree 共用),拿不到就**立刻失敗**並印出持鎖者的 pid 與
+已持有多久——**不排隊等**,因為排隊等會讓驗收 agent 看起來像當掉。跑完(含被 SIGINT/SIGTERM 砍)
+一定釋放。所以「同一台機器同時只有一份 Stryker 在跑」這件事是機械保證的,不再靠派工端自律。
+
+【驗,2026-09-21 顧問獨立重驗】非 ESM 的 consumer(`package.json` 沒有 `"type":"module"`)跑得動;
+第二個行程取鎖時 `Unable to acquire .stryker.lock: held by pid <n> for <ms>ms` 並 exit 1,
+不會刪掉別人的鎖;正常跑完鎖會消失。
+拿到 exit 137/144 仍然一律當「沒跑完」重跑,不准拿那次分數——鎖擋的是併發,不是記憶體不足。
+(1.11.0 之前這段寫「跟 `npm run mutate` 共用同一把鎖」但模板其實沒出貨那把鎖,見 PITFALLS P-103。)
 
 ## 改斷言(含補強)後一定要重跑該模組的變異測試(來源 nightmare-assault,commit 89317a9f)
 

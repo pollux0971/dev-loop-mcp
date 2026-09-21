@@ -21,6 +21,19 @@
   `vitest.config.ts` alias 與 include、`boundaries.owners.json` owners),少改一處會出現很難查的
   症狀。補一節「不要 monorepo 的話」列出這四處,並說明沒理由就留著。
 
+- **`npm run mutate` 真的有鎖了**(P-103 的另一半)。新增 `scripts/mutate-with-lock.ts`:在倉庫
+  根目錄取跨 worktree 的 `.stryker.lock`,**拿不到立刻失敗**並印出持鎖者 pid 與已持有多久
+  (不排隊等——排隊會讓驗收 agent 看起來像當掉),跑完或被 SIGINT/SIGTERM 砍都會釋放,參數與
+  exit code 原樣轉傳。`package.json` 的 `mutate` 指向它;兩條出貨管道(npx payload、
+  `sync-gates.sh` 的既有 consumer 同步)都補上這支與它的測試,`sync-gates.sh` 三處各自處理
+  (衝突預掃要加、同步迴圈要加、接線建議要**豁免**)。
+  過程中審核棒攔下兩顆蟲:①測試用 `process.execPath` 直接開 `.ts`,驗的不是 `npm run mutate`
+  真正走的那條路;②driver 用了頂層 `await`,在**沒有 `"type":"module"` 的 consumer** 會
+  `ERR_REQUIRE_ASYNC_MODULE` 直接爆——模板自己是 ESM 所以內部不會踩,但 `sync-gates.sh`
+  同步進既有的 CJS consumer 一定踩。兩顆都修掉,並加了一條「非 ESM consumer」的 fixture。
+  這條落地後,前一項那四處「目前沒有鎖」的警語全部改回「靠鎖排隊」,並行上限放寬回
+  `{{PARALLEL_CAP}}`。
+
 - **範式規則以一把不存在的鎖為前提,連帶放寬了安全限制**(P-103,試跑卡點的延伸)。四處
   (`mutation-testing` skill 整節、`autopilot` §2.3、`docs/07-practices.md`、`CHECKLIST.md`)都寫
   「`npm run mutate` 包了跨 worktree 的檔案鎖」——那是**來源專案 A 自己寫的 wrapper**,模板從來

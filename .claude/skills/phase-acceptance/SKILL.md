@@ -137,8 +137,8 @@ decision-record 記一筆。
   沒有技術顧問就寫進 `DECISIONS_NEEDED.md` 等使用者裁。**不准**因為「只有一個 session」就靜默跳過這一步。**證據是炸掉那條斷言的失敗訊息原文,逐字貼進驗收
 報告**,不是「幾條測試變紅了」這種摘要(`docs/07-practices.md` (h))。
 
-**變異分數路線**(`npm run mutate` 是唯一入口,設定與排除清單都掛在它上面;**注意它目前沒有鎖**,
-同時間只讓一個 worktree 跑,理由與 P-34 見 mutation-testing skill):
+**變異分數路線**(`npm run mutate` 是唯一入口:設定與排除清單掛在它上面,而且 1.11.0 起它包了
+跨 worktree 的 `.stryker.lock`——裸的 `stryker run` 會繞過鎖,見 mutation-testing skill 與 P-34):
 
 ```
 npm run mutate -- --mutate "<該 phase 的原始碼路徑>/**/*.ts,!<同一路徑>/**/*.test.ts"
