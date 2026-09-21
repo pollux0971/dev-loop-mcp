@@ -557,6 +557,71 @@ describe('check-next-gates:header 解析回歸 fixture(先寫紅)', () => {
   }
 });
 
+describe('check-next-gates:header 帶內容的續行(先寫紅)', () => {
+  it('續行裡的不存在 ADR 必須讓 gate FAIL', () => {
+    const root = makeRepo();
+    writeDecisionMap(root, []);
+    writeFeature(root, '01-foo', [
+      { n: 1, status: 'done' },
+      { n: 2, status: 'todo' },
+    ]);
+    const body = [
+      '## 下一個 phase 的 gate',
+      '',
+      '**phase-2** 需要:phase-1 `done`',
+      '      而且需要 ADR-999 已解除(這個 ADR 不存在)',
+    ].join('\n');
+    writeNext(root, '01-foo', body);
+    commitAll(root, 'header continuation must not hide an unresolved ADR');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain('引用不存在(ADR-999)');
+    expect(output).toContain('gate=next-gates result=FAIL scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('合法引用出現在 header 續行時,續行文字必須進入 gate.text', () => {
+    const root = makeRepo();
+    writeDecisionMap(root, ['123']);
+    writeFeature(root, '01-foo', [
+      { n: 1, status: 'done' },
+      { n: 2, status: 'todo' },
+    ]);
+    const body = [
+      '## 下一個 phase 的 gate',
+      '',
+      '**phase-2** 需要:phase-1 `done`',
+      '      而且需要 ADR-123 已解除',
+    ].join('\n');
+    writeNext(root, '01-foo', body);
+    commitAll(root, 'header continuation must be included in gate text');
+
+    const gates = extractGateLines('01-foo', 'features/01-foo/NEXT.md', body);
+    expect(gates).toHaveLength(1);
+    expect(gates[0]).toMatchObject({
+      phaseNum: '2',
+      text: 'phase-1 `done` 而且需要 ADR-123 已解除',
+    });
+
+    const { code, output } = run(root);
+    expect(code).toBe(0);
+    expect(output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('既有空 header + checklist 的縮排續行仍併入 gate.text(回歸樁)', () => {
+    const gates = extractGateLines(
+      '05-ingestion',
+      'features/05-ingestion/NEXT.md',
+      AI_KM_INGESTION_PHASE_2B_GATE,
+    );
+
+    expect(gates).toHaveLength(3);
+    expect(gates[1]?.text).toContain('顧問否決了另外兩條');
+    expect(gates[1]?.text).toContain('06-retrieval/phase-3');
+  }, SPAWN_TIMEOUT_MS);
+});
+
 describe('check-next-gates:防靜默 checklist 警告範圍(先寫紅)', () => {
   it('下一個 phase 的 gate 節裡的 orphan checklist 印正確檔名行號,但不改變 exit', () => {
     const root = makeRepo();
