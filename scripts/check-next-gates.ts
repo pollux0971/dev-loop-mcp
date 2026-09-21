@@ -2,7 +2,7 @@
  * NEXT.md 的 gate 引用檢查(來源 AI_KM)。
  *
  * 規則:`features/<NN-name>/NEXT.md` 裡每一條 gate 宣告(形狀見下)都要引用至少一個
- * 下面之一,而且引用要能**解析**(不是隨便寫個長得像的字串就算數):
+ * 下面之一,而且找到的每一個引用都要能**解析**(不是隨便寫個長得像的字串就算數):
  *
  *   - `ADR-NNN`,要在 `docs/02-decision-map.md` 找得到對應的 `## ADR-NNN · ...` 標題。
  *   - 7 碼以上的 hex commit sha,要用 `git cat-file -e <sha>^{commit}` 確認這個 repo
@@ -624,16 +624,19 @@ export function parseGateReferences(
   });
 
   // 剩下沒被上面兩條吃掉的、單獨的 phase-N:視為「自身」,指這份 NEXT.md 所屬的資料夾。
-  working = working.replace(/\bphase-(\d+[a-z]?)\b/g, (m, phaseNum: string) => {
-    references.push({
-      kind: 'phase',
-      token: `phase-${phaseNum}(自身:${folder})`,
-      folder,
-      phaseNum,
-      resolved: phaseRowExists(root, folder, phaseNum, context),
-    });
-    return ' '.repeat(m.length);
-  });
+  working = working.replace(
+    /(?<![A-Za-z0-9._\/-])phase-(\d+[a-z]?)(?![A-Za-z0-9._\/-])/g,
+    (m, phaseNum: string) => {
+      references.push({
+        kind: 'phase',
+        token: `phase-${phaseNum}`,
+        folder,
+        phaseNum,
+        resolved: phaseRowExists(root, folder, phaseNum, context),
+      });
+      return ' '.repeat(m.length);
+    },
+  );
 
   // commit sha 放最後比對:上面幾輪已經把 ADR-NNN、§N 這些「看起來像 hex 但其實不是
   // commit sha」的片段蓋成空白,減少誤判(ADR 編號、章節數字本來就可能是純數字,
