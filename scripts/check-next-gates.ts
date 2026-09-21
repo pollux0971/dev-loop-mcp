@@ -389,6 +389,27 @@ interface GateExtraction {
 // 見這支腳本的單元測試。
 const NO_DEPENDENCY_RE = /^(?:[^:：]{0,20}[:：]\s*)?無/;
 
+function consumeContinuationLines(
+  lines: string[],
+  start: number,
+  gate: GateLine | undefined,
+): number {
+  let index = start;
+  while (index < lines.length) {
+    if (CONTINUATION_RE.test(lines[index] ?? '')) {
+      if (gate) gate.text = `${gate.text} ${(lines[index] ?? '').trim()}`;
+      index++;
+      continue;
+    }
+    if ((lines[index] ?? '').trim() === '' && CONTINUATION_RE.test(lines[index + 1] ?? '')) {
+      index++;
+      continue;
+    }
+    break;
+  }
+  return index;
+}
+
 function extractGateLinesWithCoverage(folder: string, relFile: string, content: string): GateExtraction {
   const lines = content.split('\n');
   const out: GateLine[] = [];
@@ -409,7 +430,10 @@ function extractGateLinesWithCoverage(folder: string, relFile: string, content: 
       // phase 號碼也一起塞進去比對——不然「單獨的 phase-N」規則會把宣告自己的編號
       // 誤判成一條(永遠會解析成功、沒有意義的)自身引用,稀釋掉真正該檢查的內容。
       if (!NO_DEPENDENCY_RE.test(tail)) {
-        out.push({ folder, file: relFile, lineNo: i + 1, phaseNum: header[1]!, text: tail });
+        const gate = { folder, file: relFile, lineNo: i + 1, phaseNum: header[1]!, text: tail };
+        out.push(gate);
+        i = consumeContinuationLines(lines, i + 1, gate);
+        continue;
       }
       i++;
       continue;
@@ -438,18 +462,7 @@ function extractGateLinesWithCoverage(folder: string, relFile: string, content: 
           out.push(gate);
         }
         j++;
-        while (j < lines.length) {
-          if (CONTINUATION_RE.test(lines[j] ?? '')) {
-            if (gate) gate.text = `${gate.text} ${(lines[j] ?? '').trim()}`;
-            j++;
-            continue;
-          }
-          if ((lines[j] ?? '').trim() === '' && CONTINUATION_RE.test(lines[j + 1] ?? '')) {
-            j++;
-            continue;
-          }
-          break;
-        }
+        j = consumeContinuationLines(lines, j, gate);
         continue;
       }
       if (jTrimmed === '') {
@@ -531,7 +544,7 @@ export interface GateReference {
 
 export interface CitationCheck {
   found: boolean; // 有沒有找到任何「長得像引用」的 token
-  resolved: boolean; // 至少一個 token 真的解析成功
+  resolved: boolean; // 所有找到的 token 都真的解析成功
   badTokens: string[]; // 長得像引用、但解析失敗的 token(給「引用不存在」訊息用)
 }
 
@@ -644,7 +657,7 @@ function checkCitations(
   const references = parseGateReferences(root, folder, text, resolvers, context);
   return {
     found: references.length > 0,
-    resolved: references.some((reference) => reference.resolved),
+    resolved: references.length > 0 && references.every((reference) => reference.resolved),
     badTokens: [...new Set(references.filter((reference) => !reference.resolved).map((reference) => reference.token))],
   };
 }
