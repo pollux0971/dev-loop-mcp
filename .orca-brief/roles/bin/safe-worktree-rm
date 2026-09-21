@@ -8,6 +8,9 @@
 #   - 不命中 protected_path_exact_or_prefix
 #   - 是 git worktree 且 porcelain 只剩交接檔(handoff_file_regex)
 #   - gitignored 的 .orca-brief/* 已原樣歸檔到 archive/<worktree名>/
+#   - **證據子目錄** `.orca-brief/<名>-evidence/**`(審核棒放反向驗證輸出的地方)也放行,但條件一樣:
+#     **每一個檔都要先逐位元組歸檔**(不管它是 ignored 還是純 untracked)。放行的是「這類檔案可以存在」,
+#     不是「這類檔案可以不見」——沒歸檔就照樣整批拒絕。
 #   - 分支的 archive/<branch> tag 已存在且指向現在的 tip(orca worktree rm 會順手刪本地分支,所以 tag 一定要先打)
 #   - 分支自己的 commit 全部已在 main(git log <branch> --not main 為空),且 tip 不在 main first-parent 鏈上(擋剛開的空分支)
 #   - **B 類(已被取代或放棄)例外**:分支若列在棄用登記檔(ABANDONED,見下),而且登記的 sha 等於分支現在的 tip,
@@ -109,9 +112,10 @@ for p in "${RAW[@]}"; do
   while IFS= read -r rel; do
     [[ -z "$rel" ]] && continue
     cmp -s "$n/$rel" "$ARCHIVE/$wt/$rel" || miss+="    $rel"$'\n'
-  done < <(git -C "$n" status --porcelain --ignored --untracked-files=all | sed -n 's/^!! \(\.orca-brief\/.*[^/]\)$/\1/p')
+  done < <(git -C "$n" status --porcelain --ignored --untracked-files=all \
+            | sed -n -e 's/^!! \(\.orca-brief\/.*[^/]\)$/\1/p' -e 's/^?? \(\.orca-brief\/[^/]*-evidence\/.*[^/]\)$/\1/p')
   if [[ -n "$miss" ]]; then
-    echo "REFUSED: ignored 交接檔還沒歸檔到 $ARCHIVE/$wt/(或內容不同): $p" >&2; printf '%s' "$miss" >&2; fail=1; continue
+    echo "REFUSED: 交接檔/證據檔還沒歸檔到 $ARCHIVE/$wt/(或內容不同): $p" >&2; printf '%s' "$miss" >&2; fail=1; continue
   fi
   if ! git -C "$MAIN" rev-parse -q --verify "refs/tags/archive/$b" >/dev/null; then
     echo "REFUSED: 還沒打 archive/$b tag: $p" >&2; fail=1; continue
