@@ -278,17 +278,59 @@ function findFolderByPrefix(root: string, prefix: string): string | undefined {
 
 export interface Resolvers {
   adrIds: Set<string>;
+  /** ADR 的第一個 Status token；存在性與「已決定」是兩個不同問題。 */
+  adrStatuses: Map<string, AdrStatus>;
   contractSections: Set<string>;
   integrationPoints: Set<string>;
 }
 
-export function loadAdrIds(root: string): Set<string> {
+export type AdrStatus = 'accepted' | 'proposed' | 'superseded';
+
+interface AdrIndex {
+  ids: Set<string>;
+  statuses: Map<string, AdrStatus>;
+}
+
+function loadAdrIndex(root: string): AdrIndex {
   const p = join(root, 'docs', '02-decision-map.md');
   const ids = new Set<string>();
-  if (!existsSync(p)) return ids;
+  const statuses = new Map<string, AdrStatus>();
+  if (!existsSync(p)) return { ids, statuses };
+
   const content = readFileSync(p, 'utf8');
-  for (const m of content.matchAll(/^##\s+ADR-(\d+)\s*·/gm)) ids.add(m[1]!);
-  return ids;
+  const lines = content.split('\n');
+  for (let index = 0; index < lines.length; index++) {
+    const heading = /^##\s+ADR-(\d+)\s*·/.exec(lines[index] ?? '');
+    if (!heading) continue;
+
+    const id = heading[1]!;
+    ids.add(id);
+
+    let sectionEnd = index + 1;
+    while (sectionEnd < lines.length && !/^##\s/.test(lines[sectionEnd] ?? '')) sectionEnd++;
+
+    for (let lineIndex = index + 1; lineIndex < sectionEnd; lineIndex++) {
+      const statusLine = /^-\s+\*\*Status\*\*:\s+(\S+)/.exec(lines[lineIndex] ?? '');
+      if (!statusLine) continue;
+
+      const statusToken = statusLine[1]!.replace(/[`*_]/g, '').toLowerCase();
+      if (statusToken === 'accepted' || statusToken === 'proposed' || statusToken === 'superseded') {
+        statuses.set(id, statusToken);
+      }
+      // 規格定義的是每個 ADR 區段裡第一行 Status；後面的同名欄位不覆寫它。
+      break;
+    }
+  }
+
+  return { ids, statuses };
+}
+
+export function loadAdrIds(root: string): Set<string> {
+  return loadAdrIndex(root).ids;
+}
+
+export function loadAdrStatuses(root: string): Map<string, AdrStatus> {
+  return loadAdrIndex(root).statuses;
 }
 
 /** 標題形如 `## 1. 識別碼與基本型別` / `## 11b. 寫入保證(硬約定)`——抓 "." 前面那個 token。 */
@@ -319,8 +361,10 @@ export function loadIntegrationPoints(root: string): Set<string> {
 }
 
 export function loadResolvers(root: string): Resolvers {
+  const adr = loadAdrIndex(root);
   return {
-    adrIds: loadAdrIds(root),
+    adrIds: adr.ids,
+    adrStatuses: adr.statuses,
     contractSections: loadContractSections(root),
     integrationPoints: loadIntegrationPoints(root),
   };
@@ -527,6 +571,14 @@ export interface GateReference {
   phaseNum?: string;
   /** integration 引用的數字部分。 */
   integrationId?: string;
+}
+
+/** ADR 存在性之外的獨立判斷：只有 accepted / superseded 才是已決定。 */
+export function isAdrDetermined(resolvers: Resolvers, reference: GateReference): boolean {
+  if (reference.kind !== 'adr' || !reference.resolved) return false;
+  const id = reference.token.slice('ADR-'.length);
+  const status = resolvers.adrStatuses.get(id);
+  return status === 'accepted' || status === 'superseded';
 }
 
 export interface CitationCheck {

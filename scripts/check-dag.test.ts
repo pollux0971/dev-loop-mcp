@@ -66,6 +66,16 @@ function writeDecisionMap(root: string, ids: string[]): void {
   write(root, 'docs/02-decision-map.md', `# 決策地圖\n\n${body}`);
 }
 
+function writeDecisionMapWithStatuses(
+  root: string,
+  entries: { id: string; status: string }[],
+): void {
+  const body = entries
+    .map(({ id, status }) => `## ADR-${id} · 測試用決策\n\n- **Status**: ${status}\n`)
+    .join('\n');
+  write(root, 'docs/02-decision-map.md', `# 決策地圖\n\n${body}`);
+}
+
 function writeContracts(root: string, sections: string[]): void {
   const body = sections.map((section) => `## ${section}. 測試章節\n\n內容。\n`).join('\n');
   write(root, 'contracts/types.md', `# 契約\n\n${body}`);
@@ -101,6 +111,16 @@ function outputSection(output: string, startMarker: string, endMarker?: string):
   if (start < 0) return '';
   const end = endMarker === undefined ? -1 : output.indexOf(endMarker, start + startMarker.length);
   return output.slice(start, end < 0 ? undefined : end);
+}
+
+function sectionBefore(output: string, startMarker: string, endMarkers: string[]): string {
+  const start = output.indexOf(startMarker);
+  if (start < 0) return '';
+  const end = endMarkers
+    .map((marker) => output.indexOf(marker, start + startMarker.length))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+  return output.slice(start, end === undefined ? undefined : end);
 }
 
 function layerSection(output: string, layer: number, nextLayer?: number): string {
@@ -372,6 +392,141 @@ describe('check-dag:PASS 輸出', () => {
     expect(blocked).toContain('06 phase-1');
     expect(blocked).toContain(shortSha);
     expect(blocked, '已勾選解除的外部 gate 不應列在 blocked 集合').not.toContain('07 phase-1');
+  }, SPAWN_TIMEOUT_MS);
+});
+
+describe('check-dag:ADR gate 分類(先寫紅)', () => {
+  it('① unchecked bullet 提到 accepted ADR:列未打勾 gate,不列外部阻擋且仍不 ready', () => {
+    const root = makeRepo();
+    writeDecisionMapWithStatuses(root, [{ id: '101', status: 'accepted' }]);
+    writeFeature(root, '01-accepted-adr', [{ n: 1, status: 'todo' }]);
+    writeNext(
+      root,
+      '01-accepted-adr',
+      [
+        '## 下一個 phase 的 gate',
+        '',
+        '**phase-1** 需要全部滿足:',
+        '',
+        '- [ ] 規格沿用 ADR-101 的資料結構決定(純參考說明,不是在等這個 ADR 被裁定)',
+      ].join('\n'),
+    );
+    commitAll(root, 'accepted ADR is an unchecked local gate');
+
+    const { code, output } = run(root);
+    const ready = sectionBefore(output, '目前 ready 集合', [
+      '未打勾 gate',
+      '被外部阻擋卡住的 phase',
+    ]);
+    const unchecked = outputSection(output, '未打勾 gate', '被外部阻擋卡住的 phase');
+    const blocked = outputSection(output, '被外部阻擋卡住的 phase');
+
+    expect(code).toBe(0);
+    expect(ready).not.toContain('- 01 phase-1');
+    expect(output).toContain('未打勾 gate 1 條');
+    expect(unchecked).toContain('01 phase-1');
+    expect(unchecked).toContain('ADR-101');
+    expect(blocked).not.toContain('01 phase-1');
+    expect(blocked).not.toContain('ADR-101');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('② unchecked bullet 提到 proposed ADR:列外部阻擋且不 ready', () => {
+    const root = makeRepo();
+    writeDecisionMapWithStatuses(root, [{ id: '102', status: 'proposed' }]);
+    writeFeature(root, '02-proposed-adr', [{ n: 1, status: 'todo' }]);
+    writeNext(
+      root,
+      '02-proposed-adr',
+      [
+        '## 下一個 phase 的 gate',
+        '',
+        '**phase-1** 需要全部滿足:',
+        '',
+        '- [ ] ADR-102 等待使用者裁示',
+      ].join('\n'),
+    );
+    commitAll(root, 'proposed ADR remains an external blocker');
+
+    const { code, output } = run(root);
+    const citations = runNextGates(root);
+    const ready = sectionBefore(output, '目前 ready 集合', [
+      '未打勾 gate',
+      '被外部阻擋卡住的 phase',
+    ]);
+    const blocked = outputSection(output, '被外部阻擋卡住的 phase');
+
+    expect(code).toBe(0);
+    expect(citations.code).toBe(0);
+    expect(citations.output).toContain('gate=next-gates result=PASS scanned=1');
+    expect(ready).not.toContain('- 02 phase-1');
+    expect(output).toContain('外部阻擋 1 個');
+    expect(blocked).toContain('02 phase-1');
+    expect(blocked).toContain('ADR-102');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('③ unchecked bullet 提到不存在的 ADR:維持既有外部阻擋回歸行為', () => {
+    const root = makeRepo();
+    writeDecisionMap(root, []);
+    writeFeature(root, '03-missing-adr', [{ n: 1, status: 'todo' }]);
+    writeNext(
+      root,
+      '03-missing-adr',
+      [
+        '## 下一個 phase 的 gate',
+        '',
+        '**phase-1** 需要全部滿足:',
+        '',
+        '- [ ] ADR-999 等待裁示',
+      ].join('\n'),
+    );
+    commitAll(root, 'missing ADR remains an external blocker regression');
+
+    const { code, output } = run(root);
+    const ready = sectionBefore(output, '目前 ready 集合', [
+      '未打勾 gate',
+      '被外部阻擋卡住的 phase',
+    ]);
+    const blocked = outputSection(output, '被外部阻擋卡住的 phase');
+
+    expect(code).toBe(0);
+    expect(ready).not.toContain('- 03 phase-1');
+    expect(blocked).toContain('03 phase-1');
+    expect(blocked).toContain('ADR-999');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('④ checked bullet 提到 accepted/proposed ADR 都滿足,不列兩種分類且 phase 進 ready', () => {
+    const root = makeRepo();
+    writeDecisionMapWithStatuses(root, [
+      { id: '104', status: 'accepted' },
+      { id: '105', status: 'proposed' },
+    ]);
+    writeFeature(root, '04-checked-adr', [{ n: 1, status: 'todo' }]);
+    writeNext(
+      root,
+      '04-checked-adr',
+      [
+        '## 下一個 phase 的 gate',
+        '',
+        '**phase-1** 需要全部滿足:',
+        '',
+        '- [x] ADR-104 已決定',
+        '- [x] ADR-105 等待裁示但此 gate 已解除',
+      ].join('\n'),
+    );
+    commitAll(root, 'checked ADR gates are satisfied');
+
+    const { code, output } = run(root);
+    const ready = sectionBefore(output, '目前 ready 集合', [
+      '未打勾 gate',
+      '被外部阻擋卡住的 phase',
+    ]);
+    const unchecked = outputSection(output, '未打勾 gate', '被外部阻擋卡住的 phase');
+    const blocked = outputSection(output, '被外部阻擋卡住的 phase');
+
+    expect(code).toBe(0);
+    expect(ready).toContain('- 04 phase-1');
+    expect(unchecked).not.toContain('04 phase-1');
+    expect(blocked).not.toContain('04 phase-1');
   }, SPAWN_TIMEOUT_MS);
 });
 
