@@ -79,6 +79,14 @@ npm ci                                                # 新樹沒有 node_module
 
 ## ③ 清 worktree
 
+**先分辨是哪一種東西**(顧問裁 2026-09-21):
+- **有 worktree 的** → 走下面的 `safe-worktree-rm` 流程。
+- **沒有 worktree、只剩一個分支標籤的** → **不要**硬套這裡的條件(它們是為「別誤清還在用的樹」設計的,對一個沒有樹的標籤答非所問)。
+  直接 `git branch -d <branch>`——**小寫 `-d`,永遠不要用 `-D`**:`-d` 只在分支已合入時才成功,沒合入 git 自己會拒絕,
+  那就是這條路上唯一也足夠的守門。先用 `git worktree list` 確認它真的沒有樹(注意 `integrate` 那類樹是 **detached HEAD**,
+  不是 checkout 在同名分支上,很容易看錯)。需要 `-D` 的只有 B 類棄用登記那條路,而那條已經封裝在 `safe-worktree-rm` 裡
+  (它會先核對 `archive/<branch>` tag == tip 才刪),不要自己在外面下 `-D`。
+
 條件照 `docs/07-practices.md` (at),**每一輪重讀那段**,跟下面對不上就以 (at) 為準並回報顧問。目前是四條全部成立才清:
 1. 分支**自己的** commit 已進 main(不是「分支是 main 的祖先」——剛開的分支也是祖先);
 2. 它所有終端 `lastOutputAt` ≥ 60 分鐘沒輸出,也沒有 spinner/選單/等輸入;而且沒有**終端以外**的工作行程 cwd 在那個目錄
