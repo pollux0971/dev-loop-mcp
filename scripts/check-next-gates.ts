@@ -2,7 +2,7 @@
  * NEXT.md 的 gate 引用檢查(來源 AI_KM)。
  *
  * 規則:`features/<NN-name>/NEXT.md` 裡每一條 gate 宣告(形狀見下)都要引用至少一個
- * 下面之一,而且引用要能**解析**(不是隨便寫個長得像的字串就算數):
+ * 下面之一,而且找到的每一個引用都要能**解析**(不是隨便寫個長得像的字串就算數):
  *
  *   - `ADR-NNN`,要在 `docs/02-decision-map.md` 找得到對應的 `## ADR-NNN · ...` 標題。
  *   - 7 碼以上的 hex commit sha,要用 `git cat-file -e <sha>^{commit}` 確認這個 repo
@@ -433,6 +433,27 @@ interface GateExtraction {
 // 見這支腳本的單元測試。
 const NO_DEPENDENCY_RE = /^(?:[^:：]{0,20}[:：]\s*)?無/;
 
+function consumeContinuationLines(
+  lines: string[],
+  start: number,
+  gate: GateLine | undefined,
+): number {
+  let index = start;
+  while (index < lines.length) {
+    if (CONTINUATION_RE.test(lines[index] ?? '')) {
+      if (gate) gate.text = `${gate.text} ${(lines[index] ?? '').trim()}`;
+      index++;
+      continue;
+    }
+    if ((lines[index] ?? '').trim() === '' && CONTINUATION_RE.test(lines[index + 1] ?? '')) {
+      index++;
+      continue;
+    }
+    break;
+  }
+  return index;
+}
+
 function extractGateLinesWithCoverage(folder: string, relFile: string, content: string): GateExtraction {
   const lines = content.split('\n');
   const out: GateLine[] = [];
@@ -453,7 +474,10 @@ function extractGateLinesWithCoverage(folder: string, relFile: string, content: 
       // phase 號碼也一起塞進去比對——不然「單獨的 phase-N」規則會把宣告自己的編號
       // 誤判成一條(永遠會解析成功、沒有意義的)自身引用,稀釋掉真正該檢查的內容。
       if (!NO_DEPENDENCY_RE.test(tail)) {
-        out.push({ folder, file: relFile, lineNo: i + 1, phaseNum: header[1]!, text: tail });
+        const gate = { folder, file: relFile, lineNo: i + 1, phaseNum: header[1]!, text: tail };
+        out.push(gate);
+        i = consumeContinuationLines(lines, i + 1, gate);
+        continue;
       }
       i++;
       continue;
@@ -482,18 +506,7 @@ function extractGateLinesWithCoverage(folder: string, relFile: string, content: 
           out.push(gate);
         }
         j++;
-        while (j < lines.length) {
-          if (CONTINUATION_RE.test(lines[j] ?? '')) {
-            if (gate) gate.text = `${gate.text} ${(lines[j] ?? '').trim()}`;
-            j++;
-            continue;
-          }
-          if ((lines[j] ?? '').trim() === '' && CONTINUATION_RE.test(lines[j + 1] ?? '')) {
-            j++;
-            continue;
-          }
-          break;
-        }
+        j = consumeContinuationLines(lines, j, gate);
         continue;
       }
       if (jTrimmed === '') {
@@ -583,7 +596,7 @@ export function isAdrDetermined(resolvers: Resolvers, reference: GateReference):
 
 export interface CitationCheck {
   found: boolean; // 有沒有找到任何「長得像引用」的 token
-  resolved: boolean; // 至少一個 token 真的解析成功
+  resolved: boolean; // 所有找到的 token 都真的解析成功
   badTokens: string[]; // 長得像引用、但解析失敗的 token(給「引用不存在」訊息用)
 }
 
@@ -663,16 +676,19 @@ export function parseGateReferences(
   });
 
   // 剩下沒被上面兩條吃掉的、單獨的 phase-N:視為「自身」,指這份 NEXT.md 所屬的資料夾。
-  working = working.replace(/\bphase-(\d+[a-z]?)\b/g, (m, phaseNum: string) => {
-    references.push({
-      kind: 'phase',
-      token: `phase-${phaseNum}(自身:${folder})`,
-      folder,
-      phaseNum,
-      resolved: phaseRowExists(root, folder, phaseNum, context),
-    });
-    return ' '.repeat(m.length);
-  });
+  working = working.replace(
+    /(?<![A-Za-z0-9._\/-])phase-(\d+[a-z]?)(?![A-Za-z0-9._\/-])/g,
+    (m, phaseNum: string) => {
+      references.push({
+        kind: 'phase',
+        token: `phase-${phaseNum}`,
+        folder,
+        phaseNum,
+        resolved: phaseRowExists(root, folder, phaseNum, context),
+      });
+      return ' '.repeat(m.length);
+    },
+  );
 
   // commit sha 放最後比對:上面幾輪已經把 ADR-NNN、§N 這些「看起來像 hex 但其實不是
   // commit sha」的片段蓋成空白,減少誤判(ADR 編號、章節數字本來就可能是純數字,
@@ -696,7 +712,7 @@ function checkCitations(
   const references = parseGateReferences(root, folder, text, resolvers, context);
   return {
     found: references.length > 0,
-    resolved: references.some((reference) => reference.resolved),
+    resolved: references.length > 0 && references.every((reference) => reference.resolved),
     badTokens: [...new Set(references.filter((reference) => !reference.resolved).map((reference) => reference.token))],
   };
 }
