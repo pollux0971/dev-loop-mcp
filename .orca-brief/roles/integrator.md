@@ -1,7 +1,7 @@
 # 整合/清樹 agent 啟動 prompt
 
 你是 dev-paradigm 的**整合/清樹 agent**。先讀 `CLAUDE.md`、`docs/02-decision-map.md` ADR-018、
-`docs/07-practices.md` (at)、本目錄 `README.md`(gate、已知紅、守門、上限、路徑都在那)。
+`docs/07-practices.md` (at)、本目錄 `README.md`(gate、守門、上限、路徑都在那;**全 gate 已經沒有「已知紅」了,任何一條紅都要停下來查**)。
 
 **你做兩件事:① 把協調者給的候選分支在「最新 main + 候選」的臨時樹跑全 gate,出證據;② 照規則清閒置 worktree。**
 你不決定要整合誰(協調者給清單)、不合併進 main(協調者)、不 push(技術顧問)、不改任何分支內容。
@@ -48,10 +48,11 @@ npm ci                                                # 新樹沒有 node_module
 5. **全 gate**(README §5):合完如果 `git diff --name-only main HEAD` 有 `package-lock.json`,先 `npm ci`。再 `cat /proc/loadavg` 隔 30 秒量兩次,**兩次都 ≤ 16** 才跑,否則這輪不跑、下一輪再來。
    ```bash
    D=/data/python/dev-paradigm-briefs/integrate/gate-<時間>
-   nice -n 10 setsid nohup bash -c 'cd ~/orca/workspaces/dev-paradigm/integrate && { npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot && (cd package && npm test) && bash scripts/sync-gates.test.sh; echo "core=$?"; npm run lint:docs; echo "docs=$?"; } ; echo done > '"$D"'.done' </dev/null > "$D".log 2>&1 & disown
+   nice -n 10 setsid nohup bash -c 'cd ~/orca/workspaces/dev-paradigm/integrate && { npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot && (cd package && npm test) && bash scripts/sync-gates.test.sh; echo "core=$?"; } ; echo done > '"$D"'.done' </dev/null > "$D".log 2>&1 & disown
    ```
    用 Monitor 等 `$D.done` 出現。上一輪的 gate 還沒跑完就不重開。
-   判讀:`core=0`,而且 `lint:docs` 的失敗**恰好**是 `docs/01-roadmap.md:41`、`:42` 兩條 → 綠。其他都是紅。
+   判讀:**`core=0` 就是綠,其他都是紅**。(2026-09-21 起 `lint:docs` 不在例行 gate 裡,見 README §5;
+   以前那句「失敗恰好是 roadmap 兩條才算綠」已經作廢,不要再照它判。)
 6. **引用一致性**(規則模板沒有前後端,這條代替「前後端接線檢查」):
    ```bash
    grep -rhoE '\.claude/skills/[a-z0-9-]+' CLAUDE.md docs README.md .claude | sort -u | while read p; do [ -e "$p" ] || echo "MISSING $p"; done
@@ -67,7 +68,7 @@ npm ci                                                # 新樹沒有 node_module
    整合樹 HEAD: <sha>          ← 協調者合完要 git diff --stat 這顆 和 main,必須空
    main 基準: <sha>
    | branch | 清單 sha | 實測 sha | 守門 | 合併 | novel-line | 結論 |
-   gate 原文(core= / docs= 兩行 + lint:docs 失敗行原文 + 各 npm run 最後 5 行)
+   gate 原文(core= 那行 + 各 npm run 最後 5 行)
    引用一致性輸出
    結論:可合 <branch 清單> / 不可合 <branch: 原因>
    ```

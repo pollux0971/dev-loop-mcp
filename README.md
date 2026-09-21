@@ -112,13 +112,29 @@ npm script 名字清單),沿路每一項都要在 `package.json` `scripts` 裡�
 
 ### 步驟 0:落地
 
-**用 npx(建議)。** 需要能讀取私有 repo `pollux0971/dev-paradigm`(git 已設好 SSH 或 credential):
+> **這個 repo 是 private,只供作者與受邀者使用。** 下面的指令需要你**對這個 repo 有讀取權限**
+> (git 已設好 SSH 或 credential)。
+
+**用 clone + init(唯一支援的方式)**:
 
 ```bash
+# ① 把發布版抓下來(放哪都行)
+git clone --depth 1 --branch npx-v1.11.0 \
+  https://github.com/pollux0971/dev-paradigm.git /tmp/dp-template
+
+# ② 建新專案資料夾並進去
 mkdir my-project && cd my-project
 git init
-npx github:pollux0971/dev-paradigm#npx-v1.11.0 init .
+
+# ③ 灌進去
+node /tmp/dp-template/src/cli.mjs init .
 ```
+
+⚠️ **不要用 `npx github:pollux0971/dev-paradigm#npx-v… init .`**。【驗,2026-09-21】repo 是 private,
+`codeload.github.com` 對未授權者一律回 404,而 **npm 遇到這個 404 會安靜地 exit 0**:沒有任何輸出、
+沒有錯誤、目標目錄 0 個檔,看起來像成功。更糟的是它可能從 `~/.npm/_cacache` 的舊 tarball 供檔,
+於是「我這台裝得起來」完全不代表別人裝得起來(見 `PITFALLS.md` P-102)。哪天這個 repo 轉成 public,
+再把 npx 那條路加回來。
 
 - 版本號換成你要採用的那一版;發布版的 tag 一律是 `npx-v<版本>`(`git ls-remote --tags` 看得到)。
 - **只支援全新專案**(空資料夾,或剛 `git init` 的 repo)。

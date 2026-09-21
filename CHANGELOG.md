@@ -12,6 +12,25 @@
 **下面這幾筆原本被誤寫進 1.11.0 那一段**——那個 tag 已經推出去了,裝了 1.11.0 的人手上沒有這些東西,
 把它們列在 1.11.0 底下就是在對使用者說謊(同 P-103「規則描述了一個手上沒有的機制」)。2026-09-21 09:3x 搬正。
 
+- **斜線指令從「文件寫著但不存在」變成真的能用**(`.claude/commands/`,使用者 2026-09-21 裁「先 A 再 B」的 A)。
+  `CLAUDE.md` 一直列著 `/phase-done`、`/decide`、`/mutate`、`/sprint`、`/integrate`、`/feature` 六個別名,
+  但 `.claude/commands/` 根本不存在——打那些指令不會有任何反應(skill 只吃得到 `/phase-acceptance` 這種
+  **與 skill 同名**的呼叫)。又一個「文件說有、實際沒有」,跟 P-103 同一個形狀。六個指令檔補齊並加進
+  npx 出貨清單;Codex 沒有對應機制,不做鏡像。包成 plugin(B)留待之後。
+
+- **`lint:docs` 移出例行 gate**(`DECISIONS_NEEDED` #36,使用者裁「就刪了吧」)。它對有寫連結的專案有用,
+  所以 `check-doc-links.ts` 與測試**照常保留、照常出貨**;但本 repo 的路徑都寫在反引號裡,扣掉樣板
+  placeholder 之後一條可檢查的連結都沒有,依「0 目標一律 FAIL」永遠紅。**一個永遠紅的 gate 跟永遠綠的
+  一樣沒有訊號**,還養出了「全 gate 綠(已知紅除外)」這句口頭禪。現在全綠就是全綠。
+  `roles/README.md` §5、`integrator.md` 的 gate 指令與判讀規則一起改(整合 agent 以前的判準是
+  「失敗恰好是 roadmap 那兩條才算綠」,已作廢)。#31「0 目標一律 FAIL」**維持不變**。
+
+- **README 的安裝方式改成 clone + init**(`DECISIONS_NEEDED` #35,使用者裁「還是 private」)。
+  【驗】repo 是 private → `codeload` 對未授權者回 404 → **npm 遇到這個 404 安靜 exit 0**:零輸出、
+  目標目錄 0 個檔,看起來像成功。README 原本那行 `npx github:…` 對任何人(包括作者換一台機器)都是壞的,
+  改成 `git clone --depth 1 --branch npx-v<版本>` + `node <clone>/src/cli.mjs init .`,並在旁邊寫明
+  為什麼不能用 npx(P-102)。哪天轉 public 再把 npx 那條路加回來。
+
 - **`CHECKLIST.md` 的 placeholder 掃描指令改用路徑排除**(試跑卡點):原本 `grep --exclude=README.md`
   比對的是**檔名**不是路徑,於是 `contracts/README.md`、`docs/sprints/README.md` 這些巢狀同名檔
   一起被排除掉,填漏了也掃不出來(這個模板自己就有 11 個 `README.md`,7 個含 `{{`)。改成先掃全部

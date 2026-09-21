@@ -92,6 +92,13 @@
       "purpose": "【驗】可供 consumer 使用的 Claude Code skill 集合；以 glob 隨現況增減。"
     },
     {
+      "root": ".claude/commands/",
+      "include": [
+        "**/*"
+      ],
+      "purpose": "【驗】Claude Code 的斜線指令別名(名稱與 skill 不同的那幾個);以 glob 隨現況增減。Codex 沒有對應機制,不做鏡像。"
+    },
+    {
       "root": ".agents/skills/",
       "include": [
         "**/*"

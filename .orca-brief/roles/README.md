@@ -60,27 +60,22 @@
 理由:寫的人和審的人不共用盲點。額度用完或卡選單:純 Enter 試 1–2 次,不行就放棄那個終端,
 開新 worktree 重派(**換模型要協調者改鏈規格**,接線 agent 不自己換)。
 
-## 5. 本 repo 的「全 gate」與已知紅
+## 5. 本 repo 的「全 gate」
 
 ```bash
 npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot \
-  && (cd package && npm test) && bash scripts/sync-gates.test.sh; npm run lint:docs
+  && (cd package && npm test) && bash scripts/sync-gates.test.sh
 ```
+
+**全綠就是全綠,沒有「已知紅除外」這種東西了**(2026-09-21 使用者裁:`lint:docs` 就刪了吧)。
+任何一條紅都要停下來查。
 
 - **新 worktree 沒有 `node_modules`**(本 repo 沒有 `orca.yaml` setup hook):跑 gate 前先在那棵樹 `npm ci`
   (只有根目錄有 `package-lock.json`;`package/` 不用裝)。`package-lock.json` 有變才需要重裝。
-- `lint:docs` **預期是 FAIL,但只准是「零輸入」那一種**(1.11.0 起,`lint-docs-placeholder-links` 之後)。
-  判讀**不能只看 exit code**,要逐字核對最後三行長這樣:
-  ```
-  doc-links: … 跳過未填 placeholder 的連結 2 個(新專案填完 `CHECKLIST.md` 就會消失)
-  doc-links: 掃描 36 個 markdown 檔,掃描到 0 條相對連結(全部 2 條都是未填 placeholder)
-  未填 placeholder 的連結沒有可檢查的目標,因此維持 FAIL。
-  gate=doc-links result=FAIL scanned=0
-  ```
-  **跟這個長相不一樣就是真的紅**——尤其若出現舊格式「N 條連結指到不存在的檔案」,那是真的有壞連結。
-  placeholder 數從 2 變動、可檢查連結不再是 0,也都要停下來看(代表有人加了真的連結,或動了 roadmap)。
-  為什麼這裡是 FAIL 而不是 PASS:扣掉不可檢查的 placeholder 之後目標數是 0,依 `DECISIONS_NEEDED` #31
-  「0 目標一律 FAIL」。要不要讓這類「對本 repo 永遠沒有素材」的 gate 能具名宣告 N/A,見 #36(等使用者裁)。
+- **`lint:docs` 不在例行 gate 裡**(2026-09-21 起)。它檢查 markdown 連結有沒有指到不存在的檔案,
+  對 consumer 有用,所以**照常出貨**;但本 repo 的路徑習慣寫在反引號裡而不是連結,扣掉樣板 placeholder
+  之後**一條可檢查的連結都沒有**,於是依「0 目標一律 FAIL」永遠紅。一個永遠紅的 gate 跟永遠綠的一樣
+  沒有訊號,還會養出「已知紅除外」的口頭習慣。**要用的時候手動跑 `npm run lint:docs` 即可。**
 - `npm test` 印 `No test files found` 且 exit 0 是正常(模板沒有 packages/apps)。
 - **`cd package && npm test` 一定要跑**:它是出貨產物的黑箱 gate(placeholder 登記、init 實跑)。
   2026-09-19 發布前才發現 ADR-018 新增的 `{{ACTIVE_AGENT_CAP}}` 沒登記進 CHECKLIST,四條鏈與每次重驗都沒跑它。
