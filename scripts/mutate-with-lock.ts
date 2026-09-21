@@ -191,10 +191,10 @@ async function main(): Promise<number> {
   }
 }
 
-try {
-  process.exitCode = await main();
-} catch (error) {
+main().then(code => {
+  process.exitCode = code;
+}).catch(error => {
   releaseLock();
   process.stderr.write(`mutate-with-lock failed: ${errorMessage(error)}\n`);
   process.exitCode = 1;
-}
+});
