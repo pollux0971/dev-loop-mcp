@@ -14,6 +14,7 @@ SYNC_GATES="$TEMPLATE_DIR/scripts/sync-gates.sh"
 FAILURES=0
 CONSUMER=""
 CONSUMER2=""
+CONSUMER_MUTATE_CONFLICT=""
 HOTFIX_NEW_CONSUMER=""
 HOTFIX_OLD_CONSUMER=""
 HOTFIX_LIST_CONSUMER=""
@@ -36,6 +37,7 @@ mapfile -t MANAGED_FILES < <(
 cleanup() {
   [ -n "$CONSUMER" ] && [ -d "$CONSUMER" ] && rm -rf "$CONSUMER"
   [ -n "$CONSUMER2" ] && [ -d "$CONSUMER2" ] && rm -rf "$CONSUMER2"
+  [ -n "$CONSUMER_MUTATE_CONFLICT" ] && [ -d "$CONSUMER_MUTATE_CONFLICT" ] && rm -rf "$CONSUMER_MUTATE_CONFLICT"
   [ -n "$HOTFIX_NEW_CONSUMER" ] && [ -d "$HOTFIX_NEW_CONSUMER" ] && rm -rf "$HOTFIX_NEW_CONSUMER"
   [ -n "$HOTFIX_OLD_CONSUMER" ] && [ -d "$HOTFIX_OLD_CONSUMER" ] && rm -rf "$HOTFIX_OLD_CONSUMER"
   [ -n "$HOTFIX_LIST_CONSUMER" ] && [ -d "$HOTFIX_LIST_CONSUMER" ] && rm -rf "$HOTFIX_LIST_CONSUMER"
@@ -251,6 +253,63 @@ sync_code=$?
 assert_exit_code "plain sync 本身要成功" "$sync_code" "0"
 assert_contains "plain sync 印出 needs-config 清單(consumer 一開始什麼設定都沒有)" "$sync_out" "needs-config:"
 assert_contains "plain sync 建議接線 check-boundaries.ts" "$sync_out" "check:boundaries"
+
+echo
+echo "== 步驟 1a(修補記錄,leg 2r2):consumer 自有 mutate-with-lock.ts 時同步必須整批拒絕 =="
+CONSUMER_MUTATE_CONFLICT="$(make_empty_git_consumer)"
+cat > "$CONSUMER_MUTATE_CONFLICT/package.json" <<'EOF'
+{
+  "name": "fake-consumer-mutate-conflict",
+  "private": true,
+  "scripts": {
+    "test": "echo no-op"
+  }
+}
+EOF
+mkdir -p "$CONSUMER_MUTATE_CONFLICT/scripts"
+printf '%s\n' '// consumer 自己的檔案,沒有 SOURCE 標頭' > "$CONSUMER_MUTATE_CONFLICT/scripts/mutate-with-lock.ts"
+mutate_conflict_before="$(find "$CONSUMER_MUTATE_CONFLICT/scripts" -type f -print | sort)"
+mutate_conflict_out="$($SYNC_GATES "$CONSUMER_MUTATE_CONFLICT" scripts 2>&1)"
+mutate_conflict_code=$?
+mutate_conflict_after="$(find "$CONSUMER_MUTATE_CONFLICT/scripts" -type f -print | sort)"
+assert_exit_code "consumer 自有 mutate-with-lock.ts 時同步要整批失敗" "$mutate_conflict_code" "1"
+assert_contains "衝突訊息要列出 mutate-with-lock.ts 路徑" "$mutate_conflict_out" "$CONSUMER_MUTATE_CONFLICT/scripts/mutate-with-lock.ts"
+assert_eq "衝突時一個檔都沒寫" "$mutate_conflict_after" "$mutate_conflict_before"
+
+echo
+echo "== 步驟 1b(修補記錄,leg 2r2):一般同步要帶 SOURCE、改動後 --check 要紅 =="
+MUTATE_WITH_LOCK="$CONSUMER/scripts/mutate-with-lock.ts"
+if [ -f "$MUTATE_WITH_LOCK" ]; then
+  pass "同步後 scripts/mutate-with-lock.ts 存在"
+else
+  fail "同步後 scripts/mutate-with-lock.ts 應該存在"
+fi
+
+mutate_version="$(tr -d '[:space:]' < "$TEMPLATE_DIR/VERSION")"
+mutate_header="$(sed -n '1p' "$MUTATE_WITH_LOCK" 2>/dev/null || true)"
+if echo "$mutate_header" \
+  | grep -qE '^// SOURCE: template v[0-9]+\.[0-9]+\.[0-9]+ \([^)]*\) sha256=[0-9a-f]{64}' \
+  && echo "$mutate_header" | grep -qF "template v$mutate_version "; then
+  pass "mutate-with-lock.ts 的 SOURCE 標頭含目前版本與 sha256"
+else
+  fail "mutate-with-lock.ts 的 SOURCE 標頭應含目前版本與 sha256"
+  echo "--- 實際標頭 ---"
+  echo "$mutate_header"
+  echo "--- 標頭結束 ---"
+fi
+
+if [ -f "$MUTATE_WITH_LOCK" ]; then
+  printf '\n// sync-gates test mutation\n' >> "$MUTATE_WITH_LOCK"
+fi
+mutate_check_out="$("$SYNC_GATES" "$CONSUMER" scripts --check 2>&1)"
+mutate_check_code=$?
+assert_exit_code "改動 mutate-with-lock.ts 後 --check 要失敗" "$mutate_check_code" "1"
+assert_contains "--check 要明講 mutate-with-lock.ts 內容被改過" "$mutate_check_out" "✗ mutate-with-lock.ts 內容被改過"
+
+echo
+echo "== 步驟 1c(修補記錄,leg 2r2):mutate-with-lock.ts 要顯示不需接線,不可建議新增 check script =="
+assert_contains "接線報告要標示 mutate-with-lock.ts 不需接線" "$sync_out" "○ mutate-with-lock.ts(不需接線:"
+assert_not_contains "接線報告不可建議 check:mutate-with-lock" "$sync_out" '"check:mutate-with-lock":'
 
 echo
 echo "== 步驟 2:--check,check-boundaries.ts 還沒接線 → 要紅 =="
