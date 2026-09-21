@@ -347,7 +347,7 @@ function enumerateTaggedScenarios(cwd: string): TaggedScenario[] {
 // ---------------------------------------------------------------------------
 
 function keyOf(feature: string, scenario: string): string {
-  return `${feature} ${scenario}`;
+  return `${feature}\u0000${scenario}`;
 }
 
 function countBy<T>(items: T[], key: (t: T) => string): Map<string, number> {
@@ -381,7 +381,7 @@ function main(): void {
   const failures: string[] = [];
 
   for (const key of allKeys) {
-    const [feature, scenario] = key.split(' ');
+    const [feature, scenario] = key.split('\u0000');
     const tCount = taggedCount.get(key) ?? 0;
     const rCount = registryCount.get(key) ?? 0;
     if (tCount > rCount) {
