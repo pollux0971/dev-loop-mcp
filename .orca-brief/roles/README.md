@@ -69,8 +69,18 @@ npm run typecheck && npm test && npm run test:scripts && npm run check:doc-rot \
 
 - **新 worktree 沒有 `node_modules`**(本 repo 沒有 `orca.yaml` setup hook):跑 gate 前先在那棵樹 `npm ci`
   (只有根目錄有 `package-lock.json`;`package/` 不用裝)。`package-lock.json` 有變才需要重裝。
-- `lint:docs` **已知紅恰好 2 條**:`docs/01-roadmap.md:41`、`:42` 的 `{{FEATURE_01}}`/`{{FEATURE_02}}`。
-  多一條、少一條、換了行號都算紅。
+- `lint:docs` **預期是 FAIL,但只准是「零輸入」那一種**(1.11.0 起,`lint-docs-placeholder-links` 之後)。
+  判讀**不能只看 exit code**,要逐字核對最後三行長這樣:
+  ```
+  doc-links: … 跳過未填 placeholder 的連結 2 個(新專案填完 `CHECKLIST.md` 就會消失)
+  doc-links: 掃描 36 個 markdown 檔,掃描到 0 條相對連結(全部 2 條都是未填 placeholder)
+  未填 placeholder 的連結沒有可檢查的目標,因此維持 FAIL。
+  gate=doc-links result=FAIL scanned=0
+  ```
+  **跟這個長相不一樣就是真的紅**——尤其若出現舊格式「N 條連結指到不存在的檔案」,那是真的有壞連結。
+  placeholder 數從 2 變動、可檢查連結不再是 0,也都要停下來看(代表有人加了真的連結,或動了 roadmap)。
+  為什麼這裡是 FAIL 而不是 PASS:扣掉不可檢查的 placeholder 之後目標數是 0,依 `DECISIONS_NEEDED` #31
+  「0 目標一律 FAIL」。要不要讓這類「對本 repo 永遠沒有素材」的 gate 能具名宣告 N/A,見 #36(等使用者裁)。
 - `npm test` 印 `No test files found` 且 exit 0 是正常(模板沒有 packages/apps)。
 - **`cd package && npm test` 一定要跑**:它是出貨產物的黑箱 gate(placeholder 登記、init 實跑)。
   2026-09-19 發布前才發現 ADR-018 新增的 `{{ACTIVE_AGENT_CAP}}` 沒登記進 CHECKLIST,四條鏈與每次重驗都沒跑它。
