@@ -192,3 +192,67 @@ describe('check-doc-links:歷史文件', () => {
     expect(output).toMatch(/跳過歷史檔\s+2\s*個/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 未填 placeholder 連結:leg 1 紅測試(對應 lint-docs-placeholder-links 工單逐項(1))。
+// ---------------------------------------------------------------------------
+
+describe('check-doc-links:未填 placeholder 連結', () => {
+  it('有可檢查連結時跳過 placeholder 並維持 PASS', () => {
+    const root = makeRoot();
+    process.env.GATES_CONFIG_DIR = join(root, 'scripts');
+    write(root, 'README.md', '# root\n');
+    write(
+      root,
+      'docs/x.md',
+      [
+        '[template feature](../features/{{FEATURE_01}}/phase-1.feature)',
+        '[real file](../README.md)',
+      ].join('\n'),
+    );
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).toMatch(/跳過未填 placeholder 的連結\s+1\s*個/);
+    expect(output).toContain('1 條相對連結');
+    expect(output).not.toContain('{{FEATURE_01}}');
+  });
+
+  it('placeholder 與真的壞連結混合時只列真的壞連結', () => {
+    const root = makeRoot();
+    process.env.GATES_CONFIG_DIR = join(root, 'scripts');
+    write(root, 'README.md', '# root\n');
+    write(
+      root,
+      'docs/x.md',
+      [
+        '[template feature](../features/{{FEATURE_01}}/phase-1.feature)',
+        '[missing file](../missing-file.md)',
+      ].join('\n'),
+    );
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toMatch(/跳過未填 placeholder 的連結\s+1\s*個/);
+    expect(output).toContain('missing-file.md');
+    expect(output).not.toContain('{{FEATURE_01}}');
+  });
+
+  it('全部都是 placeholder 時扣除後維持零輸入 FAIL', () => {
+    const root = makeRoot();
+    process.env.GATES_CONFIG_DIR = join(root, 'scripts');
+    write(root, 'README.md', '# root\n');
+    write(root, 'docs/x.md', '[template feature](../features/{{FEATURE_01}}/phase-1.feature)\n');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toMatch(/跳過未填 placeholder 的連結\s+1\s*個/);
+    expect(output).toContain('0 條相對連結');
+    expect(output).toContain('gate=doc-links result=FAIL scanned=0');
+    expect(output).toMatch(/未填 placeholder/);
+    expect(output).not.toContain('掃描範圍 SCAN_DIRS');
+  });
+});
