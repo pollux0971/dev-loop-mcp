@@ -12,7 +12,7 @@
 # 旗標可以任意順序、任意組合(--check 跟 --prune 不能同時給,--check 不寫檔、--prune 會刪檔,
 # 兩者互斥)。
 #
-# 複製的檔:_root.ts、check-*.ts(程式,每次同步都覆蓋,靠版本標頭防漂移;ts 永遠同步,
+# 複製的檔:_root.ts、check-*.ts、mutate-with-lock.ts(程式,每次同步都覆蓋,靠版本標頭防漂移;ts 永遠同步,
 # 不受語言選集影響),以及 scripts/py/*.py(定向反向驗證工具 mutate.py 與它的 meta-test
 # test_mutate.py,同樣每次同步都覆蓋、同樣靠版本標頭防漂移——只是標頭用 `#` 開頭的
 # Python 註解,不是 `//`;**只在語言選集含 py 時才同步**,見下「語言選集」)。
@@ -689,6 +689,8 @@ prune_unselected() {
 is_wiring_exempt_by_default() {
   local base="$1"
   [ "$base" = "_root.ts" ] && return 0
+  # 靠 package.json 的 mutate script 接線,不是 check: gate。
+  [ "$base" = "mutate-with-lock.ts" ] && return 0
   case "$base" in
     *.test.ts) return 0 ;;
   esac
@@ -876,7 +878,7 @@ else
   # 算出目的檔路徑,檢查「已存在且第一行不是 SOURCE 標頭」——那代表 consumer 自己
   # 寫了同名的檔案,不是模板裝的。任一命中就列出全部命中,exit 1,一個檔都不寫。
   conflicts=()
-  for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
+  for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts "$TEMPLATE_DIR"/scripts/mutate-with-lock.ts; do
     name="$(basename "$src")"; dst="$DEST/$name"
     if [ -f "$dst" ] && ! head -1 "$dst" | grep -qE '^(//|#) SOURCE: template v'; then
       conflicts+=("$dst")
@@ -897,7 +899,7 @@ else
     exit 1
   fi
 
-  for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts; do
+  for src in "$TEMPLATE_DIR"/scripts/_root.ts "$TEMPLATE_DIR"/scripts/check-*.ts "$TEMPLATE_DIR"/scripts/mutate-with-lock.ts; do
     sync_one "$src" "//" "$DEST"
   done
   if is_lang_selected py; then
@@ -956,6 +958,9 @@ else
     echo
     echo "建議加進 package.json 的 \"scripts\"(不會自動改,那是你的檔案):"
     printf '%s\n' "${suggest_lines[@]}"
+  fi
+  if is_wiring_exempt_by_default "mutate-with-lock.ts"; then
+    echo "○ mutate-with-lock.ts(不需接線:靠 package.json 的 mutate script 接線,不是 check: gate)"
   fi
 
   if [ "${#needs_config[@]}" -gt 0 ]; then

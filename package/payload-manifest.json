@@ -216,6 +216,7 @@
         "README.md",
         "_root.ts",
         "check-*.ts",
+        "mutate-with-lock*",
         "*.sh",
         "*.json",
         "py/README.md",

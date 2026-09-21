@@ -14,7 +14,7 @@
     "accept": "NODE_OPTIONS=--import=tsx cucumber-js",
     "accept:standalone": "NODE_OPTIONS=--import=tsx cucumber-js --tags '@standalone and not @manual'",
     "accept:integration": "NODE_OPTIONS=--import=tsx cucumber-js docs/integration --tags 'not @manual'",
-    "mutate": "node scripts/mutate-with-lock.mjs",
+    "mutate": "tsx scripts/mutate-with-lock.ts",
     "standalone": "tsx scripts/check-standalone.ts",
     "boundaries": "tsx scripts/check-boundaries.ts",
     "accept:dry": "tsx scripts/check-dry-run.ts --tags 'not @manual'",

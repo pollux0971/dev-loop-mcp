@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import {
   closeSync,
   fsyncSync,
@@ -9,19 +7,29 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 
 const LOCK_FILENAME = '.stryker.lock';
-const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
+const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 } as const;
+type LockSignal = keyof typeof SIGNAL_EXIT_CODES;
+type StrykerResult = { code: number | null; signal: NodeJS.Signals | null };
 
-let lockPath;
-let lockFd = null;
+let lockPath: string | undefined;
+let lockFd: number | null = null;
 let lockReleased = false;
-let childProcess = null;
-let receivedSignal = null;
+let childProcess: ChildProcess | null = null;
+let receivedSignal: LockSignal | null = null;
 
-function findRepositoryRoot() {
+function errorCode(error: unknown): unknown {
+  return error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function findRepositoryRoot(): string {
   const topLevel = execFileSync('git', ['rev-parse', '--show-toplevel'], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -43,9 +51,12 @@ function findRepositoryRoot() {
   }
 }
 
-function readExistingLock() {
+function readExistingLock(): void {
   try {
-    const metadata = JSON.parse(readFileSync(lockPath, 'utf8'));
+    if (!lockPath) throw new Error('lock path is not initialized');
+    const parsed: unknown = JSON.parse(readFileSync(lockPath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') throw new Error('lock metadata is not an object');
+    const metadata = parsed as Record<string, unknown>;
     const pid = Number(metadata.pid);
     const rawTimestamp = metadata.timestamp ?? metadata.startedAt ?? metadata.started_at;
     const startedAt = typeof rawTimestamp === 'number'
@@ -69,7 +80,8 @@ function readExistingLock() {
   }
 }
 
-function acquireLock() {
+function acquireLock(): boolean {
+  if (!lockPath) throw new Error('lock path is not initialized');
   const timestamp = new Date().toISOString();
   const payload = JSON.stringify({
     pid: process.pid,
@@ -86,13 +98,13 @@ function acquireLock() {
     fsyncSync(lockFd);
     return true;
   } catch (error) {
-    if (created) {
+    if (created && lockFd !== null) {
       try { closeSync(lockFd); } catch {}
       lockFd = null;
       try { unlinkSync(lockPath); } catch {}
     }
 
-    if (error?.code === 'EEXIST') {
+    if (errorCode(error) === 'EEXIST') {
       readExistingLock();
       return false;
     }
@@ -100,7 +112,7 @@ function acquireLock() {
   }
 }
 
-function releaseLock() {
+function releaseLock(): void {
   if (lockReleased || !lockPath) return;
   lockReleased = true;
 
@@ -112,13 +124,13 @@ function releaseLock() {
   try {
     unlinkSync(lockPath);
   } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      process.stderr.write(`Unable to remove ${LOCK_FILENAME}: ${error.message}\n`);
+    if (errorCode(error) !== 'ENOENT') {
+      process.stderr.write(`Unable to remove ${LOCK_FILENAME}: ${errorMessage(error)}\n`);
     }
   }
 }
 
-function handleSignal(signal) {
+function handleSignal(signal: LockSignal): void {
   if (receivedSignal) return;
   receivedSignal = signal;
   if (childProcess && childProcess.exitCode === null) {
@@ -126,15 +138,15 @@ function handleSignal(signal) {
   }
 }
 
-function installSignalHandlers() {
+function installSignalHandlers(): void {
   process.on('SIGINT', () => handleSignal('SIGINT'));
   process.on('SIGTERM', () => handleSignal('SIGTERM'));
 }
 
-function runStryker(args) {
-  return new Promise((resolveResult) => {
+function runStryker(args: string[]): Promise<StrykerResult> {
+  return new Promise<StrykerResult>((resolveResult) => {
     let settled = false;
-    const finish = (code, signal) => {
+    const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
       if (settled) return;
       settled = true;
       childProcess = null;
@@ -145,22 +157,24 @@ function runStryker(args) {
       const command = process.platform === 'win32' ? 'stryker.cmd' : 'stryker';
       childProcess = spawn(command, ['run', ...args], { stdio: 'inherit' });
       childProcess.once('error', (error) => {
-        process.stderr.write(`Unable to start Stryker: ${error.message}\n`);
+        process.stderr.write(`Unable to start Stryker: ${errorMessage(error)}\n`);
         finish(1, null);
       });
       childProcess.once('close', finish);
     } catch (error) {
-      process.stderr.write(`Unable to start Stryker: ${error.message}\n`);
+      process.stderr.write(`Unable to start Stryker: ${errorMessage(error)}\n`);
       finish(1, null);
     }
   });
 }
 
-function exitCodeForSignal(signal) {
-  return SIGNAL_EXIT_CODES[signal] ?? 1;
+function exitCodeForSignal(signal: NodeJS.Signals | null): number {
+  if (signal === 'SIGINT') return SIGNAL_EXIT_CODES.SIGINT;
+  if (signal === 'SIGTERM') return SIGNAL_EXIT_CODES.SIGTERM;
+  return 1;
 }
 
-async function main() {
+async function main(): Promise<number> {
   const repositoryRoot = findRepositoryRoot();
   lockPath = join(repositoryRoot, LOCK_FILENAME);
 
@@ -181,6 +195,6 @@ try {
   process.exitCode = await main();
 } catch (error) {
   releaseLock();
-  process.stderr.write(`mutate-with-lock failed: ${error.message}\n`);
+  process.stderr.write(`mutate-with-lock failed: ${errorMessage(error)}\n`);
   process.exitCode = 1;
 }
