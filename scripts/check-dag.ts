@@ -2,8 +2,9 @@
  * 依 ADR-019 第 3 點檢查 phase DAG。
  *
  * 節點是 FEATURE.md phase 表裡的 phase 加上文件裡宣告的 I<N>；NEXT.md gate
- * 的 phase / I<N> 引用形成依賴邊，ADR / § / commit sha 則是外部阻擋。引用
- * parser 直接重用 check-next-gates.ts，兩支 gate 不各自維護一套 NEXT.md 語法。
+ * 的 phase / I<N> 引用形成依賴邊，未決定的 ADR / § / commit sha 則是外部阻擋。
+ * 已決定但未勾選的 ADR gate 另列為未打勾 gate。引用 parser 直接重用
+ * check-next-gates.ts，兩支 gate 不各自維護一套 NEXT.md 語法。
  *
  * 用法:
  *   npx tsx scripts/check-dag.ts
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import {
   collectFeatureFolders,
   extractGateLines,
+  isAdrDetermined,
   loadResolvers,
   parseGateReferences,
   readFeaturePhaseRows,
@@ -68,6 +70,7 @@ interface Dag {
   edges: Edge[];
   outgoing: Map<string, Set<string>>;
   incoming: Map<string, Set<string>>;
+  uncheckedGates: Map<string, Map<string, Set<string>>>;
   externalBlockers: Map<string, Set<string>>;
   satisfiedIntegrations: Set<string>;
 }
@@ -149,6 +152,15 @@ function addExternalBlocker(dag: Dag, target: string, token: string): void {
   else dag.externalBlockers.set(target, new Set([token]));
 }
 
+function addUncheckedGate(dag: Dag, target: string, gate: GateLine, token: string): void {
+  const gateKey = `${gate.file}:${gate.lineNo}`;
+  const gates = dag.uncheckedGates.get(target) ?? new Map<string, Set<string>>();
+  const tokens = gates.get(gateKey) ?? new Set<string>();
+  tokens.add(token);
+  gates.set(gateKey, tokens);
+  dag.uncheckedGates.set(target, gates);
+}
+
 function phaseReferenceTarget(reference: GateReference): string | undefined {
   if (reference.kind !== 'phase' || !reference.resolved || reference.folder === undefined || reference.phaseNum === undefined) {
     return undefined;
@@ -177,6 +189,7 @@ function buildDag(root: string, folders: string[], nodes: Map<string, Node>, res
     edges: [],
     outgoing: new Map([...nodes.keys()].map((id) => [id, new Set<string>()])),
     incoming: new Map([...nodes.keys()].map((id) => [id, new Set<string>()])),
+    uncheckedGates: new Map(),
     externalBlockers: new Map(),
     satisfiedIntegrations: new Set(),
   };
@@ -213,7 +226,9 @@ function buildDag(root: string, folders: string[], nodes: Map<string, Node>, res
           continue;
         }
 
-        if (reference.kind === 'adr' || reference.kind === 'contract' || reference.kind === 'commit') {
+        if (reference.kind === 'adr' && isAdrDetermined(resolvers, reference)) {
+          if (!referenceIsSatisfied(gate, reference)) addUncheckedGate(dag, target, gate, reference.token);
+        } else if (reference.kind === 'adr' || reference.kind === 'contract' || reference.kind === 'commit') {
           if (!referenceIsSatisfied(gate, reference)) addExternalBlocker(dag, target, reference.token);
         }
       }
@@ -286,7 +301,11 @@ function readyPhases(dag: Dag): string[] {
     .filter((node): node is PhaseNode => node.kind === 'phase' && node.status === 'todo')
     .filter((node) => {
       const incoming = dag.incoming.get(node.id) ?? new Set<string>();
-      return [...incoming].every((source) => isDoneNode(dag, source)) && !dag.externalBlockers.has(node.id);
+      return (
+        [...incoming].every((source) => isDoneNode(dag, source))
+        && !dag.uncheckedGates.has(node.id)
+        && !dag.externalBlockers.has(node.id)
+      );
     })
     .map((node) => node.id)
     .sort(compareNodeIds);
@@ -302,6 +321,23 @@ function printReady(dag: Dag): void {
   for (const id of ready) console.log(`- ${id}`);
 }
 
+function printUncheckedGates(dag: Dag): void {
+  const count = [...dag.uncheckedGates.values()]
+    .reduce((total, gates) => total + gates.size, 0);
+  console.log(`\n未打勾 gate ${count} 條`);
+  if (count === 0) {
+    console.log('（無）');
+    return;
+  }
+
+  for (const target of [...dag.uncheckedGates.keys()].sort(compareNodeIds)) {
+    const gates = dag.uncheckedGates.get(target) ?? new Map<string, Set<string>>();
+    for (const tokens of gates.values()) {
+      console.log(`- ${target}: ${[...tokens].join('、')}`);
+    }
+  }
+}
+
 function formatLayerNode(dag: Dag, id: string): string {
   const node = dag.nodes.get(id);
   if (!node) return id;
@@ -312,6 +348,7 @@ function formatLayerNode(dag: Dag, id: string): string {
 function printExternalBlockers(dag: Dag): void {
   console.log('\n被外部阻擋卡住的 phase');
   const targets = [...dag.externalBlockers.keys()].sort(compareNodeIds);
+  console.log(`外部阻擋 ${targets.length} 個`);
   if (targets.length === 0) {
     console.log('（無）');
     return;
@@ -358,6 +395,7 @@ function main(): void {
     console.log(`第 ${index + 1} 層(節點數=${layer.length}): ${layer.map((id) => formatLayerNode(dag, id)).join('、')}`);
   }
   printReady(dag);
+  printUncheckedGates(dag);
   printExternalBlockers(dag);
   console.log(`gate=${GATE_NAME} result=PASS scanned=${nodes.size}`);
   process.exit(0);
