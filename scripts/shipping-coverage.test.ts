@@ -64,6 +64,13 @@ const REQUIRED_BOTH_SHIPPED = [
 
 /** 刻意不出貨。每一筆是「路徑或目錄前綴」→ 理由。 */
 const NOT_SHIPPED: Record<string, string> = {
+  'plugin/':
+    'Claude Code plugin 的包裝(2026-09-21 起)。它是給**使用者自己的 Claude Code 安裝**用的,不是 consumer 專案裡的檔案——'
+    + 'consumer 由 `init` 拿到 `.claude/skills/` 與 `.claude/commands/`,不需要再收一份 plugin 包裝。'
+    + '內容本身也不是新的:`plugin/skills/`、`plugin/commands/` 是 `.claude/` 底下正本的逐位元組鏡像,由 check:skills-mirror 釘住。',
+  '.claude-plugin/':
+    'plugin marketplace 清單(`marketplace.json`),讓人用 `/plugin marketplace add pollux0971/dev-paradigm` 裝上面那個 plugin。'
+    + '跟 plugin 本體同理:這是這個 repo 對外「發 plugin」的入口,不是 consumer 專案該有的東西。',
   '.orca-brief/MAILBOX.md':
     '上游協調者與技術顧問的往返紀錄,是這個 repo 自己的決策留痕,不是給 consumer 的素材;consumer 有自己的協調紀錄。',
   '.orca-brief/PM-BRIEF.md': '上游協調者交接給產品 PM session 的一次性簡報,內容綁定上游當時的任務,對 consumer 沒有意義。',

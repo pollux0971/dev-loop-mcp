@@ -21,6 +21,7 @@ function makeRoot(): string {
   tmpDirs.push(root);
   mkdirSync(join(root, '.claude', 'skills'), { recursive: true });
   mkdirSync(join(root, '.agents', 'skills'), { recursive: true });
+
   return root;
 }
 
@@ -32,7 +33,14 @@ function writeSkill(root: string, side: '.claude' | '.agents', relPath: string, 
 }
 
 function run(root: string, ...extra: string[]): { code: number; output: string } {
-  const result = spawnSync('npx', ['tsx', CHECK_SKILLS_MIRROR_TS, '--root', root, ...extra], {
+  // 2026-09-21 起守門預設有三組配對(skills→.agents、skills→plugin、commands→plugin)。
+  // 這些案例測的是「比對與修復邏輯」,所以固定只跑第一組;預設三組是否完整由下面另一條案例守。
+  // `--pairs-default` 是這個 helper 自己的暗號:代表「這條案例要測正式預設的三組配對」,
+  // 不傳給腳本。其餘案例固定只跑第一組,因為它們測的是比對與修復邏輯本身。
+  const wantsDefault = extra.includes('--pairs-default');
+  const passThrough = extra.filter((arg) => arg !== '--pairs-default');
+  const pairs = wantsDefault ? [] : ['--pairs', '.claude/skills:.agents/skills'];
+  const result = spawnSync('npx', ['tsx', CHECK_SKILLS_MIRROR_TS, '--root', root, ...pairs, ...passThrough], {
     cwd: root,
     encoding: 'utf8',
     timeout: SPAWN_TIMEOUT_MS,
@@ -106,5 +114,24 @@ describe('check-skills-mirror:集合與內容一致', () => {
     const verified = run(root);
     expect(verified.code).toBe(0);
     expect(verified.output).toContain('gate=skills-mirror result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+});
+
+describe('check-skills-mirror:預設的三組配對', () => {
+  it('不帶 --pairs 時,plugin 那兩組也要被檢查(少一個鏡像檔就要紅)', () => {
+    const root = makeRoot();
+    // 三組配對的正本都給,而且 .agents 鏡像先弄成一致——這樣唯一的差異只會來自 plugin。
+    writeSkill(root, '.claude', 'autopilot/SKILL.md', 'canonical autopilot\n');
+    writeSkill(root, '.agents', 'autopilot/SKILL.md', 'canonical autopilot\n');
+    mkdirSync(join(root, '.claude', 'commands'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'commands', 'demo.md'), '# demo\n', 'utf8');
+    mkdirSync(join(root, 'plugin', 'commands'), { recursive: true });
+    writeFileSync(join(root, 'plugin', 'commands', 'demo.md'), '# demo\n', 'utf8');
+    // plugin/skills 故意不建:如果預設配對漏了它,下面這條會綠,那就是守門在說謊。
+
+    const result = run(root, '--pairs-default');
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('plugin/skills');
   }, SPAWN_TIMEOUT_MS);
 });

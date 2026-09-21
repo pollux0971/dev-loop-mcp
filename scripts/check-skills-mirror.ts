@@ -24,6 +24,40 @@ const GATE_NAME = 'skills-mirror';
 const CANONICAL_REL = '.claude/skills';
 const MIRROR_REL = '.agents/skills';
 
+/**
+ * 需要逐位元組一致的「正本 → 鏡像」配對。正本永遠只讀,鏡像永遠由 `--fix` 重建。
+ * 2026-09-21 起不只一組:plugin 包裝(`plugin/`)也是鏡像,不是第三份手工維護的規則。
+ * 加新的一組只要加一列——**不要**另外寫一支守門。
+ */
+const DEFAULT_MIRROR_PAIRS: ReadonlyArray<{ canonical: string; mirror: string }> = [
+  { canonical: CANONICAL_REL, mirror: MIRROR_REL },
+  { canonical: CANONICAL_REL, mirror: 'plugin/skills' },
+  { canonical: '.claude/commands', mirror: 'plugin/commands' },
+];
+
+/**
+ * `--pairs <正本>:<鏡像>[,<正本>:<鏡像>…]` 只給測試用:讓單元測試針對**一組**配對驗行為,
+ * 不必在假根裡把三組都造出來(造得出來也只是在測 fixture,不是在測比對邏輯)。
+ * 正式跑一律不帶這個旗標,用上面那三組。
+ */
+function resolveMirrorPairs(): ReadonlyArray<{ canonical: string; mirror: string }> {
+  const raw = argValue('--pairs');
+  if (raw === undefined) return DEFAULT_MIRROR_PAIRS;
+  const pairs = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      const parts = entry.split(':');
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        fail(`--pairs 格式錯誤(要 <正本>:<鏡像>,逗號分隔):${entry}`, 0, false);
+      }
+      return { canonical: parts[0]!, mirror: parts[1]! };
+    });
+  if (pairs.length === 0) fail('--pairs 沒有給任何配對', 0, false);
+  return pairs;
+}
+
 function argValue(name: string): string | undefined {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -135,17 +169,17 @@ function compare(canonical: Map<string, ScannedFile>, mirror: Map<string, Scanne
   return differences;
 }
 
-function printDifferences(differences: Difference[]): void {
-  console.error(`✗ `.concat(`${differences.length} 個 skill 鏡像差異:`));
+function printDifferences(differences: Difference[], canonicalRel: string, mirrorRel: string): void {
+  console.error(`✗ `.concat(`${differences.length} 個鏡像差異(${canonicalRel}/ → ${mirrorRel}/):`));
   for (const difference of differences) {
     if (difference.kind === 'only-canonical') {
-      console.error(`  ${difference.path} — 只在 ${CANONICAL_REL}/ 存在`);
+      console.error(`  ${difference.path} — 只在 ${canonicalRel}/ 存在`);
     } else if (difference.kind === 'only-mirror') {
-      console.error(`  ${difference.path} — 只在 ${MIRROR_REL}/ 存在`);
+      console.error(`  ${difference.path} — 只在 ${mirrorRel}/ 存在`);
     } else {
       console.error(
         `  ${difference.path} — 兩邊都在但內容不同` +
-          ` (sha256 ${CANONICAL_REL}=${difference.canonicalSha256}, ${MIRROR_REL}=${difference.mirrorSha256})`,
+          ` (sha256 ${canonicalRel}=${difference.canonicalSha256}, ${mirrorRel}=${difference.mirrorSha256})`,
       );
     }
   }
@@ -161,40 +195,47 @@ function repair(canonicalRoot: string, mirrorRoot: string): void {
 }
 
 function main(): void {
-  const canonicalRoot = join(ROOT, CANONICAL_REL);
-  const mirrorRoot = join(ROOT, MIRROR_REL);
-  if (!existsSync(canonicalRoot) || !statSync(canonicalRoot).isDirectory()) {
-    fail(`找不到正本目錄:${canonicalRoot}`, 0);
-  }
-
   const skipDirs = loadSkipDirs();
   const fix = process.argv.includes('--fix');
+  let scannedTotal = 0;
 
-  let canonical = collectFiles(canonicalRoot, skipDirs);
-  let mirror = collectFiles(mirrorRoot, skipDirs);
-  if (canonical.size === 0) {
-    fail(`正本目錄沒有任何 skill 檔案:${canonicalRoot}`, 0);
-  }
-  let differences = compare(canonical, mirror);
-
-  if (fix && differences.length > 0) {
-    try {
-      repair(canonicalRoot, mirrorRoot);
-    } catch (error) {
-      fail(`--fix 無法從正本重建鏡像:${error instanceof Error ? error.message : String(error)}`, canonical.size);
+  for (const pair of resolveMirrorPairs()) {
+    const canonicalRoot = join(ROOT, pair.canonical);
+    const mirrorRoot = join(ROOT, pair.mirror);
+    if (!existsSync(canonicalRoot) || !statSync(canonicalRoot).isDirectory()) {
+      fail(`找不到正本目錄:${canonicalRoot}`, scannedTotal);
     }
-    canonical = collectFiles(canonicalRoot, skipDirs);
-    mirror = collectFiles(mirrorRoot, skipDirs);
-    differences = compare(canonical, mirror);
+
+    let canonical = collectFiles(canonicalRoot, skipDirs);
+    let mirror = collectFiles(mirrorRoot, skipDirs);
+    if (canonical.size === 0) {
+      fail(`正本目錄沒有任何檔案:${canonicalRoot}`, scannedTotal);
+    }
+    let differences = compare(canonical, mirror);
+
+    if (fix && differences.length > 0) {
+      try {
+        repair(canonicalRoot, mirrorRoot);
+      } catch (error) {
+        fail(
+          `--fix 無法從正本重建鏡像:${error instanceof Error ? error.message : String(error)}`,
+          scannedTotal + canonical.size,
+        );
+      }
+      canonical = collectFiles(canonicalRoot, skipDirs);
+      mirror = collectFiles(mirrorRoot, skipDirs);
+      differences = compare(canonical, mirror);
+    }
+
+    if (differences.length > 0) {
+      printDifferences(differences, pair.canonical, pair.mirror);
+      console.log(`gate=${GATE_NAME} result=FAIL scanned=${scannedTotal + canonical.size + mirror.size}`);
+      process.exit(1);
+    }
+    scannedTotal += canonical.size;
   }
 
-  if (differences.length > 0) {
-    printDifferences(differences);
-    console.log(`gate=${GATE_NAME} result=FAIL scanned=${canonical.size + mirror.size}`);
-    process.exit(1);
-  }
-
-  console.log(`gate=${GATE_NAME} result=PASS scanned=${canonical.size}`);
+  console.log(`gate=${GATE_NAME} result=PASS scanned=${scannedTotal}`);
   process.exit(0);
 }
 

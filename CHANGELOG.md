@@ -12,6 +12,18 @@
 **下面這幾筆原本被誤寫進 1.11.0 那一段**——那個 tag 已經推出去了,裝了 1.11.0 的人手上沒有這些東西,
 把它們列在 1.11.0 底下就是在對使用者說謊(同 P-103「規則描述了一個手上沒有的機制」)。2026-09-21 09:3x 搬正。
 
+- **包成 Claude Code plugin**(使用者 2026-09-21 裁「先 A 再 B」的 B)。`plugin/` 帶 9 支 skill 與 6 個
+  斜線指令,`.claude-plugin/marketplace.json` 讓人用 `/plugin marketplace add pollux0971/dev-paradigm`
+  裝。`claude plugin validate --strict` 對 plugin 與 marketplace 兩份 manifest 都通過。
+  **設計上最重要的一條:plugin 裡沒有任何手寫的規則副本。** `plugin/skills/`、`plugin/commands/` 是
+  `.claude/` 底下正本的**逐位元組鏡像**,由 `check:skills-mirror` 釘住——守門從「一組正本→鏡像」改成
+  一張配對表(`.claude/skills→.agents/skills`、`→plugin/skills`、`.claude/commands→plugin/commands`),
+  加新的一組只要加一列。理由是 P-103:同一條規則存在多份手工副本,遲早各自漂移,然後其中一份開始說謊。
+  守門新增 `--pairs`(只給測試用,讓單元測試針對一組配對驗邏輯)與一條**釘住預設三組**的案例——
+  【驗】把 `plugin/skills` 那組從預設清單拿掉,該案例立刻紅,還原後綠。
+  plugin 與 marketplace 都標 NOT_SHIPPED:它們是給**使用者自己的 Claude Code 安裝**用的,
+  consumer 由 `init` 拿到 `.claude/` 底下的正本,不需要再收一份包裝。
+
 - **斜線指令從「文件寫著但不存在」變成真的能用**(`.claude/commands/`,使用者 2026-09-21 裁「先 A 再 B」的 A)。
   `CLAUDE.md` 一直列著 `/phase-done`、`/decide`、`/mutate`、`/sprint`、`/integrate`、`/feature` 六個別名,
   但 `.claude/commands/` 根本不存在——打那些指令不會有任何反應(skill 只吃得到 `/phase-acceptance` 這種

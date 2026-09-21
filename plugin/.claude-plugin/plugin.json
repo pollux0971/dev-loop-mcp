@@ -1,0 +1,9 @@
+{
+  "name": "dev-paradigm",
+  "description": "契約優先、gherkin 驗收、phase gate 的開發範式:9 支 skill 與 6 個斜線指令,裝一次就能在任何專案用。",
+  "version": "1.12.0",
+  "author": { "name": "pollux" },
+  "homepage": "https://github.com/pollux0971/dev-paradigm",
+  "repository": "https://github.com/pollux0971/dev-paradigm",
+  "license": "UNLICENSED"
+}

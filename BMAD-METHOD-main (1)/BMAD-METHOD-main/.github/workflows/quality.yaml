@@ -1,0 +1,74 @@
+name: Quality & Validation
+
+# Keep this workflow aligned with `tools/quality.py`.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: ['**']
+    # `edited` covers a base-branch change (e.g. a PR retargeted from main to dev);
+    # the job condition skips title/body edits.
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+
+jobs:
+  python:
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Lint, validate, test
+        run: uv run --frozen pre-commit run --all-files --show-diff-on-failure
+
+  docs-site:
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: docs-site/.nvmrc
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier format check
+        run: npm run format:check
+
+      - name: Build documentation
+        # Note: docs-site/scripts/build-docs.mjs runs link validation internally before building
+        run: npm run build
+
+      - name: Validate sidebar order
+        run: npm run validate-sidebar
+
+      - name: Test docs-site
+        run: npm test
