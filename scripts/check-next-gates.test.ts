@@ -532,6 +532,71 @@ describe('check-next-gates:引用解析(各種形狀)', () => {
     expect(output).toContain('掃到 0 條 gate 宣告');
     expect(output).toContain('gate=next-gates result=PASS scanned=1');
   }, SPAWN_TIMEOUT_MS);
+
+  it('檔名裡的 phase-N 子字串不可被誤抓成自身 phase 引用', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [
+      { n: 1, status: 'done' },
+      { n: 2, status: 'todo' },
+    ]);
+    writeNext(
+      root,
+      '01-foo',
+      [
+        '## Gate',
+        '',
+        '**phase-2** 需要:請查看 `app-shell-phase-5.steps.ts:21`,並確認 phase-1 `done`',
+      ].join('\n'),
+    );
+    commitAll(root, 'phase-N in filename is not a citation');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).toContain('✓ 全部 gate 宣告都有能解析的引用');
+    expect(output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('散文裡的 phase-N 連字詞不可被誤抓成自身 phase 引用', () => {
+    const root = makeRepo();
+    writeFeature(root, '01-foo', [
+      { n: 1, status: 'done' },
+      { n: 2, status: 'todo' },
+    ]);
+    writeNext(
+      root,
+      '01-foo',
+      [
+        '## Gate',
+        '',
+        '**phase-2** 需要:這是 phase-5-related 的純文字說明,真正引用是 phase-1 `done`',
+      ].join('\n'),
+    );
+    commitAll(root, 'phase-N prose is not a citation');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(0);
+    expect(output).toContain('✓ 全部 gate 宣告都有能解析的引用');
+    expect(output).toContain('gate=next-gates result=PASS scanned=1');
+  }, SPAWN_TIMEOUT_MS);
+
+  it('引用解析失敗時,錯誤訊息要印出原始壞掉的 token', () => {
+    const root = makeRepo();
+    const badToken = 'phase-9';
+    writeFeature(root, '01-foo', [
+      { n: 1, status: 'done' },
+      { n: 2, status: 'todo' },
+    ]);
+    writeNext(root, '01-foo', `## Gate\n\n**phase-2** 需要:${badToken}\n`);
+    commitAll(root, 'diagnostic names the unresolved token');
+
+    const { code, output } = run(root);
+
+    expect(code).toBe(1);
+    expect(output).toContain(`引用不存在(${badToken}):`);
+    expect(output).toContain('gate=next-gates result=FAIL scanned=1');
+  }, SPAWN_TIMEOUT_MS);
 });
 
 describe('check-next-gates:header 解析回歸 fixture(先寫紅)', () => {
