@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { delimiter, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -13,6 +13,7 @@ interface Fixture {
   lockPath: string;
   argsPath: string;
   fakePidPath: string;
+  driverPath: string;
 }
 
 interface ProcessResult {
@@ -50,7 +51,7 @@ if (process.env.MUTATE_TEST_MODE === 'hang') {
 function makeFixture(): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'mutate-with-lock-'));
   try {
-    writeFileSync(join(root, 'package.json'), '{"private":true}\n', 'utf8');
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ private: true }, null, 2) + '\n', 'utf8');
     execFileSync('git', ['init', '--quiet'], { cwd: root, stdio: 'ignore' });
 
     const binDir = join(root, 'bin');
@@ -67,11 +68,20 @@ function makeFixture(): Fixture {
       lockPath: join(root, LOCK_FILE),
       argsPath: join(root, 'received-args.json'),
       fakePidPath: join(root, 'fake-stryker.pid'),
+      driverPath: DRIVER,
     };
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
     throw error;
   }
+}
+
+function makeCommonJsConsumerFixture(): Fixture {
+  const fixture = makeFixture();
+  const driverPath = join(fixture.root, 'scripts', 'mutate-with-lock.ts');
+  mkdirSync(join(fixture.root, 'scripts'), { recursive: true });
+  copyFileSync(DRIVER, driverPath);
+  return { ...fixture, driverPath };
 }
 
 function cleanupFixture(fixture: Fixture): void {
@@ -93,9 +103,10 @@ function startDriver(fixture: Fixture, args: string[], extraEnv: NodeJS.ProcessE
   const pathEntries = [
     join(fixture.root, 'node_modules', '.bin'),
     join(fixture.root, 'bin'),
+    join(resolve(import.meta.dirname, '..'), 'node_modules', '.bin'),
     baseEnv.PATH,
   ].filter((entry): entry is string => Boolean(entry));
-  const child = spawn(process.execPath, [DRIVER, ...args], {
+  const child = spawn('tsx', [fixture.driverPath, ...args], {
     cwd: fixture.root,
     env: {
       ...baseEnv,
@@ -215,6 +226,23 @@ describe('mutate-with-lock: Stryker 變異測試的跨 worktree 鎖', () => {
       const receivedArgs = JSON.parse(readFileSync(fixture.argsPath, 'utf8')) as string[];
       expect(receivedArgs, 'wrapper 不可改寫或遺漏 CLI 參數').toEqual(['run', ...forwardedArgs]);
       expect(existsSync(fixture.lockPath), '正常結束後不可留下鎖檔').toBe(false);
+    } finally {
+      cleanupFixture(fixture);
+    }
+  });
+
+  it('沒有 type:module 的 consumer 也能正常取鎖、跑完並釋放鎖', async () => {
+    const fixture = makeCommonJsConsumerFixture();
+    try {
+      const packageJson = JSON.parse(readFileSync(join(fixture.root, 'package.json'), 'utf8')) as Record<string, unknown>;
+      expect(packageJson, 'CJS consumer fixture 不可偷偷帶入 type:module').not.toHaveProperty('type');
+
+      const result = await runDriver(fixture, []);
+      const output = result.output || '(driver 沒有輸出)';
+      expect(result.timedOut, `CJS consumer driver output:\n${output}`).toBe(false);
+      expect(result.code, `CJS consumer driver output:\n${output}`).toBe(0);
+      expect(existsSync(fixture.argsPath), 'CJS consumer 的假 Stryker 必須確實被執行').toBe(true);
+      expect(existsSync(fixture.lockPath), 'CJS consumer 正常結束後不可留下鎖檔').toBe(false);
     } finally {
       cleanupFixture(fixture);
     }
