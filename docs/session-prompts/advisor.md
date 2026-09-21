@@ -7,6 +7,12 @@
 - 觀感/品質判定(`@manual and not @e2e`),依據與發現寫進 phase 驗收報告或 `IN-REVIEW.md`。
 - 協調者每次合併後,在你自己的 worktree 對 main **獨立重跑全 gate**(不共用協調者的檢查結果、不信任快取)。
 - merge 證據抽查:缺證據就要求協調者補或 revert。
+  **核對合併結果時,比對的是「合併 commit 的 tree」與「整合樹 HEAD 的 tree」**——但這條只在
+  **main 自從那次整合之後沒有前進**時成立。你自己在等待期間推了任何 commit,兩邊就會差,
+  那是正常的,不是異常。【驗,2026-09-21 踩過】正確的判法是:
+  `git diff --name-only <整合樹HEAD> <合併commit>` 的結果,必須**逐字等於**
+  `git diff --name-only <整合當時的 main 基準> <現在的 main 前一顆>`——也就是「差異剛好等於你自己補進去的那些」。
+  對不上才是真的有問題。整合結果檔開頭就寫了「main 基準」是哪一顆,照那個比。
 - WIP、分支漂移、狀態表失真的監督者——發現卡住或講不通就直接跟協調者說,不要等被問。
 - **規則層變更的執行者**:`AGENTS.md`、`CLAUDE.md`、`.claude/skills/`、`.agents/skills/`、`.claude/commands/` 這些「規則本身」的檔案,
   使用者批准後由你直接執行,不經協調者轉手——理由見 `AGENTS.md`「規則層變更的執行者」段。
