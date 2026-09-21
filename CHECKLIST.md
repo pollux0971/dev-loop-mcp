@@ -10,12 +10,12 @@
 驗證方式:全部填完後,在新專案根目錄執行下面這行,應該沒有任何輸出:
 
 ```bash
-grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git \
-  --exclude=CHECKLIST.md --exclude=CHANGELOG.md --exclude=PITFALLS.md \
-  --exclude=README.md --exclude=07-practices.md .
+grep -rlF '{{' --exclude-dir=node_modules --exclude-dir=.git . \
+  | grep -vFx -e './README.md' -e './CHECKLIST.md' -e './CHANGELOG.md' \
+      -e './PITFALLS.md' -e './docs/07-practices.md'
 ```
 
-排除的 5 份是在文字裡介紹或引用 placeholder 的文件,不是要填的地方。(1.7.0 以前這裡寫 `grep -rn '{{' .`——本檔自己就有幾十行 `{{`,那個指令永遠不可能回傳空。)
+排除根目錄的 5 份是在文字裡介紹或引用 placeholder 的文件,不是要填的地方;巢狀同名檔案不受影響,照樣掃描。(1.7.0 以前這裡寫 `grep -rn '{{' .`——本檔自己就有幾十行 `{{`,那個指令永遠不可能回傳空。)
 
 表格裡 `{{X_1/2/3}}`、`{{X_1..5}}` 這種寫法代表一組編號連續的 placeholder,每一個都要填。
 
