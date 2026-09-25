@@ -197,6 +197,13 @@
       "purpose": "【驗】README 引用的可重用實戰做法。"
     },
     {
+      "root": "docs/08-coordinator.md",
+      "include": [
+        "docs/08-coordinator.md"
+      ],
+      "purpose": "【驗】協調器入口(workflow-start/next/run)的說明:三個指令各自做什麼、唯讀推薦與實際推進的界線。與 workflow-coordinator skill 成對出貨。"
+    },
+    {
       "root": "docs/templates/TASK.md.template",
       "include": [
         "docs/templates/TASK.md.template"

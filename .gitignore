@@ -9,3 +9,9 @@ package/dist/
 # 1.6.7 前模板自己把它追蹤了(npx 階段 C 合併時帶進來的)——模板違反自己訂的規則,第六次。
 .orca-brief/REVIEW.md
 .orca-brief/*-REPORT.md
+.orca-brief/*-BRIEF.md   # 上游自己的一次性工作簡報,跟 REPORT 同性質(2026-09-26:曾被 git add -A 誤掃進版控)
+
+# 第三方素材與本機工具狀態,不進版控(2026-09-26:BMAD 574 個檔曾被 git add -A 誤掃進來)
+BMAD-METHOD-main*
+.codegraph/
+.cursor/

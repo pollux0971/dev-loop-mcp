@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import { lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import "tsx";
@@ -151,6 +152,15 @@ async function copyRepo(destination) {
       if (relative === "node_modules" || relative.startsWith("node_modules/")) return false;
       if (relative === "package/dist" || relative.startsWith("package/dist/")) return false;
       if (relative.startsWith("package/") && relative.endsWith(".tgz")) return false;
+      // 只複製普通檔、目錄與 symlink。socket / FIFO / 裝置檔用 fs.cp 會直接 EINVAL 爆掉,
+      // 而那種檔案會被 repo 目錄裡跑的工具憑空放進來(2026-09-26:.codegraph/daemon.sock
+      // 讓整個黑箱 gate 紅掉,程式一個字沒改)。同 P-101:gate 不能假設環境乾淨。
+      try {
+        const stats = lstatSync(source);
+        if (!stats.isFile() && !stats.isDirectory() && !stats.isSymbolicLink()) return false;
+      } catch {
+        return false;
+      }
       return true;
     },
   });

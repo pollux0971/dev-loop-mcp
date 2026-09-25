@@ -1,2 +1,0 @@
-extends: relaxed
-ignore: [node_modules/, docs-site/, _bmad*/]
