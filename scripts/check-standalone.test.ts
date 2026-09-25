@@ -131,6 +131,29 @@ describe('check-standalone:`_doc` metadata 慣例(消費者回報事故 AI_KM d3
 });
 
 describe('check-standalone:pending 語意(來源 nightmare-assault)', () => {
+  it.each([
+    ['新增意圖欄', '| Phase | 標題 | 意圖 | 階段 | 狀態 | 完成日 |\n|---|---|---|---|---|---|\n| 1 | Foo | Ability | Wave 0 | todo | |', 0, '實際 exit=7'],
+    ['英文欄名與欄位重排', '| Status | Intent | Phase |\n|---|---|---|\n| done | Ability | 1 |', 1, 'pending 已過期'],
+    ['缺少狀態欄', '| Phase | 標題 | 階段 |\n|---|---|---|\n| 1 | Foo | Wave 0 |', 1, '缺少狀態(Status)欄'],
+    ['缺少狀態值', '| Phase | Status |\n|---|---|\n| 1 | |', 1, '狀態格式看不懂'],
+    ['無效狀態值', '| Phase | Status |\n|---|---|\n| 1 | Wave 0 |', 1, '狀態格式看不懂'],
+    ['其他表格同號列', '| Item | Title | Stage | Status |\n|---|---|---|---|\n| 1 | Foo | Wave 0 | todo |', 1, '沒有 phase-1 的表格列'],
+    ['不能沿用前表欄位', '| Phase | Status |\n|---|---|\n| 2 | done |\n\n| Item | Status |\n|---|---|\n| 1 | todo |', 1, '沒有 phase-1 的表格列'],
+  ])('%s:由 Phase 表的欄名辨識狀態', (_label, table, expectedCode, message) => {
+    const root = makeRoot();
+    writeFeaturePhase(root, '01-foo', 1, 'todo');
+    writeFileSync(join(root, 'features/01-foo/FEATURE.md'), `# Foo\n\n${table}\n`);
+    const manifest = writeManifest(root, {
+      entry: { cmd: failCmd(7), interactive: false, pending: '01-foo/phase-1' },
+    });
+
+    const { code, output } = run(root, manifest);
+
+    expect(code).toBe(expectedCode);
+    expect(output).toContain(message);
+    expect(output).toContain(`gate=standalone result=${expectedCode ? 'FAIL' : 'PASS'} scanned=1`);
+  }, SPAWN_TIMEOUT_MS);
+
   it('pending 的 phase 已 done、指令本來就通過 → 視為一般項目,PASS', () => {
     const root = makeRoot();
     writeFeaturePhase(root, '01-foo', 1, 'done');

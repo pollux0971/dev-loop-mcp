@@ -150,12 +150,24 @@ function resolvePendingStatus(root: string, ref: string): PendingResolution {
   const featurePath = join(root, 'features', folder!, 'FEATURE.md');
   if (!existsSync(featurePath)) return { error: `找不到 ${featurePath}` };
   const content = readFileSync(featurePath, 'utf8');
+  let phaseColumn = -1;
+  let statusColumn = -1;
   for (const line of content.split('\n')) {
-    if (!line.trim().startsWith('|')) continue;
+    if (!line.trim().startsWith('|')) {
+      phaseColumn = statusColumn = -1;
+      continue;
+    }
     const cells = line.split('|').map((c) => c.trim());
-    // Phase 表格式:| Phase | 標題 | 階段 | 狀態 | 完成日 |,cells[0] 是空字串(開頭的 |)。
-    if (cells[1] !== phaseNum) continue;
-    const statusCell = cells[4] ?? '';
+    const headerPhaseColumn = cells.findIndex((cell) => cell.toLowerCase() === 'phase');
+    if (headerPhaseColumn >= 0) {
+      // 用欄名定位,兼容舊表與新增「意圖」欄的表;不能把別張表的數字列當 phase。
+      phaseColumn = headerPhaseColumn;
+      statusColumn = cells.findIndex((cell) => cell === '狀態' || cell.toLowerCase() === 'status');
+      continue;
+    }
+    if (phaseColumn < 0 || cells[phaseColumn] !== phaseNum) continue;
+    if (statusColumn < 0) return { error: `${featurePath} 的 Phase 表缺少狀態(Status)欄` };
+    const statusCell = cells[statusColumn] ?? '';
     const status = PHASE_STATUSES.find((s) => statusCell.startsWith(s));
     if (status) return { status };
     return { error: `${featurePath} 的 phase-${phaseNum} 那一列狀態格式看不懂:"${statusCell}"` };
