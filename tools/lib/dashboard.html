@@ -354,8 +354,12 @@ var TOKEN = "__TOKEN__";
 var HUB = "__HUB__";
 var data = JSON.parse(document.getElementById('dp-data').textContent);
 var ui = { acct:{ form:{ name:'', cli:'claude', plan:'' }, roles:null, login:null, msg:null, busy:false }, view:'console', node:null, pinned:false, tab:null, cursor:null, playing:null, railOpen:false, tlNode:null, tlAll:false, more:{} };
-try { var saved = JSON.parse(localStorage.getItem('dp-console') || '{}'); ui.railOpen = !!saved.railOpen; ui.view = saved.view || 'console'; } catch (e) {}
-function save(){ try { localStorage.setItem('dp-console', JSON.stringify({ railOpen: ui.railOpen, view: ui.view })); } catch (e) {} }
+// 一打開看哪一頁:有軟體在開發 → 主控台;沒有 → 規劃頁(Front · intake),跟 Front 規劃下一版。
+// data.initial_view 由 dp 算(v4.7.3);舊版 dp 的專案沒有這個欄位,就用看得到的資料估。之後切頁只在這次打開有效,不記住
+ui.view = data.initial_view || ((data.in_progress || []).length || (data.review || []).length || (data.blocked || []).length
+  || (data.decisions || []).some(function(d){ return /^(accept|escalation|stuck|testfix|spawn):/.test(d.ref); }) ? 'console' : 'planning');
+try { var saved = JSON.parse(localStorage.getItem('dp-console') || '{}'); ui.railOpen = !!saved.railOpen; } catch (e) {}
+function save(){ try { localStorage.setItem('dp-console', JSON.stringify({ railOpen: ui.railOpen })); } catch (e) {} }
 
 var STATUS = { done:'完成', 'in-progress':'施工中', review:'驗收中', todo:'未開始', blocked:'卡住', stale:'需重驗' };
 var LEG = { characterize:'釘現況', test:'測試棒', dev:'實作棒', integrate:'整合棒', 'test-fix':'修測試' };

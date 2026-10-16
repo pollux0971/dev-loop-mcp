@@ -17,6 +17,9 @@ import { openDecisions, pendingE2e, pipelineFor, replay } from './state.mjs';
 import { ASIS, readBaseline } from './brownfield.mjs';
 import { CLIS, ROLES, accountUsage, globalUsage, loadAccounts } from './accounts.mjs';
 
+/** 施工中才會有的決定(不含新功能提案 node: 與試用,那兩種在規劃頁處理)。 */
+const BUILD_REFS = /^(accept|escalation|stuck|testfix|spawn):/;
+
 /** 主控台要的全部資料。純函式(除了讀檔),測試直接比對它。 */
 export function dashboardData(root, extra = {}) {
   const config = loadConfig(root);
@@ -109,8 +112,16 @@ export function dashboardData(root, extra = {}) {
     };
   });
 
+  // v4.7.3 有沒有軟體正在開發:節點在施工、驗收、卡住、退避、可以派工,或有施工中的決定(合併、卡住、退回測試棒、子節點)。
+  // 沒有的時候主控台一打開是規劃頁(Front · intake):接下來要做的就是跟 Front 規劃下一版,提案與試用也都在那一頁。
+  const building = snapshot.in_progress.length > 0 || snapshot.review.length > 0 || snapshot.blocked.length > 0
+    || snapshot.backoff.length > 0 || snapshot.dispatchable.length > 0
+    || openDecisions(state).some((d) => BUILD_REFS.test(d.ref));
+
   return {
     project: config.name ?? basename(resolve(root)),
+    building,
+    initial_view: building ? 'console' : 'planning',
     generated_at: new Date().toISOString(),
     ledger_seq: state.maxSeq,
     halted: state.halted,

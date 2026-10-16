@@ -49,7 +49,10 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   既有的 `.gitignore` 補上 `.dp/` 與 `*.tmp-*`;**`dp upgrade` 會把 dp 的檔 commit**,連同 dp 規劃的檔裡還沒進 git 的(修好 4.7.3 以前裝的專案;
   MCP 是 `dp_upgrade_project`)。以前升級完留在工作目錄,tick 拒絕執行,從 MCP 升級的 AI 沒有 git 可用,只能請使用者自己 commit(實測漏了 `.dp-install.json`)。
   doctor 多一項「dp 的檔」:沒進 git 就 ✗,修法是 `dp upgrade`。
-- 新測試 9 個,加上 PR #1 的 1 個。`npm test` 180 個全部通過(4.7.2 是 171 個)。
+- **主控台沒有軟體在開發時,一打開是規劃頁(Front · intake)**:沒有節點在施工、驗收、卡住、退避、可以派工,也沒有等合併 / 卡住 / 子節點的決定時,
+  `dashboardData` 的 `initial_view` 是 `planning`(另有 `building`),否則是 `console`。頁面照它開第一頁,不再記住上次看的頁;
+  舊版 dp 的專案沒有這個欄位,頁面用看得到的資料估。hub 點「開主控台」也一樣。
+- 新測試 10 個,加上 PR #1 的 1 個。`npm test` 181 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

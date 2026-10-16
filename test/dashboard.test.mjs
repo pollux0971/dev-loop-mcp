@@ -5,12 +5,26 @@ import { join } from 'node:path';
 import { dashboardData, renderDashboard, serveDashboard } from '../tools/lib/dashboard.mjs';
 import { readEvents } from '../tools/lib/ledger.mjs';
 import { CALC, CALC_GHERKIN, REPO, addNode, cleanup, makeProject, tickUntil } from './helpers.mjs';
-import { proposeFeature } from '../tools/lib/intake.mjs';
+import { applyApprovedProposals, proposeFeature } from '../tools/lib/intake.mjs';
 import { run } from '../tools/lib/util.mjs';
 
 after(cleanup);
 
 describe('dp dashboard(唯讀主控台)', () => {
+  test('一打開看哪一頁:空專案、只有提案 → 規劃頁;批准後有節點可以派工 → 主控台;頁面照 initial_view 開', () => {
+    const proj = makeProject();
+    assert.equal(dashboardData(proj).initial_view, 'planning', '空專案');
+    addNode(proj, CALC, CALC_GHERKIN);
+    assert.equal(dashboardData(proj).initial_view, 'planning', '批准了但還沒寫進 DAG(下一個 tick 才套用):還在規劃頁');
+    applyApprovedProposals(proj);
+    const d = dashboardData(proj);
+    assert.equal(d.building, true, '寫進 DAG、可以派工就算在開發');
+    assert.equal(d.initial_view, 'console');
+    const html = renderDashboard(d);
+    assert.match(html, /ui\.view = data\.initial_view \|\|/, '頁面用 initial_view 決定第一頁');
+    assert.doesNotMatch(html, /saved\.view/, '不再記住上次看的頁(沒有在開發時要回到規劃頁)');
+  });
+
   test('等你的決定、節點狀態、花費都從帳本重播出來;不寫任何事件', async () => {
     const proj = makeProject();
     addNode(proj, CALC, CALC_GHERKIN);
@@ -20,6 +34,8 @@ describe('dp dashboard(唯讀主控台)', () => {
 
     const d = dashboardData(proj);
     assert.equal(readEvents(proj).length, before, 'dashboard 不能寫事件');
+    assert.equal(d.building, false, '沒有東西在施工(只有一份等批准的提案)');
+    assert.equal(d.initial_view, 'planning', '沒有軟體在開發時,一打開是規劃頁');
     assert.equal(d.counts.done, 1);
     assert.equal(d.decisions.length, 1);
     assert.match(d.decisions[0].question, /減法|calc\/v2/);
