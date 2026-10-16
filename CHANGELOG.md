@@ -2,6 +2,16 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.8.1 — 程式註解改成英文;輸出超過 64 KB 被截斷
+
+- **輸出被截斷**:`dlm` 的輸出接到 pipe 時,超過 64 KB 的部分會不見(寫到 pipe 是非同步的,`process.exit()` 把還在排隊的丟掉)。
+  hub 與 MCP 是經由 pipe 讀專案的 `dlm op` 的,所以大專案的 `dlm op dashboard`(主控台的資料,minilang 有 235 KB)回來是壞掉的 JSON,
+  `dlm api openapi | jq` 之類也只拿到前 64 KB。現在等 stdout、stderr 都寫完才結束。新測試用晚一點才讀的 pipe 重現(沒修時一定是 65536 bytes)。
+  已經裝好的專案要 `dlm upgrade` 一次才會用到修好的 CLI(hub 與 MCP 跑的是專案自己那份)。
+- **註解改成英文**:`tools/`、`test/` 與 `payload/` 的範本腳本、設定的程式註解全部換成英文;字串、測試名稱、CLI 與畫面上的訊息、
+  CHANGELOG 與文件照舊是中文。由 8 個 Sonnet subagent 分檔翻譯,每個檔都用 TypeScript 的 printer 去掉註解後跟翻譯前比對,83 個檔程式碼完全相同。
+- `npm test` 205 個全部通過。
+
 ## 4.8.0 — 改名 dev-loop-mcp,指令 dp 改成 dlm
 
 - **名字**:專案改名 dev-loop-mcp(GitHub repo 也是 `pollux0971/dev-loop-mcp`),短名與指令 `dp` → `dlm`。

@@ -287,6 +287,17 @@ describe('文件跟路由表、流程表一致', () => {
       assert.equal(readFileSync(join(REPO, 'payload', 'docs', 'dlm', file), 'utf8'), want, `${file} 過期了:node tools/dlm.mjs api ${kind} > payload/docs/dlm/${file}`);
     }
   });
+
+  test('超過 64 KB 的輸出走 pipe 也不會被截斷(hub 與 MCP 就是經由 pipe 讀 dlm op 的)', () => {
+    const want = readFileSync(join(REPO, 'payload', 'docs', 'dlm', 'openapi.json'), 'utf8');
+    assert.ok(Buffer.byteLength(want) > 65536, 'openapi.json 要大於 64 KB 才測得到');
+    // the CLI writes it in one go; a pipe takes 64 KB, the rest waits in the CLI's queue and used to be dropped on exit.
+    // A reader that starts late (sleep) makes that happen every time instead of now and then
+    for (let i = 0; i < 2; i++) {
+      const r = run(`node '${join(REPO, 'tools', 'dlm.mjs')}' api openapi | (sleep 0.3; cat) | wc -c`, { cwd: REPO });
+      assert.equal(Number(r.stdout.trim()), Buffer.byteLength(want));
+    }
+  });
 });
 
 describe('dlm mcp', () => {

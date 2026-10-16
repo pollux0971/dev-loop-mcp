@@ -694,11 +694,22 @@ function mcpCommand(root, pos, flags) {
   return serveMcp({ cwd: root });
 }
 
-main().then((code) => process.exit(code ?? 0), (e) => {
+// Exit only after stdout and stderr are flushed. Writes to a pipe are asynchronous, and process.exit() drops whatever is still
+// queued: output past 64 KB was cut off, so `dlm op dashboard` for a big project (read by the hub and MCP) returned broken JSON.
+function exit(code) {
+  let left = 2;
+  const done = () => { if (--left === 0) process.exit(code); };
+  process.stdout.write('', done);
+  process.stderr.write('', done);
+}
+
+main().then((code) => exit(code ?? 0), (e) => {
   if (e instanceof DlmError) {
     console.error(`✗ ${e.message}`);
-    process.exit(e.code || 1);
+    exit(e.code || 1);
+    return;
   }
   console.error(e);
-  process.exit(1);
+  exit(1);
 });
+
