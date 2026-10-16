@@ -1,217 +1,467 @@
-# dev-paradigm-mcp v4.7.2
+# dev-paradigm-mcp
 
-> 原名 dev-paradigm。從 4.7.2 起叫 dev-paradigm-mcp:主要入口是 MCP server;指令還是 `dp`,MCP 工具還是 `dp_` 開頭。
+**English** | [繁體中文](README-zh.md)
 
-讓 AI 從需求一路做到合併的開發範式。你只跟**一個對話視窗**說話;背景有一支 script 排程、派 headless agent 施工、
-用機器(含小模型)驗收,只有真正需要你判斷的事才會出現在你的收件匣。
+**An MCP server that takes AI from a requirement all the way to merged code.**
+You talk to one chat window. In the background, dp plans the work as a DAG, sends headless agents to build it one small step at a time, checks every claim by re-running it, and merges only what passes. It asks you only about things that really need a human.
+
+![dp hub: every project on this machine on one page](docs/images/hub.png)
+
+v4.7.3 · Node ≥ 20 · zero dependencies · 180 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+
+> Formerly **dev-paradigm**. Since 4.7.2 it is called dev-paradigm-mcp, because the MCP server is now the main way in. The command is still `dp`, and the MCP tools still start with `dp_`.
+>
+> Most docs inside the repo (`docs/`, `payload/docs/dp/`) and the CLI's own messages are in Traditional Chinese.
+
+## Contents
+
+- [What it feels like](#what-it-feels-like)
+- [How it works](#how-it-works)
+- [Install and deploy](#install-and-deploy)
+- [Quick start](#quick-start)
+- [Features](#features)
+- [Dashboard tour](#dashboard-tour)
+- [Reference](#reference)
+- [Status: what has been tested](#status-what-has-been-tested)
+- [This repo](#this-repo)
+
+## What it feels like
+
+Below is a shortened version of a real session from the test run behind this README (2026-10-16). Claude Code was started outside any project and given **only** the dp MCP tools.
 
 ```
-你:「我想要一個記帳 app,先能記一筆支出就好」
-Front(你唯一的視窗):問兩個問題 → 跟你寫好 gherkin → 「這樣可以嗎?」
-你:「可以」
-            ……背景:測試棒(紅)→ 實作棒(綠)→ 驗證 → 合併……
-你:「進度?」
-Front:【要你決定的 · 1】E2E:I1 你親手試過了嗎?  【上次看之後】合併 3 · 退回 1 · $0.84
+You:     Use dp to start a new project in /data/python/dp-demo/todo-cli. A todo CLI in Node.
+         v1 is just `todo add <text>` and `todo list`; `todo done <n>` comes later.
+         Run worker, Critic and Verifier on my Claude Max account claude-max; Verifier on haiku.
+         Autonomy L1, $5 a day.
+Claude:  dp_flow → dp_list_accounts → dp_init_project → dp_setup_project → dp_set_role ×3 → dp_propose_bundle
+         "Plan for v1 (proposal p-001): todo/v1 (add + list), shared/bin (the `todo` command),
+          I1 (you try it yourself). The roadmap already has v2 = todo done. Say OK to start."
+You:     OK, approved, go.
+Claude:  dp_decide node:p-001 yes (your exact words) → dp_start_loop
+         "2 workers are running on claude-max: todo/v1 is writing tests first, shared/bin is editing package.json."
+You:     Progress?
+Claude:  dp_get_project → dp_get_inbox → dp_show
+         "shared/bin is done and waiting for you. The Verifier wasn't sure about one item: it wanted to
+          re-run `npm pkg get bin`, but that command isn't on its allowed list. It didn't find a problem.
+          Merge it?"
+You:     Merge.
 ```
 
-## 核心想法
+## How it works
 
-- **一個事實只放一個地方,只由 script 寫。** 結構在 `dag.json`,歷史在只增不改的 `ledger/events.jsonl`,
-  狀態由重播得出。沒有「兩份文件說法不一樣」這種事。
-- **agent 只拿它那一棒需要的東西。** 不給整張 DAG、不給 475KB 的規則;每份送出的 prompt 都留檔可查。
-- **「完成」要能重跑。** worker 的每個宣稱附指令與退出碼,機器用同一條指令重跑;測試棒必須紅、實作棒必須綠、
-  寫到範圍外就退回;合併前在「main + 分支」的臨時樹再跑一次全 gate(預設 `check:dp`、`typecheck`、`test`、`accept`;
-  gate 鏈沒有任何測試類 script 時,L1 以上 dp 拒絕執行)。等你決定的期間主線若前進,合併前會在新主線上重跑。
-- **權限從寬,紀錄從嚴。** Front 可以讀寫、跑指令,worker 跑得了測試;只擋會弄壞狀態或救不回來的事(手改帳本、`rm -rf`、`sudo`)。
-  你說的話由 hook 簽章,決定對得上原話時會記 hash;帳本每筆也簽章。要 v2 的嚴格模式見 [MIGRATION.md](MIGRATION.md)。
-- **小模型審大模型,但只能說不。** 小模型(預設 Claude Haiku)回答很窄的題目(這段輸出有沒有推翻這個宣稱?這段實作是不是對測試值寫死?),
-  兩種問法不一致就棄權,棄權交給大模型 Critic 或你。小模型的錯只會造成「多問一次」,不會讓壞程式進主線。
-- **一版一版長大。** intake 先畫路線圖(`docs/ROADMAP.md`),一次只把一版放進 DAG;每一版最後是一個整合點,
-  你親手試過說 OK,下一版才開工。側向是施工中發現的必要小功能 v1.1、v1.2(worker 提出,依自治等級自動或問你)。
-- **錯的地方退回對的那一棒。** 實作棒發現測試寫錯時退回測試棒修正,不是原地重試到卡死。
+```mermaid
+flowchart LR
+  you([You]) <--> front["Front<br/>your Claude Code chat"]
+  front -- "dp_* MCP tools" --> dp[("dp<br/>dag.json + ledger")]
+  dp -- "work order" --> w["Worker<br/>one leg: test → dev"]
+  w -- "report + evidence" --> v["Verifier<br/>scripts + small model"]
+  v -- "all clear" --> g["Full gate on main + branch"]
+  g -- "green" --> m["Merge"]
+  v -- "unsure" --> c["Critic (L2) or you"]
+  m -- "integration point" --> try(["You try it,<br/>then the next version starts"])
+```
 
-## 快速開始
+| Role | What it is | Can approve |
+|---|---|---|
+| **Front** | The chat you talk to (Claude Code, Cursor, Codex…). It changes state only through dp tools. | Nothing. It passes on your words. |
+| **Orchestrator** | `dp tick`, a plain script. The only writer of the ledger. Dispatches, verifies, merges. | Nothing. It just runs the rules. |
+| **Worker** | A headless model run (`claude -p`), one per leg, in a copy of the repo without `.git`. | Nothing |
+| **Verifier** | Deterministic script checks plus very narrow questions to a small model (Claude Haiku by default). Never reads the worker's story. | It can only say no (FAIL) or "not sure" (ABSTAIN) |
+| **Critic** | An optional large model. Reads the spec, the checks and the diff. | At L2: hand-ins the Verifier was unsure about |
+| **You** | — | Everything. Some things are always yours (see [Autonomy levels](#5-autonomy-levels)). |
 
-需要 Node ≥ 20 與 git。
+The core ideas:
 
-**用 MCP(v4.7,建議):** 這台電腦裝一次,之後在任何目錄開 Claude Code 都能用,管這台電腦上所有 dp 專案。
+- **Each fact lives in one place, and only the script writes it.** The structure is in `dag.json`. History is in the append-only `ledger/events.jsonl`. State comes from replaying the ledger. Two files can never disagree.
+- **"Done" must be re-runnable.** Every claim a worker makes comes with a command and an exit code. dp re-runs the same command. The test leg must be red, the dev leg must be green, and writing outside the allowed files gets the leg sent back.
+- **An agent gets only what its leg needs.** No whole DAG, no huge rule file. Every prompt that goes out is saved, so you can see exactly what the worker saw.
+- **Small models review big models, but can only say no.** A small model's mistake costs you one extra question. It can never let bad code into main.
+- **Grow one version at a time.** Each version ends with an integration point. You try it with your own hands. The next version starts only after you say it works.
+- **Loose permissions, strict records.** Front can read, write and run commands. dp blocks only what would corrupt state or can't be undone.
+
+## Install and deploy
+
+You need Node ≥ 20, git, and an MCP client (Claude Code is the tested one). Workers also need a model CLI: Claude Code (tested for real) or Codex (written from its docs, not yet tested for real).
 
 ```bash
-git clone <this repo> dev-paradigm-mcp
-node dev-paradigm-mcp/tools/dp.mjs mcp install                 # 裝進 Claude Code(user scope);--client cursor / codex 裝到別的工具
+git clone https://github.com/pollux0971/dev-paradigm-mcp.git
+node dev-paradigm-mcp/tools/dp.mjs mcp install
 ```
 
-重開 Claude Code,直接說「用 dp 在 ~/code/my-app 開一個新專案,我想做一個記帳 CLI」,或打 `/mcp__dp__new-project`。
-它會照流程呼叫 `dp_init_project` → `dp_setup_project` → 跟你談第一版 → `dp_propose_bundle` → 等你說好才 `dp_decide` → `dp_start_loop`。
-之後問「我的專案現在怎麼樣?」就是 `dp_overview` + `dp_get_inbox`。流程全文:`payload/docs/dp/FLOW.md`(或呼叫 `dp_flow`)。
+`dp mcp install` registers one MCP server named `dp` for the whole machine. It manages every dp project on it.
 
-**用指令:**
+| Client | Command | What it does |
+|---|---|---|
+| Claude Code (default) | `dp mcp install` | `claude mcp add --scope user dp -- node <absolute path>/tools/dp.mjs mcp` |
+| Cursor | `dp mcp install --client cursor` | writes `~/.cursor/mcp.json` |
+| Codex | `dp mcp install --client codex` | `codex mcp add` |
+| One project only | `dp mcp install --client project` | writes that project's `.mcp.json` |
+| Anything else | `dp mcp config` | prints the config so you can paste it yourself |
+
+Check it worked:
 
 ```bash
-node dev-paradigm-mcp/tools/dp.mjs init my-app --name my-app  # 會自動登記到這台電腦的專案清單
+claude mcp list        # → dp: node …/tools/dp.mjs mcp - ✔ Connected
+```
+
+Then restart Claude Code. `/mcp` shows `dp` with 38 tools and 4 prompts.
+
+- **Install from the dev-paradigm-mcp folder.** The copy of dp inside each project has no `payload/`, so it can't create projects.
+- **Updating:** `git pull`, then run `dp mcp install` again. Upgrade each project with `dp upgrade` inside it, or the `dp_upgrade_project` tool.
+- **Removing:** `claude mcp remove dp -s user`. Your projects and their ledgers stay untouched.
+
+## Quick start
+
+### A. Through MCP (recommended)
+
+Open Claude Code in any folder and just say what you want:
+
+> Use dp to start a new project in ~/code/my-app. I want a budgeting CLI.
+
+Or type `/mcp__dp__new-project`. The AI follows dp's built-in flow:
+
+1. `dp_init_project`, then `dp_setup_project`. It asks you about autonomy level and budget first.
+2. It talks through the first version with you, then calls `dp_propose_bundle`. This is only a proposal; nothing is built yet.
+3. When you say OK, it calls `dp_decide` with your exact words, then `dp_start_loop`.
+4. "How's my project doing?" runs `dp_overview` + `dp_get_inbox`. It relays what needs you.
+5. When a version is ready, it tells you how to try it. Your answer goes in with `dp_confirm`.
+
+The whole flow, step by step: `dp_flow`, or [`payload/docs/dp/FLOW.md`](payload/docs/dp/FLOW.md).
+
+### B. Through the CLI
+
+```bash
+node dev-paradigm-mcp/tools/dp.mjs init my-app --name my-app   # also registers it on this machine
 cd my-app
-node tools/dp.mjs setup      # 一題一題問:用哪個 AI、Verifier、自治等級、預算;寫好設定並 commit
-node tools/dp.mjs doctor     # 健康檢查,每一項 ✓ / ⚠ / ✗,不對的附修法(隨時可以再跑)
+node tools/dp.mjs setup      # one question at a time: which AI, Verifier, autonomy, budget
+node tools/dp.mjs doctor     # health check: ✓ / ⚠ / ✗ for each item, with a fix for each problem
 ```
 
-接著:
+Then open Claude Code in `my-app` and type `/inbox`. From now on, talk only to that window. Front asks whether to start the background loop (`dp run --daemon`; stop it with `dp run --stop`). After that, dp moves things forward every 60 seconds.
 
-1. (setup 已經做好;想手動調整時)編輯 `dp.config.json`:`agents.worker.cmd`(headless 指令)、選配 `verifier`(預設 Claude Haiku)、
-   `critic`。範例在 `docs/dp/AGENTS-SETUP.md`。worker 在不含 `.git` 的副本裡跑,但程式仍在你的主機上執行
-   (Claude worker 會擋 `rm -rf` 與 `sudo`);要更強的隔離就把整個專案放進容器或 VM。見 `docs/dp/SECURITY.md`。
-2. 在 `my-app` 開 Claude Code 打 `/inbox`。從此只跟這個視窗說話:要新功能就說,它會用 intake 跟你把規格寫到可以批准;小改動它可以直接做。
-3. Front 會問你要不要啟動背景迴圈(`dp run --daemon`,停止用 `dp run --stop`),之後每 60 秒自動推進。
-
-既有專案見下一節;從舊版升級:見 [MIGRATION.md](MIGRATION.md)。
-
-## 既有專案(brownfield)
+### C. An existing project (brownfield)
 
 ```bash
-node dev-paradigm-mcp/tools/dp.mjs init . --existing   # 只補 dp 的檔;已經有程式時不裝範本的 TS 工具鏈
-node tools/dp.mjs setup                            # 第一題選 Brownfield(偵測到程式就是預設),確認專案的測試指令
-node tools/dp.mjs onboard                          # 測試基線 + docs/AS-IS.md 草稿 + ROADMAP v0,並 commit
+node dev-paradigm-mcp/tools/dp.mjs init . --existing   # adds only dp's files
+node tools/dp.mjs setup                                 # pick Brownfield, confirm the test command
+node tools/dp.mjs onboard                               # test baseline + docs/AS-IS.md draft + ROADMAP v0
 ```
 
-然後在 Claude Code 打 `/inbox`:Front 會用 `brownfield-onboard` skill 讀程式、補完 `docs/AS-IS.md`、跟你確認,再接著問你要加什麼。
-跟新專案不一樣的地方:
+Or through MCP: `/mcp__dp__existing-project`. See [Existing projects](#7-existing-projects-brownfield) below.
 
-- **gate 跑專案自己的測試。** setup 偵測 `package.json` 的 test、pytest / unittest、`go test`、`cargo test`、`make test`,
-  寫進 `gates.commands`(例 `{"test": "python3 -m pytest -q"}`);範本的 typecheck / accept / dry-run / mutation 專案沒有就不放。
-- **本來就紅的測試不算 worker 的。** `dp onboard`(之後可用 `dp baseline` 重記)在主線上跑一次測試,把失敗的測試記進 `docs/dp-baseline.json`。
-  合併前 gate 紅了,但紅的全都在基線裡 → 算通過;多一個新的紅就擋,並指出是哪一個。看不出是哪些測試紅的,一律當紅。
-- **改到既有程式先釘住現況。** 節點的 `owns` 涵蓋主線上已有的程式檔時,提案自動在最前面加一棒 `characterize`:
-  只准寫測試、不准改原始碼,而且要在現在的程式上全綠;之後每一棒都改不到這些測試,實作棒還要讓它們維持綠。
-  pipeline 變成 characterize → test → dev。一次最多 10 個檔,刻意要改掉的行為寫進 gherkin 並把那個檔從 characterize 拿掉。
-- 主控台規劃頁右上角顯示 Greenfield / Brownfield,brownfield 另外列出測試基線與 AS-IS 有沒有寫。
+## Features
 
-## 多個訂閱帳號(v4.6)
+### 1. One window (Front)
 
-手上有好幾個 Claude Max / Pro 或 ChatGPT(Codex)方案,可以讓 dp 輪流用,一個額度用完就換下一個:
+You talk to one chat. Front is whatever AI client you use: Claude Code with dp's skills when you work inside a project, or any MCP client through the dp tools.
+
+- **Inside a project**, Claude Code gets slash commands (`/inbox`, `/status`, `/decide`, `/intake`) and skills (`front`, `intake`, `brownfield-onboard`, `decision-record`, `mutation-testing`).
+- **From anywhere**, the MCP server hands the client dp's flow and rules when it connects, so even a fresh session knows what to do.
+- **The inbox has three parts:** what needs your decision (with options and a recommendation), what happened since you last looked (merges, send-backs, cost), and where to dig in for details.
+- **Decisions are yours.** `decide`, `confirm`, `unblock` and `resume` only pass on what you said in this turn, word for word. Front never picks for you. Text written by workers or models is always marked `untrusted` and treated as data, never as instructions.
+
+### 2. Plan one version at a time
+
+New work always goes in as a **proposal** first. dp writes it into the DAG only after you approve it.
+
+- **A bundle is a whole version:** a few capability nodes plus one **integration point** (`I1`, `I2`…). Its gherkin has `@e2e` scenarios you will try by hand. One proposal, one approval.
+- **The roadmap** (`docs/ROADMAP.md`) holds the later versions. Only the current version goes into the DAG.
+- **Versions wait for each other.** The next version's nodes depend on the previous integration point. They start only after it is merged **and** you have confirmed it works.
+- **Node kinds:** `phase` (one version of one capability, e.g. `todo/v1`), `integration` (`I1`), `shared` (shared things like `package.json`; only a shared node may touch build and gate files).
+- **The tool schema lists every field.** `dp_propose_feature` and `dp_propose_bundle` describe each field (types taken from the DAG's own schema). Mistakes are rejected right away, with the exact field named, e.g. `body.bundle.nodes[0].intent: 長度 > 300` (length > 300).
+- **Proposals warn about traps.** The proposal still goes through, but comes back with `warnings` (also shown in the inbox) when: a new project's node puts code outside `packages/` and `apps/` (the template's tests and mutation testing only look there), or an integration point's gherkin reuses a capability's sentences word for word (it would already be green, so its test leg could never start red).
+- **Side branches.** If a worker finds a small feature that must exist first, it can propose a child node (`v1.1`). At L2, a child that stays inside its parent's scope is approved automatically; otherwise you are asked.
+
+### 3. Relay legs and machine checks
+
+Each node is built as a short relay. A **leg** is one headless run with one job:
+
+| Leg | Job | Must end |
+|---|---|---|
+| `characterize` | Brownfield only: write tests that pin down how the existing code behaves now | green on the current code |
+| `test` | Write tests from the gherkin. No implementation. | **red** (for the right reason, not a syntax error) |
+| `dev` | Make the tests pass. May not touch tests or gherkin. | green |
+| `integrate` | Wire capabilities together at the integration point | green |
+| `test-fix` | Fix a test the dev leg proved wrong (after the Critic or you agree) | — |
+
+Default pipelines: `phase` = test → dev, `integration` = test → integrate, `shared` = dev.
+
+After each leg, the Verifier runs **script checks** first: clean worktree, no sandbox escape (touching `.git`, `.dp/`, `node_modules`, symlinks), only allowed paths written, a real report, every piece of evidence re-run with the same exit code, acceptance red or green as required. Optional checks: gherkin dry-run (every step bound) and incremental mutation testing.
+
+Before merging, dp builds a temporary tree of **main + the branch** and runs the full gate (`check:dp`, `typecheck`, `test`, `accept` by default). If main moves while you are deciding, it re-runs on the new main first.
+
+When something is wrong, the work goes back to **the leg that caused it**. A wrong test goes back to the test leg instead of the dev leg retrying until it's stuck. After 3 failed attempts a node is blocked and you are asked.
+
+Sometimes an integration point is already done before it starts, because the capabilities already wired everything up. Then its test leg can't honestly start red. When that test leg gets stuck, dp re-runs the acceptance itself. If it passes, you get one extra choice, **skip**, which moves on to the integrate leg. An integrate leg with nothing to change is fine, as long as the acceptance passes.
+
+### 4. Small model reviews big model
+
+Anything a script can judge, a script judges. What's left goes to a small model as a very narrow question:
+
+- **claim-supported:** does dp's own re-run output contradict this claim?
+- **scenario-honesty:** does this implementation special-case the exact values in the gherkin (hard-coding the test)?
+
+Each question is asked **two different ways**. If the answers disagree, the result is ABSTAIN. Failures, timeouts, bad JSON or oversized input are also ABSTAIN, never "fine". The only possible answers are FAIL, ABSTAIN and NO_OBJECTION. There is no PASS.
+
+At L2, ABSTAIN goes to the **Critic**, a large model that reads the spec, the checks and the diff, but not the worker's story. If the Critic isn't sure either, it comes to you.
+
+### 5. Autonomy levels
+
+`autonomy.level` in `dp.config.json`:
+
+| Level | Merge | Verifier not sure | Side child nodes |
+|---|---|---|---|
+| L0 | asks you every time | asks you | asks you |
+| **L1** (default) | automatic when every check passes | asks you | asks you |
+| L2 | same as L1 | goes to the Critic; asks you if the Critic isn't sure | automatic inside the parent's scope |
+
+**Always yours, at every level:** new features and versions (every proposal), major contract changes, the rules layer, budget and autonomy level, `@e2e` trials, and resuming after a halt.
+
+To change the level, the daily budget or the number of workers, say so to Front. It calls `dp_set_settings` with your exact words (CLI: `dp settings --autonomy 2 --budget 8 --parallel 3 --verbatim "…"`). Only the fields you name change, and the change is committed with your words in the commit message. Nodes marked `tier: strict` and `shared` nodes without an `accept` command always get a second opinion. Without a Verifier model, the last leg of a node with gherkin never auto-merges.
+
+### 6. Ledger, signatures and safety
+
+- **Signed ledger.** Every event carries `prev_hash` (sha256 of the previous line) and `mac` (an HMAC with a key outside the repo, `~/.config/dp/key`). If anyone edits or appends by hand, `dp check ledger` reports it and `dp tick` refuses to run.
+- **Your words are signed.** Inside a project, a Claude Code hook signs every message you send. When a decision's verbatim text matches something you really said, the event records its hash. Later you can tell which decisions you made yourself.
+- **Workers never see `.git`.** They work in an exported copy. Only changes inside the allowed paths are copied back, and dp commits them itself.
+- **Evidence re-runs are locked down.** Only commands starting with an allowed prefix (`npm run`, `npm test`, `node --test`, `npx vitest`, `git diff`…), run as argv without a shell. No `cat`, no absolute paths, no `..`.
+- **Gate files are off-limits.** `package.json`, lockfiles, `tsconfig.json`, test configs, `scripts/**`, `.github/**` and dp's own files are forbidden to workers. Changing them needs a `shared` node that you approve.
+- **This is not OS-level isolation.** Code runs as you, on your machine. The Claude worker command blocks `rm -rf`, `rm -fr` and `sudo`, but keep backups. For stronger isolation, run the whole project in a container or VM. See [`payload/docs/dp/SECURITY.md`](payload/docs/dp/SECURITY.md).
+
+### 7. Existing projects (brownfield)
+
+- **The gate runs the project's own tests.** `setup` detects `npm test`, pytest / unittest, `go test`, `cargo test` or `make test` and writes it to `gates.commands` (e.g. `{"test": "python3 -m unittest"}`). Non-Node projects don't get the template's TypeScript toolchain.
+- **Tests that were already red aren't the worker's fault.** `dp onboard` (re-record with `dp baseline`) runs the tests on main and records the failures in `docs/dp-baseline.json`. A red gate passes if every red test is in the baseline. One new red test blocks the merge, and dp names it.
+- **Pin down current behavior before changing it.** When a node's `owns` covers files that already exist on main, the proposal adds a `characterize` leg in front: it may only write tests, and those tests must pass on the current code. Later legs can't change them, and the dev leg must keep them green. At most 10 files at a time. Behavior you mean to change goes in the gherkin instead.
+- **`docs/AS-IS.md`** describes the project as it is today. `onboard` writes a draft, and Front completes it by reading the code.
+- **dp's own files go into git.** In a project that already has git, `dp init --existing` commits the files it adds (only those paths; anything you staged stays staged) and adds `.dp/` to your `.gitignore`. The pre-merge gate runs in a tree built from git, so dp must be in git to run there. `dp doctor` fails if it isn't, and `dp upgrade` fixes it.
+
+![Existing project: wordfreq's top/v1 went characterize → test → dev; the Harness column shows the gate failing until dp's files were committed, then passing](docs/images/brownfield.png)
+
+### 8. Subscription accounts
+
+If you have several Claude Max / Pro or ChatGPT (Codex) plans, dp can rotate through them and switch when one hits its limit.
 
 ```bash
-node tools/dp.mjs account add max-a --cli claude --plan max     # 每個帳號一個獨立的登入目錄
-node tools/dp.mjs account add max-b --cli claude --plan max
-node tools/dp.mjs account add gpt --cli codex --plan plus
-node tools/dp.mjs account login max-a                           # 開瀏覽器登入那個帳號(每個做一次)
-node tools/dp.mjs account use worker max-a,max-b --model sonnet # worker 輪流用 max-a、max-b
-node tools/dp.mjs account use critic gpt                        # Critic 用 Codex
-node tools/dp.mjs account use verifier max-b                    # Verifier 預設 haiku
-node tools/dp.mjs account list                                  # 登入狀態、用量、冷卻到幾點
+node tools/dp.mjs account add max-a --cli claude --plan max        # each account gets its own login folder
+node tools/dp.mjs account add work --cli claude --home ~/.claude   # or point at a login you already have
+node tools/dp.mjs account login max-a                              # opens a browser once
+node tools/dp.mjs account use worker max-a,work --model sonnet     # worker rotates between them
+node tools/dp.mjs account use verifier max-a                       # Verifier defaults to haiku
+node tools/dp.mjs account list                                     # login, usage, cooldowns
 ```
 
-也可以在主控台設定:`node tools/dp.mjs dashboard --serve`,左邊的「帳號」頁可以新增、移除帳號,勾選每個角色用哪幾個、填模型。
-登入那一步要開瀏覽器,還是在終端機跑 `dp account login`。
+- Claude Code is pointed at the account with `CLAUDE_CONFIG_DIR`, Codex with `CODEX_HOME`. While dispatching, dp clears `ANTHROPIC_API_KEY` and similar variables, so an API key in your shell can't take over.
+- Each leg picks the account with the fewest dispatches in the last 5 hours that isn't cooling down. When a log says the limit was hit, that account cools down until its reset time, and the leg goes to the next account right away. That doesn't count as a failed attempt.
+- Usage, cooldowns and `--max-parallel N` are shared across all projects on the machine. The account list lives in `~/.config/dp/accounts.json`, never in the repo.
+- You can also do all of this from the dashboard's **Accounts** page, or through MCP (`dp_add_account`, `dp_set_role`). Logging in always happens in your own terminal, because it opens a browser.
 
-做法跟 Orca 一樣:Claude Code 用 `CLAUDE_CONFIG_DIR`、Codex 用 `CODEX_HOME` 指到帳號的目錄。帳號清單在這台電腦的
-`~/.config/dp/accounts.json`,不進 repo;`dp.config.json` 只寫哪個角色用哪幾個帳號。每一棒挑近 5 小時用得最少、沒在冷卻的帳號。
-log 出現額度用完就讓那個帳號冷卻到重置時間,馬上換下一個重派,不算 worker 的嘗試次數。
-v4.7 起用量與冷卻是這台電腦所有專案共用的,`--max-parallel N` 限制一個帳號同時跑幾個 worker;也可以從 hub 的 API / MCP 設定(`dp_add_account`、`dp_set_role`)。
-
-## 多專案、API 與 MCP(v4.7)
+### 9. Many projects, one hub
 
 ```bash
-node tools/dp.mjs project list             # 這台電腦登記的 dp 專案(dp init 建的會自動登記;dp project add <dir> 補登)
-node tools/dp.mjs hub                      # http://127.0.0.1:7170/ :所有專案的總覽 + HTTP API
-node tools/dp.mjs hub token                # API 的 token
+node tools/dp.mjs hub           # http://127.0.0.1:7170/
+node tools/dp.mjs project list  # projects registered on this machine
+node tools/dp.mjs hub token     # API token
 ```
 
-**hub 總覽頁**:每個專案一張卡(進度、在跑的 worker 是哪個節點哪一棒用哪個帳號、等你決定幾件、停機、背景迴圈開關),
-有事的排前面;右邊是帳號用量與冷卻、所有專案的即時事件(SSE)。點專案進到原本的四欄主控台,左上「所有專案」回來。
-同時好幾個專案各自跑背景迴圈就是多專案平行開發;每個專案裡 `caps.parallel` 個 worker 平行施工。
+The hub shows one card per project: progress, which worker is on which node and leg with which account, how many things are waiting for you, today's spend, and buttons to start or stop the loop and halt or resume. Projects that need you come first. On the right: account usage and cooldowns, and a live event feed from every project (SSE). It can send a browser notification when something new needs you. Click a project to open its dashboard.
 
-**一張路由表,三個入口**:`tools/lib/api.mjs` 定義 40 個操作,HTTP API(`/api/v1`,OpenAPI 3.1 在 `/api/v1/openapi.json`)、
-MCP 工具(`dp_` + operationId,例 `dp_get_inbox`、`dp_propose_bundle`、`dp_start_loop`)、`dp op <操作>` 都從它來,參數與結果一樣。
-文件:`payload/docs/dp/API.md`(總表 + 每個端點的參數)、`FLOW.md`(每一步誰做、呼叫哪個操作)。兩份都是 `dp api` 產生的,測試會比對。
+Several projects each running their own loop is parallel development across projects. Inside each project, up to `caps.parallel` workers (default 3) build at once.
 
-- hub 與 MCP 對專案的操作是在那個專案裡跑它自己的 `tools/dp.mjs op`,所以專案的 dp 版本不同也不會讀錯;4.7 以前的回 501,`dp_upgrade_project` 升級。
-- 帳號用量與冷卻跨專案共用;`dp account set <name> --max-parallel 2` 限制一個帳號同時跑幾個 worker(所有專案加起來)。
-- 安全:hub 只綁 127.0.0.1、檢查 Host 與 Origin、`/api/*` 要 token。MCP 拒絕在 worker / Critic 的環境啟動。見 `docs/dp/SECURITY.md`。
+### 10. One route table, three ways in
 
-`dp mcp install` 預設裝進 Claude Code 的 user scope(`claude mcp add --scope user dp -- node <dp.mjs 絕對路徑> mcp`);
-`--client cursor` 寫 `~/.cursor/mcp.json`,`--client codex` 用 `codex mcp add`,`--client project` 只寫這個專案的 `.mcp.json`。
-`dp mcp config` 印出各工具的設定讓你自己貼。要從 dev-paradigm-mcp 的目錄裝(專案裡的副本沒有 payload,不能建專案)。
+`tools/lib/api.mjs` defines **41 operations**. All three entry points are generated from it, with the same parameters and results:
 
-## 視覺化主控台
+- **HTTP API** from `dp hub`: `/api/v1/...`, with the OpenAPI 3.1 spec at `/api/v1/openapi.json`. Needs `Authorization: Bearer <token>` except for health and openapi. Binds only to 127.0.0.1 and checks Host and Origin.
+- **MCP tools:** `dp_` + the operation id in snake_case, e.g. `dp_get_inbox`. That's 38 tools; streaming and openapi are HTTP-only.
+- **CLI:** `dp op <operation> --args '{json}'`.
+
+For project operations, the hub and MCP run **that project's own copy** of dp. A project on an older dp version can't be misread; anything older than 4.7 returns 501 and points you to `dp_upgrade_project`. The MCP server refuses to start inside a worker or Critic environment, so a worker can never approve its own work.
+
+Docs: [`payload/docs/dp/API.md`](payload/docs/dp/API.md) (every endpoint and parameter) and [`FLOW.md`](payload/docs/dp/FLOW.md). Both are generated by `dp api`, and a test checks they're current.
+
+### 11. Background loop, halt and budget
+
+- **`dp run --daemon`** (MCP: `dp_start_loop`) runs a tick every 60 seconds: collect hand-ins → verify → merge → dispatch. `dp run --stop` (`dp_stop_loop`) lets the current tick finish first, so it never stops halfway through a merge.
+- **`dp halt`** stops dispatching and ends running workers (that doesn't count as a failure). Only you can `resume`.
+- **Budget:** `budget.daily_usd` (default $5; change it with `dp settings --budget` or `dp_set_settings`). Workers and the Critic report their cost; dp stops dispatching when today's total reaches the limit. On a subscription, these numbers are what the CLI reports, not what you're billed.
+- **Infrastructure failures** (429, 5xx, timeouts) don't count as worker attempts. dp backs off and retries, and halts after too many in a row.
+- **Notifications:** `notify.cmd` runs a command of yours when something new needs you.
+
+### 12. Health checks and upgrades
+
+- `dp doctor` (`dp_doctor`): Node, config, git, whether dp's own files are in git, worker command, Verifier, every account's login, hooks, merge gate. Each item gets ✓ / ⚠ / ✗ and a fix.
+- `dp check`: DAG, ledger chain, generated files, contracts, placeholders, rule size and conflicts.
+- `dp upgrade` (`dp_upgrade_project`): updates dp's files in a project and commits them (plus any of dp's files that were never committed). If any file conflicts, it writes none. `--dry-run` shows what would change.
+- Old settings from earlier versions still load. `doctor` lists each one that was removed.
+
+## Dashboard tour
 
 ```bash
-node tools/dp.mjs dashboard --serve        # http://127.0.0.1:7171/ ,每 5 秒從帳本重播一次
-node tools/dp.mjs dashboard                # 不開伺服器:寫出 .dp/dashboard.html(單一檔、資料內嵌,可直接打開或傳給別人)
+node tools/dp.mjs dashboard --serve   # one project: http://127.0.0.1:7171/, re-reads the ledger every 5 s
+node tools/dp.mjs dashboard           # no server: writes .dp/dashboard.html, one file with the data inside
+node tools/dp.mjs hub                 # all projects; click one to open its dashboard
 ```
 
-主控台是四欄(深色):**Orchestrator**(派工、退回、合併,加上這一棒的工單:objective / write-set / forbidden / accept)、
-**Worker**(依棒分頁:每次交件的報告與證據指令,底下是這個節點的 to-do)、**Verifier · Critic**(每項機器檢查與 Critic 的判決)、
-**Harness**(worktree、啟動、commit、gate、合併、花費)。上方是角色燈號與花費條,底部列出要你決定的事和該打的指令。
-「▶ 重播」會把一個節點的事件從頭一筆一筆放一次。
-**規劃**頁左邊是你和 Front 的規劃紀錄(每份提案的節點、gherkin、選項,和你批准、試用時的原話),右邊是 `docs/ROADMAP.md` 的版本進度。
-另有管線(版本與看板)、時間軸、花費三頁。
-資料跟 `dp status` 同一份重播結果,不寫事件、只綁 127.0.0.1;決定仍然在 Front 說或用 `dp decide`。
-唯一能改的是「帳號」頁(`--serve` 時):它跑的就是 `dp account`,要帶這次啟動才有的 token,別的網站送不進來。
+The dashboard is read-only, with one exception: the Accounts page. It is built from the same ledger replay as `dp status`. It never writes events and binds only to 127.0.0.1. Decisions still go through Front or `dp decide`. The bar at the bottom always shows what's waiting for you and the exact command to answer it.
 
-## 自治等級
+### Console
 
-`dp.config.json` 的 `autonomy.level`:L0 每次合併都問你、L1(預設)機器全過就自動、L2 沒把握的交 Critic。新功能、契約 major、規則層、預算、`@e2e` 試用永遠只有你能決定。
-沒設 Verifier 模型時,有 gherkin 的最後一棒不自動合併(沒人檢查「寫死測試值」);沒有 `accept` 的 shared 節點也不自動合併。
-見 `payload/AUTONOMY.md`。
+![Console: Orchestrator, Worker, Verifier · Critic and Harness columns for one node](docs/images/console.png)
 
-## 狀態:什麼驗過、什麼沒有
+Four columns for the selected node:
 
-**用真的 Claude Code 實跑過(v4,沒有沙箱,L2 + Critic + Claude Haiku 當 Verifier):**
+- **Orchestrator:** dispatches, send-backs and merges, plus this leg's work order: objective, write-set, forbidden paths, acceptance command, done-when.
+- **Worker:** one tab per leg. Each hand-in shows the worker's claims with the evidence commands and their output, plus the node's to-do list.
+- **Verifier · Critic:** every machine check and small-model answer (NO_OBJECTION / ABSTAIN / FAIL), and the Critic's verdict.
+- **Harness:** worktree, launch, commit, gate, merge, cost.
 
-- 一句中立的需求(個人記帳 CLI,六項功能,沒提 MVP)→ Front 自己畫出六版路線圖 → v1、v2、v3 各一個 bundle,
-  每版一個能力節點 + 一個整合點,合併後親手試用、確認後才開下一版。6 個節點全部合併,約 1.5 小時,約 $8。
-- 使用者一共說了 20 句話:8 句是流程本來就該問的(需求、設計取捨、試用確認),7 句是「進度?」,5 句是處理卡點;
-  卡點都追到 dp 的問題並在 v4 修掉(見 CHANGELOG 4.0.0 的「v4 實跑中再修的」)。第三版(預算)從提案到合併沒有任何卡點。
-- 不用問你合併:0 次(v3 實跑 4 次)。scenario-honesty 18 題 4 題棄權(v3:90 題 71 題)。
-- 同時有已批准的整合 gherkin 在主線上時,能力節點的全 gate 照樣是綠的(pending features 生效)。
+At the top: role status lights, the cost bar, and **▶ Replay**, which plays one node's events back one by one.
 
-**既有專案(v4.5,Claude Code、L1、Claude Haiku 當 Verifier):** budgetbook 的程式拿掉 dp 的帳本與設定,當成一個普通的 TypeScript 專案
-(vitest,59 個測試)。`init --existing` → setup 選 Brownfield → `onboard`(基線全綠)→ Front 補完 AS-IS → 提「`bb export` 匯出 CSV」,
-owns 含既有的 `main.ts`,提案自動加 characterize。characterize 棒寫了 11 個測試釘住 add / list / edit / balance 與錯誤訊息的現況,
-測試棒 5 個測試(紅),實作棒加 `export.ts` 與 `main.ts` 9 行,驗收同時要求那 11 個測試維持綠;合併前全 gate(check:dp、typecheck、test)綠。
-3 棒、0 次退回、沒問使用者,約 5 分鐘、$0.42。合併後專案 75 個測試全綠,手動跑 `bb export` 跟 gherkin 一字不差。
-基線裡「本來就紅的測試」與「基線以外的新紅」兩條路徑只有自動測試涵蓋(Python unittest 專案)。
+### Planning
 
-**多帳號(v4.6):** 只有自動測試涵蓋(假的 worker 印出 `usage limit reached|<時間>`、檢查派工拿到的環境變數)。
-真的用兩個訂閱帳號登入、跑到額度用完再換號,還沒實跑過。
-Codex 的預設指令(`codex exec --skip-git-repo-check --sandbox workspace-write -`)照它的文件寫,這台測試機沒有 codex,沒有實跑。
-Gemini CLI、OpenCode 沒有帳號目錄的設定,沒有預設;要用就在 `agents.<角色>.cmd` 自己寫指令。
+![Planning: your planning conversation with Front, proposals with gherkin, and the roadmap](docs/images/planning.png)
 
-**MCP、多專案、API(v4.7,Claude Code + 真的 Claude worker,L1,Claude Haiku 當 Verifier):** 在不是專案的目錄開 Claude Code(只給 dp 的 MCP 工具):
-它用 `dp_init_project`、`dp_setup_project` 建好 notes-app,依「`notes add` / `notes list`,越小越好」提出 v1(一個能力節點 + 一個整合點,
-自己補的三個行為列出來讓使用者改),沒有替使用者批准。使用者說「好,批准」→ 它照抄原話 `dp_decide`、`dp_start_loop`。
-4 棒(test → dev → test → integrate)0 次退回,約 10 分鐘、$0.62;integrate 棒有 2 項 Verifier 棄權,停下來等合併。
-問「我的專案現在怎麼樣?」→ `dp_overview` + `dp_get_inbox`,照實轉述兩項沒把握的地方並等使用者說;說「合併吧」才 decide。
-使用者手動試過 CLI 後說「這版可以了,幫我把背景迴圈停掉」:**第一次它只停了迴圈、沒有記下試用結果**;
-在 MCP 的 instructions 與 `dp_confirm` 的說明補上「使用者說試過了就是試用結果」後重跑,它先 `dp_get_inbox` 找到 I1,`dp_confirm` 帶原話,再停迴圈。
-hub 同時監控兩個專案(一個在跑、一個閒置),SSE 即時事件與 API 都用過。六次對話(含那次重跑)共 $0.54。
+Left: the planning record with Front. You see each proposal's nodes, write-sets, gherkin files and options, and your exact words when you approved or tried something. Right: version progress from `docs/ROADMAP.md`. The top-right shows Greenfield / Brownfield. For brownfield projects it also shows the test baseline and whether AS-IS is written.
 
-沒實跑的:`dp mcp install` 只在這台機器跑過 Claude Code 的指令格式(`claude mcp add --help`);Cursor 與 Codex 的安裝、兩個以上訂閱帳號真的登入輪流、
-`max_parallel` 在真的 worker 上滿載,都只有自動測試或沒驗。
+![Planning for an existing project: language, test command, baseline and AS-IS at the top; v0 (as it was) and v1 on the roadmap](docs/images/brownfield-planning.png)
 
-**自動測試(`npm test`,171 個,全部通過):**
+### Pipeline
 
+![Pipeline: versions and a kanban of nodes](docs/images/pipeline.png)
 
-- 完整流程(吃自己狗糧):建新專案 → intake 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 使用者確認 → `dp check` 全綠。
-- 失敗路徑:越界退回、第三次封鎖、說謊的證據、沒交 report、側向子節點(L1 問你 / L2 自動)、兩種當機重跑的冪等、
-  L0 逐次批准、停機、預算、Critic PASS / ASK_USER、根目錄被別人改過時拒絕執行。
-- 安裝與升級的所有權語意(含升級時移除已不在 payload 的檔)、intake、舊設定載入時的警告。
-- 小模型呼叫層:一致、不一致、亂回、回 PASS、當掉、輸入過大(用假的小模型)。
+Versions across the top, then a kanban board: not started, building, being checked, blocked, done. Each card shows the node's kind, dispatch count and cost. Click a card to open it in the console.
 
-測試用的是假的 worker / agent / 小模型(`test/fixtures/`),在真的 git repo 裡跑。
+### Timeline
 
-**還沒驗過(第一次實際使用時請盯著看):**
+![Timeline: the ledger replayed, newest first](docs/images/timeline.png)
 
-- `test-fix` 棒在實跑中還沒被觸發過,只有自動測試涵蓋。
-- 沿用的 v1 gate 包:在這台機器跑 118 個自我測試,全部通過。
+The append-only ledger, replayed as-is. Filter by node. Rows with ▸ expand to show send-back reasons, Critic notes, verification results and gate results.
 
-## 這個 repo
+### Cost
+
+![Cost: totals, by role, by node, and subscription accounts](docs/images/cost.png)
+
+Total, today, daily limit, nodes done, cost per node. Below: cost by role and by node, and a table of subscription accounts with dispatches in the last 5 hours / 7 days and cooldown status.
+
+### Accounts
+
+![Accounts: accounts on this machine and which ones each role uses](docs/images/accounts.png)
+
+Add or remove accounts on this machine, and tick which accounts each role (Worker, Critic, Verifier) rotates through, with an optional model. Each action runs `dp account …`, exactly like typing it in the terminal (the config change is committed). It only works with `--serve` or inside the hub, and only with a token created for that launch. (The login email is blanked out in this screenshot.)
+
+## Reference
+
+### MCP tools (38)
+
+| Group | Tools |
+|---|---|
+| Flow and monitoring | `dp_flow`, `dp_health`, `dp_overview`, `dp_get_project`, `dp_get_inbox`, `dp_mark_inbox_seen`, `dp_show`, `dp_list_events`, `dp_list_nodes`, `dp_list_proposals`, `dp_get_dashboard`, `dp_get_loop`, `dp_doctor` |
+| Projects and settings | `dp_list_projects`, `dp_add_project`, `dp_init_project`, `dp_setup_project`, `dp_set_settings`, `dp_onboard`, `dp_baseline`, `dp_upgrade_project`, `dp_remove_project` |
+| Proposals and your decisions | `dp_propose_bundle`, `dp_propose_feature`, `dp_decide`, `dp_confirm`, `dp_unblock` |
+| Background loop | `dp_start_loop`, `dp_stop_loop`, `dp_tick`, `dp_halt`, `dp_resume` |
+| Accounts and roles | `dp_list_accounts`, `dp_add_account`, `dp_update_account`, `dp_remove_account`, `dp_get_roles`, `dp_set_role` |
+
+**Prompts** (in Claude Code: `/mcp__dp__<name>`): `new-project`, `existing-project`, `progress`, `next-release`.
+
+### CLI
+
+| Area | Commands |
+|---|---|
+| Install and setup | `dp init <dir> [--existing] [--no-commit]`, `dp setup`, `dp settings [--autonomy N] [--budget X] [--parallel N]`, `dp doctor`, `dp upgrade [--dry-run]` |
+| Existing projects | `dp onboard`, `dp baseline` |
+| Background loop | `dp tick`, `dp run [--interval 60] [--daemon] [--until-idle]`, `dp run --stop` |
+| One window | `dp inbox`, `dp show <ref>`, `dp decide <ref> <choice> --verbatim "…"`, `dp confirm <node> yes\|no`, `dp halt`, `dp resume`, `dp unblock <node>`, `dp status`, `dp dashboard [--serve]` |
+| Proposals | `dp intake feature --spec spec.json`, `dp intake bundle --spec bundle.json`, `dp intake apply <id>` |
+| Accounts | `dp account add\|set\|login\|list\|use\|rm` |
+| MCP | `dp mcp install [--client …]`, `dp mcp config`, `dp mcp tools`, `dp mcp` |
+| Many projects | `dp project add\|list\|rm`, `dp hub`, `dp hub token`, `dp op <operation>`, `dp api [md\|openapi\|flow]` |
+| Checks | `dp check`, `dp gates`, `dp render`, `dp stats` |
+
+Add `--help` to any command to print its help without running it.
+
+### Settings (`dp.config.json`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomy.level` | `1` | L0 / L1 / L2 (see above) |
+| `budget.daily_usd` | `5` | Stop dispatching after this much today |
+| `caps.parallel` | `3` | Workers at once in this project |
+| `caps.attempts` | `3` | Tries per leg before the node is blocked |
+| `caps.lease_minutes` | `90` | How long a worker may run |
+| `gates.chain` | `check:dp, typecheck, test, accept` | Full gate before every merge |
+| `gates.commands` | `{}` | Commands for gate names that aren't npm scripts (brownfield) |
+| `agents.worker` / `critic` / `verifier` | — | `cmd`, or `accounts` + `model` |
+| `integration.gate_next_version` | `true` | Next version waits for your trial of the last one |
+| `verify.rerun_allow` | `npm run`, `npm test`, `node --test`, … | Command prefixes dp may re-run as evidence |
+| `notify.cmd` | `null` | Run this when something new needs you |
+
+More: [`payload/docs/dp/AGENTS-SETUP.md`](payload/docs/dp/AGENTS-SETUP.md), [`payload/AUTONOMY.md`](payload/AUTONOMY.md), [`payload/docs/dp/VERIFIER.md`](payload/docs/dp/VERIFIER.md).
+
+## Status: what has been tested
+
+### Automated tests
+
+`npm test`: **180 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
+
+### Real run, 2026-10-16
+
+Setup: Claude Code 2.1.301 on Linux, Node 22.15.1. `dp mcp install` registered `dp` in Claude Code's user scope (`claude mcp list` → ✔ Connected). Worker, Critic and Verifier all ran on one Claude Max subscription, registered as the dp account `claude-max` (`dp account add claude-max --cli claude --plan max --home ~/.claude`). I played the user with short messages. Front was a fresh `claude -p` session, resumed turn by turn, with **only** the dp MCP tools (for the existing project it also had read-only Read / Glob / Grep). Autonomy L1. Every screenshot in this README comes from this run.
+
+| | todo-cli (new project) | wordfreq (existing Python project) |
+|---|---|---|
+| Asked for | `todo add` / `todo list`, later `todo done` | add `--top N` to `wordfreq.py` (tests: unittest) |
+| Versions | v1 and v2, both tried by hand and confirmed | v1, tried by hand and confirmed |
+| Nodes | 6 (2 capabilities, 2 integration points, 2 shared) | 2 (`top/v1`: characterize → test → dev, and `I1`) |
+| Worker runs | 13 (2 sent back) | 10 (4 sent back) |
+| Times dp asked me | 13 (3 plans, 7 merges, 3 stuck legs) + 2 trials | 7 (1 plan, 3 merges, 3 stuck legs) + 1 trial |
+| Wall time | 75 min | 60 min |
+| Reported cost | $9.76 | $7.63 |
+
+What went well:
+
+- Front never decided for me. Every `dp_decide` and `dp_confirm` carried my exact words. It relayed "not sure" items honestly, sometimes read the code itself to double-check, and warned me before the budget ran out.
+- "It works, stop the loop" in one sentence: it recorded the trial **and** stopped the loop.
+- Workers refused to fake results. In both projects the integration point's test leg could not start red, and the worker escalated instead of writing a test that fails on purpose.
+- Once the new warnings existed, they changed the v2 plan: Front set `I2` to integrate-only and proposed a small shared node so `npm test` runs the worker's unit tests (47 now run).
+
+Found and fixed during the run (4.7.3, details in [CHANGELOG.md](CHANGELOG.md)):
+
+1. `dp_health` always failed through MCP.
+2. The proposal tools' `spec` / `bundle` had no fields (also reported and fixed in PR #1).
+3. `owns` was required by the DAG but not by the tool schema.
+4. A Verifier model set for an account was silently dropped.
+5. New-project code outside `packages/` / `apps/` meant zero unit tests in the gate → proposal warning.
+6. No way to change budget or autonomy through MCP → `dp_set_settings` / `dp settings`.
+7. Re-running setup replaced an account-based worker with a fixed command.
+8. An integration point that was already green before it started got stuck forever → `skip` option, and integrate legs may have zero changes.
+9. Integration gherkin reusing a capability's sentences → proposal warning.
+10. Installing into a project that already had git left dp's files uncommitted, so every pre-merge gate failed → init and upgrade commit them, doctor checks.
+11. `dp upgrade` left its changes uncommitted, so ticks refused to run → upgrade commits.
+
+Still rough:
+
+- At L1, dp still asks often. Most "not sure" items were the small model's two phrasings disagreeing, a diff with only a README in it, or mutation testing that couldn't run.
+- An MCP-only Front can't edit files, so it can't complete `docs/AS-IS.md` for an existing project.
+- While waiting, Front polls `dp_list_events` in a loop; there's no long-poll.
+
+### Not verified yet
+
+- **Codex** as a worker, Critic or Verifier: the default commands were written from its docs and never run for real.
+- **Rotating between two or more real subscriptions** until one hits its limit: only automated tests (a fake worker prints `usage limit reached|<time>`).
+- **`dp mcp install` for Cursor and Codex**: only the Claude Code path was run for real.
+- **The `test-fix` leg** has never been triggered in a real run.
+- **`max_parallel` at full load** with real workers.
+- Gemini CLI and OpenCode have no account support. To use them, write `agents.<role>.cmd` yourself.
+
+## This repo
 
 ```
-tools/      dp CLI(零依賴),會被安裝進你的專案
-payload/    dp init 寫進你專案的檔:規則、prompts、skills、docs/dp、契約範例、v1 gate 包
-test/       自動測試
-docs/       ARCHITECTURE.md(設計與理由)、adr/ADR-021
+tools/      the dp CLI and MCP server (zero dependencies); copied into each project
+payload/    files `dp init` writes into a project: rules, prompts, skills, docs/dp, templates
+test/       automated tests
+docs/       ARCHITECTURE.md (design and reasons), adr/, images/ (README screenshots)
 ```
 
-文件地圖:設計 → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);升級 → [MIGRATION.md](MIGRATION.md);
-使用者流程 → `payload/docs/dp/WORKFLOW.md`;角色 → `payload/docs/dp/ROLES.md`;小模型驗收 → `payload/docs/dp/VERIFIER.md`。
+Doc map: design → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · upgrading → [MIGRATION.md](MIGRATION.md) · changes → [CHANGELOG.md](CHANGELOG.md) · user flow → [WORKFLOW.md](payload/docs/dp/WORKFLOW.md) · roles → [ROLES.md](payload/docs/dp/ROLES.md) · small-model checks → [VERIFIER.md](payload/docs/dp/VERIFIER.md) · security → [SECURITY.md](payload/docs/dp/SECURITY.md) · API → [API.md](payload/docs/dp/API.md)
