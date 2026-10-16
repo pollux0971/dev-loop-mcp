@@ -2855,7 +2855,137 @@
                 "properties": {
                   "spec": {
                     "type": "object",
-                    "description": "id、title、intent、owns、depends_on、accept…(見 docs/dp/INTAKE.md)"
+                    "required": [
+                      "id",
+                      "title",
+                      "intent"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "節點 id:能力節點 <能力>/v<n>(例 ledger/v1)、整合點 I<n>、共用節點 shared/<名字>"
+                      },
+                      "kind": {
+                        "enum": [
+                          "phase",
+                          "integration",
+                          "shared"
+                        ],
+                        "description": "預設 phase;integration = 這一版的整合點(使用者親手試用,gherkin 要有 @e2e);shared = 共用(例如改 package.json)"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "一句話標題"
+                      },
+                      "intent": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                        "description": "這個節點要讓使用者能做到什麼(≤300 字)"
+                      },
+                      "owns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "這個節點能寫的路徑(glob)"
+                      },
+                      "gherkin": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "gherkin 檔路徑(選填;phase 預設 features/<能力>/v<n>.feature)"
+                      },
+                      "accept": {
+                        "type": "string",
+                        "description": "機器驗收指令(預設 npm run accept -- <gherkin>;既有專案寫專案自己的測試指令,只跑這個節點的測試)"
+                      },
+                      "standalone": {
+                        "type": "string"
+                      },
+                      "depends_on": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "依賴的節點 id"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "relation": {
+                        "enum": [
+                          "prereq",
+                          "followup"
+                        ]
+                      },
+                      "tier": {
+                        "enum": [
+                          "strict",
+                          "standard",
+                          "loose"
+                        ]
+                      },
+                      "pipeline": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "characterize",
+                            "test",
+                            "dev",
+                            "integrate",
+                            "test-fix"
+                          ]
+                        },
+                        "minItems": 1
+                      },
+                      "release": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "屬於哪一版(例 v1;bundle 會自動填)"
+                      },
+                      "tests": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "這個節點的測試檔(glob,選填)"
+                      },
+                      "characterize": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "tests": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "cmd": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "skip": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    },
+                    "description": "一個節點(欄位見 docs/dp/INTAKE.md)。例:{\"id\":\"ledger/v1\",\"title\":\"記一筆支出\",\"intent\":\"使用者可以記下一筆支出\",\"owns\":[\"src/ledger/**\"]}"
                   },
                   "gherkin": {
                     "type": "string",
@@ -2961,7 +3091,176 @@
                 "properties": {
                   "bundle": {
                     "type": "object",
-                    "description": "{ release, goal, roadmap?, nodes: [...] }"
+                    "required": [
+                      "release",
+                      "nodes"
+                    ],
+                    "description": "一整版:{ release, goal, roadmap?, nodes: [...] };最後要有一個 kind=integration 的整合點,依賴這一版所有節點",
+                    "properties": {
+                      "release": {
+                        "type": "string",
+                        "pattern": "^[\\w.-]+$",
+                        "description": "版本名(例 v1)"
+                      },
+                      "goal": {
+                        "type": "string",
+                        "description": "這一版使用者能做什麼"
+                      },
+                      "roadmap": {
+                        "type": "string",
+                        "description": "路線圖全文(選填,存成 docs/ROADMAP.md)"
+                      },
+                      "no_integration_reason": {
+                        "type": "string",
+                        "description": "真的不需要整合點時寫理由"
+                      },
+                      "nodes": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "這一版的節點;gherkin 用 gherkin_text(全文)或 gherkin_file(專案裡的路徑)",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "title",
+                            "intent"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "節點 id:能力節點 <能力>/v<n>(例 ledger/v1)、整合點 I<n>、共用節點 shared/<名字>"
+                            },
+                            "kind": {
+                              "enum": [
+                                "phase",
+                                "integration",
+                                "shared"
+                              ],
+                              "description": "預設 phase;integration = 這一版的整合點(使用者親手試用,gherkin 要有 @e2e);shared = 共用(例如改 package.json)"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "一句話標題"
+                            },
+                            "intent": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300,
+                              "description": "這個節點要讓使用者能做到什麼(≤300 字)"
+                            },
+                            "owns": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "description": "這個節點能寫的路徑(glob)"
+                            },
+                            "gherkin": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "gherkin 檔路徑(選填;phase 預設 features/<能力>/v<n>.feature)"
+                            },
+                            "accept": {
+                              "type": "string",
+                              "description": "機器驗收指令(預設 npm run accept -- <gherkin>;既有專案寫專案自己的測試指令,只跑這個節點的測試)"
+                            },
+                            "standalone": {
+                              "type": "string"
+                            },
+                            "depends_on": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "description": "依賴的節點 id"
+                            },
+                            "parent": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relation": {
+                              "enum": [
+                                "prereq",
+                                "followup"
+                              ]
+                            },
+                            "tier": {
+                              "enum": [
+                                "strict",
+                                "standard",
+                                "loose"
+                              ]
+                            },
+                            "pipeline": {
+                              "type": "array",
+                              "items": {
+                                "enum": [
+                                  "characterize",
+                                  "test",
+                                  "dev",
+                                  "integrate",
+                                  "test-fix"
+                                ]
+                              },
+                              "minItems": 1
+                            },
+                            "release": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "屬於哪一版(例 v1;bundle 會自動填)"
+                            },
+                            "tests": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "description": "這個節點的測試檔(glob,選填)"
+                            },
+                            "characterize": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "targets": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "tests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "cmd": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "skip": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              }
+                            },
+                            "gherkin_text": {
+                              "type": "string",
+                              "description": "Gherkin 全文"
+                            },
+                            "gherkin_file": {
+                              "type": "string",
+                              "description": "專案裡的 gherkin 檔路徑"
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 },
                 "required": [

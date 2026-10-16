@@ -355,7 +355,23 @@ operationId `proposeFeature` · MCP `dp_propose_feature` · `dp op propose_featu
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
 | `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
-| `spec` | body | object | 必填 | id、title、intent、owns、depends_on、accept…(見 docs/dp/INTAKE.md) |
+| `spec` | body | object | 必填 | 一個節點(欄位見 docs/dp/INTAKE.md)。例:{"id":"ledger/v1","title":"記一筆支出","intent":"使用者可以記下一筆支出","owns":["src/ledger/**"]} |
+| `spec.id` | body | string | 必填 | 節點 id:能力節點 <能力>/v<n>(例 ledger/v1)、整合點 I<n>、共用節點 shared/<名字> |
+| `spec.kind` | body | `phase` \| `integration` \| `shared` |  | 預設 phase;integration = 這一版的整合點(使用者親手試用,gherkin 要有 @e2e);shared = 共用(例如改 package.json) |
+| `spec.title` | body | string | 必填 | 一句話標題 |
+| `spec.intent` | body | string | 必填 | 這個節點要讓使用者能做到什麼(≤300 字) |
+| `spec.owns` | body | string[] |  | 這個節點能寫的路徑(glob) |
+| `spec.gherkin` | body | string |  | gherkin 檔路徑(選填;phase 預設 features/<能力>/v<n>.feature) |
+| `spec.accept` | body | string |  | 機器驗收指令(預設 npm run accept -- <gherkin>;既有專案寫專案自己的測試指令,只跑這個節點的測試) |
+| `spec.standalone` | body | string |  |  |
+| `spec.depends_on` | body | string[] |  | 依賴的節點 id |
+| `spec.parent` | body | string |  |  |
+| `spec.relation` | body | `prereq` \| `followup` |  |  |
+| `spec.tier` | body | `strict` \| `standard` \| `loose` |  |  |
+| `spec.pipeline` | body | `characterize` \| `test` \| `dev` \| `integrate` \| `test-fix`[] |  |  |
+| `spec.release` | body | string |  | 屬於哪一版(例 v1;bundle 會自動填) |
+| `spec.tests` | body | string[] |  | 這個節點的測試檔(glob,選填) |
+| `spec.characterize` | body | object |  |  |
 | `gherkin` | body | string |  | Gherkin 全文(選填) |
 
 ### `POST /api/v1/projects/{project}/proposals/bundle`
@@ -367,7 +383,12 @@ operationId `proposeBundle` · MCP `dp_propose_bundle` · `dp op propose_bundle`
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
 | `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
-| `bundle` | body | object | 必填 | { release, goal, roadmap?, nodes: [...] } |
+| `bundle` | body | object | 必填 | 一整版:{ release, goal, roadmap?, nodes: [...] };最後要有一個 kind=integration 的整合點,依賴這一版所有節點 |
+| `bundle.release` | body | string | 必填 | 版本名(例 v1) |
+| `bundle.goal` | body | string |  | 這一版使用者能做什麼 |
+| `bundle.roadmap` | body | string |  | 路線圖全文(選填,存成 docs/ROADMAP.md) |
+| `bundle.no_integration_reason` | body | string |  | 真的不需要整合點時寫理由 |
+| `bundle.nodes` | body | object[] | 必填 | 這一版的節點;gherkin 用 gherkin_text(全文)或 gherkin_file(專案裡的路徑) |
 
 ## 背景迴圈與停機
 
