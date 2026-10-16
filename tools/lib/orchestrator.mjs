@@ -871,9 +871,12 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
     case 'test-fix':
       allowed = [...testGlobs(node, cfg), ...steps];
       if (node.gherkin) forbidden.push(node.gherkin);
-      // 實作棒卡住時的內容已退回,實作仍不存在,修好的測試一樣應該是紅的
-      acceptance = node.accept ? [{ cmd: node.accept, expect_exit: -1 }] : [];
-      doneWhen = '只修正 findings 指出的測試或步驟定義錯誤,讓測試忠實反映 gherkin(gherkin 才是規格);不改任何實作檔、不改 gherkin。'
+      // 實作棒卡住時的內容已退回,實作仍不存在,修好的測試一樣應該是紅的。
+      // v4.7.3:整合點例外——它接的東西多半已經在主線上(能力節點做的),修好的測試常常就是綠的,要求紅只會讓這一棒永遠過不了
+      // (實跑:minilang 的 I3,test-fix 棒回報「實作已經讓它全綠,硬改紅會不忠於規格」)。整合點的 test-fix 不檢查紅綠,下一棒(integrate)照樣要綠
+      acceptance = node.accept && node.kind !== 'integration' ? [{ cmd: node.accept, expect_exit: -1 }] : [];
+      doneWhen = '只修正 findings 指出的測試或步驟定義錯誤,讓測試忠實反映規格(gherkin,以及 findings 引用的節點規格);不改任何實作檔、不改 gherkin。'
+        + (node.kind === 'integration' ? '整合點的實作可能已經存在,修好的測試是綠的也沒關係,下一棒會驗。' : '')
         + '如果你判斷測試其實沒錯,不要改,回報 kind=blocked 並說明理由';
       break;
     default:

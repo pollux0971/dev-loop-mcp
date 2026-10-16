@@ -266,6 +266,17 @@ describe('#7 gate 定義檔與 agent 設定受保護', () => {
     assert.ok(phase.forbidden_paths.includes('package.json'), 'phase 節點列了也不行');
   });
 
+  test('test-fix 棒:能力節點的驗收照舊要紅;整合點不檢查紅綠(它接的東西多半已經在主線上),完成條件寫明', () => {
+    const proj = makeProject();
+    const ctx = new Ctx(proj);
+    const opts = { dispatchId: 'd-x', branch: 'dp/x', base: 'HEAD' };
+    const phase = buildEnvelope(ctx, { ...node('calc/v1'), accept: 'node --test packages/calc' }, { leg: 'test-fix', attempt: 1 }, opts);
+    assert.deepEqual(phase.acceptance, [{ cmd: 'node --test packages/calc', expect_exit: -1 }]);
+    const integ = buildEnvelope(ctx, { id: 'I3', kind: 'integration', title: 'i', intent: 'i', owns: ['apps/cli/**'], gherkin: 'docs/integration/i3.feature', accept: 'npm run accept -- docs/integration/i3.feature' }, { leg: 'test-fix', attempt: 1 }, opts);
+    assert.deepEqual(integ.acceptance, []);
+    assert.match(integ.done_when, /整合點的實作可能已經存在/);
+  });
+
   test('worker 改了 package.json → 退回,而且 dp 沒在那棵樹上執行任何指令', async () => {
     const proj = makeProject({ mode: 'pkg' });
     addNode(proj, { ...CALC, owns: ['**'] }, CALC_GHERKIN);
