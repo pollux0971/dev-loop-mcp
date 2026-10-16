@@ -448,12 +448,27 @@ Still rough:
 - An MCP-only Front can't edit files, so it can't complete `docs/AS-IS.md` for an existing project.
 - While waiting, Front polls `dp_list_events` in a loop; there's no long-poll.
 
+### Second real run: a small language interpreter (Sonnet 5.5)
+
+`minilang`, a TypeScript interpreter with a lexer, parser, evaluator and CLI, built in three versions: v1 math with operator precedence and column-accurate errors, v2 variables and program files, v3 functions, recursion, comparisons and `if`. Front and workers both ran on Sonnet 5.5; Verifier on Haiku; autonomy L1.
+
+| | minilang |
+|---|---|
+| Nodes | 9 (`expr` v1–v4, `interp` v1–v2, `I1`–`I3`) |
+| Worker runs | 37 (5 sent back) |
+| Times dp asked me | 20 (5 plans, 6 merges, 4 "test is wrong", 5 stuck legs) + 5 trials (2 failed) |
+| Wall time / reported cost | 115 min / $6.34 |
+| Result | 107 unit tests and 142 acceptance steps pass; every hand trial matched the spec |
+
+Highlights: the `test-fix` leg ran for real for the first time, three times. Workers caught a test that contradicted the spec (`-2 ^ 2` must be `-4`) and an off-by-one in a recursion-depth test. When I reported a "bug" that was really my own mistake, the worker could not reproduce it and refused to "fix" it. A hand trial found a real bug in an already-merged module (recursion broke at ~700 levels, not 1000); Front proposed a fix node that `I3` waits for.
+
+Found and fixed during this run: a superseded proposal stayed approvable (→ `supersedes`), mutation testing asked the user on every CLI integration (→ SKIPPED for integrate legs), the small model was asked about claims dp had already verified (→ SKIPPED), the template had no safe way to run a CLI from a temp folder (→ `runCommand({ cwd })`), integration points that were already green wasted a worker run (→ checked before dispatch), proposals ignored `parent`/`relation` (→ wired), and integration `test-fix` legs had to end red (→ no longer). Details in [CHANGELOG.md](CHANGELOG.md).
+
 ### Not verified yet
 
 - **Codex** as a worker, Critic or Verifier: the default commands were written from its docs and never run for real.
 - **Rotating between two or more real subscriptions** until one hits its limit: only automated tests (a fake worker prints `usage limit reached|<time>`).
 - **`dp mcp install` for Cursor and Codex**: only the Claude Code path was run for real.
-- **The `test-fix` leg** has never been triggered in a real run.
 - **`max_parallel` at full load** with real workers.
 - Gemini CLI and OpenCode have no account support. To use them, write `agents.<role>.cmd` yourself.
 

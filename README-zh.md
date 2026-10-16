@@ -445,12 +445,27 @@ node tools/dp.mjs hub                 # 所有專案;點一個進它的主控台
 - 只有 MCP 的 Front 不能改檔,沒辦法替既有專案補完 `docs/AS-IS.md`。
 - 等待的時候,Front 一直輪詢 `dp_list_events`;沒有 long-poll。
 
+### 第二次實跑:小型程式語言直譯器(Sonnet 5.5)
+
+`minilang`,一個 TypeScript 直譯器(lexer、parser、求值、命令列),分三版:v1 算式(優先順序、錯誤指出第幾欄)、v2 變數與程式檔、v3 函式、遞迴、比較與 `if`。Front 與 worker 都是 Sonnet 5.5,Verifier 是 Haiku,自治 L1。
+
+| | minilang |
+|---|---|
+| 節點 | 9 個(`expr` v1–v4、`interp` v1–v2、`I1`–`I3`) |
+| worker 執行 | 37 次(退回 5 次) |
+| dp 問我幾次 | 20 次(5 次規劃、6 次合併、4 次「測試寫錯了」、5 次卡住)+ 5 次試用(2 次不行) |
+| 花多久 / 回報的花費 | 115 分鐘 / $6.34 |
+| 結果 | 107 個單元測試、142 個驗收步驟全過;每次親手試用都跟規格一樣 |
+
+重點:`test-fix` 棒第一次在實跑被觸發(三次)。worker 抓到跟規格矛盾的測試(`-2 ^ 2` 應該是 `-4`)和遞迴深度測試差一層。我回報的「bug」其實是我自己測錯,worker 重現不了,沒有亂改。試用找到已經合併的模組裡的真 bug(遞迴大約 700 層就壞,不是 1000),Front 提了一個修它的節點,讓 `I3` 等它。
+
+這次找到並修好的:被取代的提案還能批准(→ `supersedes`)、mutation 讓每個命令列整合點都問使用者(→ 整合棒 SKIPPED)、dp 已經驗過的宣稱還去問小模型(→ SKIPPED)、範本沒有在暫存目錄跑命令列的安全做法(→ `runCommand({ cwd })`)、已經綠的整合點白派一棒(→ 派工前先檢查)、提案的 `parent`/`relation` 沒接依賴(→ 接上)、整合點的 `test-fix` 一定要紅(→ 不用了)。細節見 [CHANGELOG.md](CHANGELOG.md)。
+
 ### 還沒驗過
 
 - **Codex** 當 worker、Critic 或 Verifier:預設指令照它的文件寫,從沒實跑過。
 - **兩個以上真的訂閱帳號輪流**用到額度用完:只有自動測試(假的 worker 印出 `usage limit reached|<時間>`)。
 - **Cursor 與 Codex 的 `dp mcp install`**:只實跑過 Claude Code 的。
-- **`test-fix` 棒**在實跑中從沒被觸發過。
 - **`max_parallel` 在真的 worker 上滿載**。
 - Gemini CLI、OpenCode 沒有帳號支援。要用就自己寫 `agents.<角色>.cmd`。
 
