@@ -4,12 +4,14 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
 
 ## 4.7.3 — MCP 看得到提案的格式、dp_health 能用
 
-- **提案的欄位寫進工具的 schema**:`dp_propose_feature` 的 `spec`、`dp_propose_bundle` 的 `bundle` 以前只宣告 `type: object`,
+- **提案的欄位寫進工具的 schema**(PR #1,hermes-rsi 用 agent 操作 MCP 時發現;這一版合併了它,再加上底下幾點):
+  `dp_propose_feature` 的 `spec`、`dp_propose_bundle` 的 `bundle` 以前只宣告 `type: object`,
   只看得到 MCP 的 AI 讀不到 `docs/dp/INTAKE.md`,猜不出格式(實測第一次呼叫把 spec 當字串送,被擋:`body.spec: 型別應為 object,實際是 string`)。
   現在每個欄位的型別與限制直接取自 `schemas.mjs` 的 `nodeSchema`(格式仍然只定義在那一處),`api.mjs` 只補說明與範例;
   bundle 列出 `release`、`goal`、`roadmap`、`no_integration_reason`、`nodes[]`(節點欄位 + `gherkin_text`、`gherkin_file`)。
   只有 `enum` 的欄位補上 `type: string`(有些工具呼叫格式要求每個欄位都有 type)。格式錯了在呼叫時就回 400,並指出是哪一個欄位
-  (例 `body.bundle.nodes[0].kind`),不用等到 intake 才失敗。
+  (例 `body.bundle.nodes[0].kind`),不用等到 intake 才失敗。PR #1 刻意不加 `additionalProperties: false`;這裡加了:
+  不認識的節點欄位本來就會被 intake 的 nodeSchema 擋下,現在只是提早在呼叫時擋,原本能過的提案照樣能過。
 - `docs/dp/API.md` 的參數表往下展開物件與物件陣列(`spec.id`、`bundle.nodes[].gherkin_text`…),必填照各層的 required。
   `API.md`、`openapi.json`、`FLOW.md` 用 `dp api` 重產。
 - **`dp_health` 從 MCP 呼叫一律失敗**(`health 不能這樣呼叫`):它列在工具裡,但只有 hub 會處理。現在 hub 與 MCP 共用同一個 `health()`。
@@ -47,7 +49,7 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   既有的 `.gitignore` 補上 `.dp/` 與 `*.tmp-*`;**`dp upgrade` 會把 dp 的檔 commit**,連同 dp 規劃的檔裡還沒進 git 的(修好 4.7.3 以前裝的專案;
   MCP 是 `dp_upgrade_project`)。以前升級完留在工作目錄,tick 拒絕執行,從 MCP 升級的 AI 沒有 git 可用,只能請使用者自己 commit(實測漏了 `.dp-install.json`)。
   doctor 多一項「dp 的檔」:沒進 git 就 ✗,修法是 `dp upgrade`。
-- 新測試 9 個。`npm test` 179 個全部通過。
+- 新測試 9 個,加上 PR #1 的 1 個。`npm test` 180 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 
