@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
+import { roleCmd } from '../tools/lib/accounts.mjs';
 import { keyPath } from '../tools/lib/auth.mjs';
 import { doctor, executableOf, renderDoctor } from '../tools/lib/doctor.mjs';
 import { DP_CLAUDE_HOOKS } from '../tools/lib/hooks.mjs';
@@ -141,8 +142,21 @@ test('舊設定檔裡已移除的設定:讀得進來,doctor 逐條提醒;只是�
   assert.equal(c.agents.verifier.backend, 'none', 'http 的 Verifier 停用');
   assert.equal(c.agents.manager, undefined);
   const warned = (await doctor(proj)).results.filter((r) => r.name === 'dp.config.json' && r.status === 'warn').map((r) => r.detail.split(':')[0]);
-  for (const k of ['agents.manager', 'sandbox', 'auth.mode', 'agents.verifier.url', 'agents.verifier.backend', 'autonomy.level']) assert.ok(warned.includes(k), k);
+  for (const k of ['agents.manager', 'sandbox', 'auth.mode', 'agents.verifier.url', 'agents.verifier.model', 'agents.verifier.backend', 'autonomy.level']) assert.ok(warned.includes(k), k);
+  assert.equal(c.agents.verifier.model, undefined, 'Ollama 的模型名拿掉');
   assert.ok(!warned.includes('front'), 'front.guard=light 是當時的預設,不用提醒');
+});
+
+test('帳號模式的 Verifier 模型(agents.verifier.model)留著、不提醒;派工指令帶上它', async () => {
+  const proj = fresh();
+  const cfg = readJson(join(proj, 'dp.config.json'));
+  cfg.agents.verifier = { backend: 'cmd', accounts: ['max-a'], model: 'sonnet' };
+  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  const c = loadConfig(proj);
+  assert.equal(c.agents.verifier.model, 'sonnet', 'v4.6 的帳號模式用這個欄位選模型');
+  const warned = (await doctor(proj)).results.filter((r) => r.name === 'dp.config.json' && r.status === 'warn').map((r) => r.detail.split(':')[0]);
+  assert.ok(!warned.includes('agents.verifier.model'), '不是舊的 http 設定,不用提醒');
+  assert.match(roleCmd(c.agents.verifier, 'verifier', { cli: 'claude' }), /--model sonnet/);
 });
 
 test('doctor:Verifier 指令找不到 → ✗', async () => {

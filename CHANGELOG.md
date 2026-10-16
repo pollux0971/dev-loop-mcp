@@ -13,7 +13,17 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
 - `docs/dp/API.md` 的參數表往下展開物件與物件陣列(`spec.id`、`bundle.nodes[].gherkin_text`…),必填照各層的 required。
   `API.md`、`openapi.json`、`FLOW.md` 用 `dp api` 重產。
 - **`dp_health` 從 MCP 呼叫一律失敗**(`health 不能這樣呼叫`):它列在工具裡,但只有 hub 會處理。現在 hub 與 MCP 共用同一個 `health()`。
-- 新測試 1 個(spec / bundle 的欄位就是 nodeSchema 的欄位、每個欄位有 type 與說明、錯誤指出欄位、dp_health)。
+- **`owns` 在提案的 schema 標成必填、至少一個**:nodeSchema 沒要求,但 `validateDag` 要求每個節點(含整合點)都要有,提案一定會進 DAG。
+  實跑時只看得到 MCP 的 AI 第一次提案,整合點沒寫 owns,到 intake 才被擋;現在呼叫時就回 `body.bundle.nodes[2]: 缺必填欄位 owns`。
+- **帳號模式的 Verifier 模型被丟掉**:`dp account use verifier <帳號> --model haiku`(或 `dp_set_role`)寫進 `agents.verifier.model`,
+  但讀設定時被當成 v4.1 拿掉的 Ollama 設定刪掉,doctor 還警告「http(Ollama)模式已移除」;結果 Verifier 永遠用預設模型(Claude 是 haiku,
+  Codex 沒有預設就不帶模型)。現在只有舊的 http 設定(`backend: "http"` 或有 `url`)才把 `model` 當成已移除的設定。
+- **新專案的節點把程式放在範本版面以外會被提醒**:範本的 `npm test`(vitest)只跑 `packages/**/*.test.ts`、`apps/**/*.test.ts`,
+  mutation 也只測 `packages/*/src`。實跑時只看得到 MCP 的 AI 讀不到 intake skill 的範例,把程式放 `src/todo/**`、`bin/todo.mjs`(.mjs + `node --test`):
+  合併 gate 的 `test` 是 0 個測試照樣綠(gherkin 的 accept 仍然有跑),mutation 測不到東西每次都 ABSTAIN,每一棒都要問使用者。
+  現在 phase 節點的 owns 完全在 `package.json` 的 workspaces 以外時,`dp_propose_*` / `dp intake` 的結果帶 `warnings`,
+  決定請求的 reason 也寫上(收件匣看得到);提案照樣建立,不擋。既有專案不檢查。`owns` 的說明與 schema 的範例也改成範本的版面(`packages/<能力>/**`、`apps/<名稱>/**`)。
+- 新測試 3 個(spec / bundle 的欄位與錯誤、dp_health;帳號模式的 Verifier 模型留著;版面提醒)。`npm test` 174 個全部通過。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

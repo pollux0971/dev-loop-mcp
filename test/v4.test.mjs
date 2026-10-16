@@ -153,6 +153,29 @@ test('非 shared 節點 owns gate 定義檔 → 提案時就拒絕', () => {
   assert.throws(() => proposeFeature(proj, { ...I1, owns: ['packages/app/**', 'package.json'] }, I1_GHERKIN), /只有 shared 節點能改/);
 });
 
+test('新專案的節點把程式放在 packages/ 與 apps/ 以外 → 提案照樣建立,但回提醒(npm test 與 mutation 看不到);既有專案不檢查', () => {
+  const proj = makeProject();
+  const ok = proposeFeature(proj, CALC, CALC_GHERKIN);
+  assert.deepEqual(ok.warnings, [], 'packages/calc/** 在範本的版面裡');
+  const off = { ...CALC, id: 'todo/v1', owns: ['src/todo/**', 'bin/todo.mjs'], accept: 'node --test bin/todo.test.mjs' };
+  const p = proposeFeature(proj, off, CALC_GHERKIN.replace('calc', 'todo'));
+  assert.equal(p.warnings.length, 1);
+  assert.match(p.warnings[0], /todo\/v1 的 owns(.*)不在 packages\/、apps\/ 底下/);
+  assert.match(p.warnings[0], /packages\/<能力>\/src/);
+  const req = readEvents(proj).filter((e) => e.type === 'decision_request').at(-1);
+  assert.match(req.reason, /^提醒:todo\/v1/, '使用者在收件匣也看得到');
+  assert.deepEqual(JSON.parse(readFileSync(join(proj, p.path), 'utf8')).warnings, p.warnings);
+  const viaOp = spawnSync(process.execPath, [DP, 'op', 'propose_feature'], {
+    cwd: proj, encoding: 'utf8', input: JSON.stringify({ spec: { ...off, id: 'todo2/v1', owns: ['lib/todo2/**'] }, gherkin: CALC_GHERKIN }),
+  });
+  const out = JSON.parse(viaOp.stdout.trim().split('\n').at(-1));
+  assert.ok(out.ok, viaOp.stdout + viaOp.stderr);
+  assert.equal(out.result.warnings.length, 1, 'MCP / API 的結果也帶提醒');
+
+  const bf = makeProject({ config: { project: { mode: 'brownfield', language: 'node' } } });
+  assert.deepEqual(proposeFeature(bf, off, CALC_GHERKIN).warnings, [], '既有專案照它自己的版面');
+});
+
 test('intake bundle:一版一次批准;沒有整合點就拒絕;下一版自動依賴上一版的整合點', () => {
   const proj = makeProject();
   assert.throws(() => proposeBundle(proj, { release: 'v1', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }] }), /沒有整合點/);

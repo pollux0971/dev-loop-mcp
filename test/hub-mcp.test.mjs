@@ -43,7 +43,8 @@ describe('API 定義與流程', () => {
     const tools = Object.fromEntries(toolList().map((t) => [t.name, t]));
     const spec = tools.dp_propose_feature.inputSchema.properties.spec;
     assert.deepEqual(Object.keys(spec.properties).sort(), Object.keys(nodeSchema.properties).sort(), 'spec 的欄位就是 dag.json 節點的欄位');
-    assert.deepEqual(spec.required, ['id', 'title', 'intent'], 'kind 有預設(phase),不必填');
+    assert.deepEqual(spec.required, ['id', 'title', 'intent', 'owns'], 'kind 有預設(phase),不必填;owns 是 validateDag 要求的');
+    assert.equal(spec.properties.owns.minItems, 1);
     for (const [k, s] of Object.entries(spec.properties)) {
       assert.ok(s.description, `spec.${k} 要有說明`);
       assert.ok(s.type, `spec.${k} 要有 type(只有 enum 的也補上)`);
@@ -59,6 +60,7 @@ describe('API 定義與流程', () => {
     const err = (id, body) => buildArgs(route(id), { project: 'x' }, [], body).error;
     assert.match(err('proposeFeature', { spec: JSON.stringify(CALC) }), /body\.spec: 型別應為 object,實際是 string/);
     assert.match(err('proposeFeature', { spec: { id: 'calc/v1', intent: 'x' } }), /body\.spec: 缺必填欄位 title/);
+    assert.match(err('proposeBundle', { bundle: { release: 'v1', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }, (({ owns: _o, ...rest }) => rest)(I1)] } }), /body\.bundle\.nodes\[1\]: 缺必填欄位 owns/);
     assert.match(err('proposeFeature', { spec: { ...CALC, colour: 'red' } }), /body\.spec: 不認識的欄位 colour/);
     assert.equal(err('proposeFeature', { spec: CALC, gherkin: CALC_GHERKIN }), undefined);
     assert.match(err('proposeBundle', { bundle: { release: 'v1', nodes: [{ ...I1, kind: 'integ' }] } }), /body\.bundle\.nodes\[0\]\.kind/);

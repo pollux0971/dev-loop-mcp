@@ -105,7 +105,7 @@ const REMOVED = [
   ['front', 'Front 的 strict 唯讀模式已移除(只剩防寫帳本的 light)', (v) => (v?.guard ?? 'light') === 'light'],
   ['auth.mode', 'signed / off 模式已移除:一律信任 Front 轉達,對得上簽章原話時另外記 hash', (v) => v === 'trust'],
   ['agents.verifier.url', 'Verifier 的 http(Ollama)模式已移除,改用 cmd', (v) => !v],
-  ['agents.verifier.model', 'Verifier 的 http(Ollama)模式已移除,改用 cmd', (v) => !v],
+  // agents.verifier.model 不在這裡:v4.6 起它是帳號模式下 CLI 用的模型(dp account use verifier … --model),見 stripRemovedSettings
   ['verify.clean_room_max_overlap', '外部程式匯入(intake import)已移除', () => true],
   ['pipeline.backfill', '既有專案補 gherkin(brownfield)已移除', (v) => String(v) === 'backfill'],
   ['pipeline.import-hard', '外部程式匯入(intake import)已移除', (v) => String(v) === 'test,port'],
@@ -115,6 +115,15 @@ const REMOVED = [
 export function stripRemovedSettings(raw) {
   const out = structuredClone(raw ?? {});
   const removed = [];
+  // v4.1 拿掉 http(Ollama)模式時,agents.verifier.model 是 Ollama 的模型名,一律拿掉;但 v4.6 起同一個欄位是帳號模式下
+  // Verifier 用的模型(例 haiku、sonnet)。只有舊的 http 設定(backend http 或有 url)才當成已移除的設定。
+  // v4.7.3 實測:dp account use verifier claude-max --model haiku 之後 doctor 警告「http 模式已移除」,而且模型被丟掉、永遠用預設
+  const v0 = out.agents?.verifier;
+  if (v0 && typeof v0 === 'object' && 'model' in v0 && (v0.backend === 'http' || 'url' in v0)) {
+    const silent = !v0.model;
+    delete v0.model;
+    if (!silent) removed.push({ key: 'agents.verifier.model', note: 'Verifier 的 http(Ollama)模式已移除,改用 cmd' });
+  }
   // silent(v) 為真 = 舊設定只是預設值,拿掉不用提醒
   for (const [key, note, silent] of REMOVED) {
     const parts = key.split('.');

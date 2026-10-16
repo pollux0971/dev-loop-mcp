@@ -21,7 +21,9 @@ const NODE_DOCS = {
   kind: 'phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔)',
   title: '短標題',
   intent: '這個節點要做到什麼(300 字內)',
-  owns: '這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回',
+  owns: '這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。'
+    + '新專案(dp 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,'
+    + '範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔',
   gherkin: 'gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設)',
   accept: '驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試)',
   standalone: '這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸',
@@ -48,17 +50,20 @@ function described(schema, docs = {}) {
 }
 
 const NODE_FIELDS = described(nodeSchema, NODE_DOCS);
-// kind 不用填(預設 phase);其他必填照 nodeSchema
-const SPEC_REQUIRED = nodeSchema.required.filter((k) => k !== 'kind');
+// owns 在 nodeSchema 不是必填,但 validateDag 要求每個節點都有(沒有寫入範圍就驗不了越界);提案一定會進 DAG,所以這裡就標必填、至少一個。
+// 實測:只看得到 MCP 的 AI 第一次提案時整合點沒寫 owns,到 intake 才被擋
+NODE_FIELDS.owns = { ...NODE_FIELDS.owns, minItems: 1 };
+// kind 不用填(預設 phase);其他必填照 nodeSchema,加上 owns
+const SPEC_REQUIRED = [...nodeSchema.required.filter((k) => k !== 'kind'), 'owns'];
 const FEATURE_SPEC = {
   type: 'object', required: SPEC_REQUIRED, additionalProperties: false, properties: NODE_FIELDS,
-  description: '一個節點的規格(欄位同 dag.json 的節點)。例:{"id":"notes/v1","title":"記一筆筆記","intent":"notes add 存一筆、notes list 列出來","owns":["src/notes/**"]}',
+  description: '一個節點的規格(欄位同 dag.json 的節點)。例:{"id":"notes/v1","title":"記一筆筆記","intent":"notes add 存一筆、notes list 列出來","owns":["packages/notes/**"]}',
 };
 const BUNDLE = {
   type: 'object', required: ['release', 'nodes'], additionalProperties: false,
   description: '一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。'
-    + '例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["src/notes/**"],"gherkin_text":"Feature: …"},'
-    + '{"id":"I1","kind":"integration","title":"…","intent":"…","depends_on":["notes/v1"],"gherkin_text":"Feature: …\\n  @e2e\\n  Scenario: …"}]}',
+    + '例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["packages/notes/**"],"gherkin_text":"Feature: …"},'
+    + '{"id":"I1","kind":"integration","title":"…","intent":"…","owns":["apps/cli/**"],"depends_on":["notes/v1"],"gherkin_text":"Feature: …\\n  @e2e\\n  Scenario: …"}]}',
   properties: {
     release: str('版本(例 v1)', { pattern: '^[\\w.-]+$' }),
     goal: str('這一版使用者能做什麼(一句話,會出現在要使用者批准的問題裡)'),

@@ -390,9 +390,11 @@ async function dispatchCommand(cmd, rest) {
         const gherkin = flags.gherkin ? readFileSync(resolve(flags.gherkin), 'utf8') : null;
         const p = proposeFeature(root, spec, gherkin);
         console.log(`提案 ${p.id} 已建立,等使用者決定 node:${p.id}`);
+        for (const w of p.warnings) console.log(`⚠ ${w}`);
       } else if (mode === 'bundle') {
         const p = proposeBundle(root, readJson(resolve(need(flags, 'spec', 'JSON 檔:{ release, goal, roadmap?, nodes: [...] }'))));
         console.log(`提案 ${p.id} 已建立(整個版本一次批准),等使用者決定 node:${p.id}`);
+        for (const w of p.warnings) console.log(`⚠ ${w}`);
       } else if (mode === 'apply') {
         const r = applyProposal(root, need({ id: arg }, 'id'));
         console.log(r.applied ? `已加入 ${r.nodes.join(', ')}` : '已經套用過了');

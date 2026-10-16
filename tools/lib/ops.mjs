@@ -287,7 +287,7 @@ export const OPS = {
       if (!a.spec || typeof a.spec !== 'object') throw new DpError('要 spec(節點的 JSON 物件)');
       const p = proposeFeature(root, a.spec, a.gherkin ? String(a.gherkin) : null);
       refreshRendered(root);
-      return { proposal_id: p.id, decide_ref: `node:${p.id}` };
+      return { proposal_id: p.id, decide_ref: `node:${p.id}`, ...(p.warnings.length ? { warnings: p.warnings } : {}) };
     },
   },
   propose_bundle: {
@@ -296,7 +296,7 @@ export const OPS = {
       if (!a.bundle || typeof a.bundle !== 'object') throw new DpError('要 bundle');
       const p = proposeBundle(root, a.bundle);
       refreshRendered(root);
-      return { proposal_id: p.id, decide_ref: `node:${p.id}` };
+      return { proposal_id: p.id, decide_ref: `node:${p.id}`, ...(p.warnings.length ? { warnings: p.warnings } : {}) };
     },
   },
   tick: {

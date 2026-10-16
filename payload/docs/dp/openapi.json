@@ -2858,7 +2858,8 @@
                     "required": [
                       "id",
                       "title",
-                      "intent"
+                      "intent",
+                      "owns"
                     ],
                     "additionalProperties": false,
                     "properties": {
@@ -2893,7 +2894,8 @@
                           "type": "string",
                           "minLength": 1
                         },
-                        "description": "這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回"
+                        "description": "這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dp 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔",
+                        "minItems": 1
                       },
                       "gherkin": {
                         "type": "string",
@@ -2996,7 +2998,7 @@
                         "description": "既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算"
                       }
                     },
-                    "description": "一個節點的規格(欄位同 dag.json 的節點)。例:{\"id\":\"notes/v1\",\"title\":\"記一筆筆記\",\"intent\":\"notes add 存一筆、notes list 列出來\",\"owns\":[\"src/notes/**\"]}"
+                    "description": "一個節點的規格(欄位同 dag.json 的節點)。例:{\"id\":\"notes/v1\",\"title\":\"記一筆筆記\",\"intent\":\"notes add 存一筆、notes list 列出來\",\"owns\":[\"packages/notes/**\"]}"
                   },
                   "gherkin": {
                     "type": "string",
@@ -3107,7 +3109,7 @@
                       "nodes"
                     ],
                     "additionalProperties": false,
-                    "description": "一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。例:{\"release\":\"v1\",\"goal\":\"能記一筆、列出來\",\"nodes\":[{\"id\":\"notes/v1\",\"title\":\"…\",\"intent\":\"…\",\"owns\":[\"src/notes/**\"],\"gherkin_text\":\"Feature: …\"},{\"id\":\"I1\",\"kind\":\"integration\",\"title\":\"…\",\"intent\":\"…\",\"depends_on\":[\"notes/v1\"],\"gherkin_text\":\"Feature: …\\n  @e2e\\n  Scenario: …\"}]}",
+                    "description": "一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。例:{\"release\":\"v1\",\"goal\":\"能記一筆、列出來\",\"nodes\":[{\"id\":\"notes/v1\",\"title\":\"…\",\"intent\":\"…\",\"owns\":[\"packages/notes/**\"],\"gherkin_text\":\"Feature: …\"},{\"id\":\"I1\",\"kind\":\"integration\",\"title\":\"…\",\"intent\":\"…\",\"owns\":[\"apps/cli/**\"],\"depends_on\":[\"notes/v1\"],\"gherkin_text\":\"Feature: …\\n  @e2e\\n  Scenario: …\"}]}",
                     "properties": {
                       "release": {
                         "type": "string",
@@ -3135,7 +3137,8 @@
                           "required": [
                             "id",
                             "title",
-                            "intent"
+                            "intent",
+                            "owns"
                           ],
                           "additionalProperties": false,
                           "properties": {
@@ -3170,7 +3173,8 @@
                                 "type": "string",
                                 "minLength": 1
                               },
-                              "description": "這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回"
+                              "description": "這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dp 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔",
+                              "minItems": 1
                             },
                             "gherkin": {
                               "type": "string",

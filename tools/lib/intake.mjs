@@ -35,20 +35,41 @@ function checkNodes(root, nodes) {
   if (problems.length) throw new DpError(`提案不合法:\n  - ${problems.join('\n  - ')}`);
 }
 
-function propose(root, proposal, question, recommendation = 'yes', reason) {
+function propose(root, proposal, question, { recommendation = 'yes', warnings = [] } = {}) {
   const id = nextProposalId(root);
   const path = `${PROPOSALS}/${id}.json`;
-  writeJson(join(root, path), { id, ...proposal });
+  writeJson(join(root, path), { id, ...proposal, ...(warnings.length ? { warnings } : {}) });
   append(root, 'dp-cli', 'decision_request', {
     ref: `node:${id}`,
     question,
     options: [{ key: 'yes', label: '批准,寫進 DAG' }, { key: 'no', label: '不要' }],
     recommendation,
-    ...(reason ? { reason } : {}),
+    ...(warnings.length ? { reason: `提醒:${warnings.join(';')}` } : {}),
     from: 'intake',
     detail_path: path,
   });
-  return { id, path };
+  return { id, path, warnings };
+}
+
+/**
+ * 新專案(範本)的版面:package.json 的 workspaces(範本是 packages/*、apps/*)。範本的 npm test(vitest)只跑那底下的 *.test.ts,
+ * mutation(stryker)也只測那底下的 src。phase 節點的 owns 完全落在 workspaces 外 → 提醒,不擋(真的要別的版面,
+ * 改 vitest / stryker 設定是 gate 定義檔,要另開 shared 節點)。既有專案照它自己的版面,不檢查。
+ * v4.7.3 實測:只看得到 MCP 的 AI 讀不到 intake skill 的範例,把程式放 src/、bin/*.mjs:合併 gate 的 test 是 0 個測試照樣綠,
+ * mutation 測不到東西每次都 ABSTAIN,每一棒都要問使用者。
+ */
+export function layoutWarnings(root, nodes) {
+  if (brownfieldConfig(root)) return [];
+  const ws = readJson(join(root, 'package.json'), {})?.workspaces;
+  const dirs = (Array.isArray(ws) ? ws : ws?.packages ?? []).map((w) => String(w).replace(/\/?\*.*$/, '')).filter(Boolean);
+  if (!dirs.length) return [];
+  const inside = (g) => dirs.some((d) => g === d || g.startsWith(`${d}/`));
+  return nodes.filter((n) => n.kind === 'phase' && (n.owns ?? []).length && !n.owns.some(inside)).map((n) => {
+    const tests = dirs.map((d) => `${d}/**/*.test.ts`).join('、');
+    return `${n.id} 的 owns(${n.owns.join('、')})不在 ${dirs.map((d) => `${d}/`).join('、')} 底下:`
+      + `範本的 npm test 只跑 ${tests},mutation 也只測那裡的程式,這個節點的單元測試不會進合併 gate。`
+      + `新專案的程式放 ${dirs[0]}/<能力>/src/**(TypeScript,測試 *.test.ts 放旁邊),命令列入口放 ${dirs[1] ?? dirs[0]}/<名稱>/**`;
+  });
 }
 
 // ------------------------------------------------------------------ feature
@@ -118,7 +139,7 @@ export function proposeFeature(root, spec, gherkinText) {
   const node = normalizeFeature(root, spec, gherkinText);
   checkNodes(root, [node]);
   return propose(root, { kind: 'feature', nodes: [node], files: gherkinText ? { [node.gherkin]: gherkinText } : {} },
-    `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}`);
+    `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}`, { warnings: layoutWarnings(root, [node]) });
 }
 
 /**
@@ -164,7 +185,8 @@ export function proposeBundle(root, bundle) {
   const list = nodes.map((n) => `${n.id}${n.kind === 'integration' ? '(整合點)' : ''}`).join('、');
   const pinned = nodes.reduce((k, n) => k + (n.characterize?.skip ? 0 : n.characterize?.targets?.length ?? 0), 0);
   return propose(root, { kind: 'bundle', release: bundle.release, nodes, files, ...(bundle.roadmap ? { overwrite: ['docs/ROADMAP.md'] } : {}) },
-    `新增 ${bundle.release}:${bundle.goal ?? ''}(${nodes.length} 個節點:${list}${gate ? `;等 ${gate} 試用過才開工` : ''}${pinned ? `;先釘住 ${pinned} 個既有檔的現有行為` : ''})`);
+    `新增 ${bundle.release}:${bundle.goal ?? ''}(${nodes.length} 個節點:${list}${gate ? `;等 ${gate} 試用過才開工` : ''}${pinned ? `;先釘住 ${pinned} 個既有檔的現有行為` : ''})`,
+    { warnings: layoutWarnings(root, nodes) });
 }
 
 // ------------------------------------------------------------------ apply
