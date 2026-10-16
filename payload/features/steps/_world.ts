@@ -114,10 +114,14 @@ export class ProjectWorld extends World {
     return JSON.parse(readFileSync(join(ROOT, 'standalone.json'), 'utf8')) as Manifest;
   }
 
-  /** 同步執行一個 shell 指令(cwd = repo 根),結果放進 lastRun 並回傳 */
-  runCommand(cmd: string, opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): RunResult {
-    const r = spawnSync(cmd, {
-      cwd: ROOT,
+  /**
+   * 同步執行一個 shell 指令,結果放進 lastRun 並回傳。cwd 預設 repo 根;命令列的整合測試常要在暫存目錄跑(放測試用的檔),給 opts.cwd。
+   * 指令裡的 `--import tsx` 會換成 tsx 的絕對位置:在 repo 以外的目錄,node 解不到 tsx,子程序一啟動就失敗,
+   * 看起來像「還沒實作」的紅(假紅),之後實作棒怎麼改都綠不了(dp v4.7.3 實測:步驟自己 spawn、cwd 設暫存目錄)。
+   */
+  runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): RunResult {
+    const r = spawnSync(withTsxResolved(cmd), {
+      cwd: opts.cwd ?? ROOT,
       shell: true,
       encoding: 'utf8',
       timeout: opts.timeoutMs ?? 120_000,
@@ -151,7 +155,7 @@ export class ProjectWorld extends World {
     const timeoutMs = opts.timeoutMs ?? 60_000;
 
     return new Promise<RunResult>((resolveRun) => {
-      const child = spawn(entry.cmd, { cwd: ROOT, shell: true, env: withoutNodeOptions(process.env), detached: true });
+      const child = spawn(withTsxResolved(entry.cmd), { cwd: ROOT, shell: true, env: withoutNodeOptions(process.env), detached: true });
       let stdout = '';
       let stderr = '';
       let settled = false;
@@ -178,6 +182,12 @@ export class ProjectWorld extends World {
 }
 
 /** 複製環境變數但拿掉 NODE_OPTIONS(見 runCommand 的註解) */
+/** tsx 的絕對位置(從 repo 解析)。`node --import tsx` 只在 repo 裡解得到;換成這個,在任何 cwd 都載入得到。 */
+const TSX_URL = (() => { try { return import.meta.resolve('tsx'); } catch { return null; } })();
+function withTsxResolved(cmd: string): string {
+  return TSX_URL ? cmd.replace(/--import(?:=|\s+)tsx(?![\w/.-])/g, `--import=${TSX_URL}`) : cmd;
+}
+
 function withoutNodeOptions(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const { NODE_OPTIONS: _omit, ...rest } = env;
   return rest;

@@ -51,5 +51,9 @@ Wave 0 已經在 `common.steps.ts` 定義好的句子(**worker 不要再定義**
 
 ## TypeScript 載入(見 `docs/02-decision-map.md` ADR-013)
 
+**跑命令列一律用 `this.runCommand(cmd, { cwd })`**(要放測試用的檔就給一個暫存目錄當 cwd),不要自己 `spawn`:
+在 repo 以外的目錄直接跑 `node --import tsx …` 解不到 tsx,子程序一啟動就失敗,看起來像「還沒實作」的紅(假紅),
+之後實作棒怎麼改都綠不了。`runCommand` 會把 `--import tsx` 換成 tsx 的絕對位置,結果在 `this.lastRun`(stdout、stderr、status)。
+
 `npm run accept` 用 `NODE_OPTIONS=--import=tsx cucumber-js`。步驟檔之間的 import 寫 `./_world.js`
 (ESM 慣例,tsx 會對應到 `.ts`)。

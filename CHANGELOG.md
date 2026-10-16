@@ -64,6 +64,11 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   而且 dp 剛用同一條指令重跑確認過(照規定紅 / 綠、紅的原因也對、退出碼跟宣稱一樣)時,claim-supported 記 SKIPPED,不再問小模型。
   以前小模型兩種問法常答得不一樣 → ABSTAIN → 升級問使用者,是今天實跑最常見的打擾(todo-cli、wordfreq、minilang 都有)。
   其他宣稱、場景誠實度照舊問。
+- **範本的 `runCommand` 可以指定 cwd,`--import tsx` 在任何目錄都載入得到**(`features/steps/_world.ts`、`features/steps/README.md`,新專案才有):
+  命令列的整合測試常要在暫存目錄跑(放測試用的檔),原本 `runCommand` 固定在 repo 根,worker 就自己 `spawn`、cwd 設暫存目錄;
+  `node --import tsx` 在 repo 以外解不到 tsx,子程序一啟動就失敗。測試棒的「紅」看起來像還沒實作(stdout 是空的),
+  dp 照樣收下,實作棒怎麼改都綠不了,回報測試寫錯。現在 `runCommand(cmd, { cwd })` 把 `--import tsx` 換成 tsx 的絕對位置,README 寫明一律用它。
+  實跑:minilang 的 I2。
 - 新測試 13 個,加上 PR #1 的 1 個。`npm test` 184 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
