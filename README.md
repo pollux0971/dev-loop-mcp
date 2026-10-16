@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dlm plans the work as a DAG, sen
 
 ![dlm hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.8.0 · Node ≥ 20 · zero dependencies · 198 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.8.0 · Node ≥ 20 · zero dependencies · 204 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**, then **dev-paradigm-mcp** (command `dp`). Since 4.8.0 it is called **dev-loop-mcp**, and the command is `dlm`. MCP tools start with `dlm_`. Coming from `dp`? See [Upgrading from dp](#upgrading-from-dp-473-and-earlier).
 >
@@ -118,7 +118,7 @@ Then restart Claude Code. `/mcp` shows `dlm` with 38 tools and 4 prompts.
 
 1. **Reinstall the MCP.** In the dev-loop-mcp folder (`git pull`, or clone the new URL), run `node tools/dlm.mjs mcp install`. It registers `dlm` and removes the old `dp` registration if it points at a `tools/dp.mjs`. Restart Claude Code. Tools are now `dlm_*` and prompts are `/mcp__dlm__...`.
 2. **Machine config moves by itself.** The first time the new version runs, `~/.config/dp` becomes `~/.config/dlm`, and absolute paths inside `accounts.json` are rewritten. Env vars are now `DLM_*` (`DLM_CONFIG_DIR`, `DLM_ACCOUNTS_FILE`, `DLM_PROJECTS_FILE`, `DLM_KEY_FILE`).
-3. **Upgrade each project.** Stop its background loop first. Then use the `dlm_upgrade_project` tool, or run `node <dev-loop-mcp>/tools/dlm.mjs upgrade` inside the project. It renames `dp.config.json`, `.dp/`, `docs/dp/`, `docs/dp-baseline.json`, `.dp-install.json` and `tools/dp.mjs` to their `dlm` names, repairs the git worktrees, patches `package.json`, `.claude/settings.json`, `.gitignore`, `.mcp.json` and `cucumber.js`, and makes one commit. If you edited `tools/dp.mjs` or `docs/dp/`, it reports a conflict and writes nothing.
+3. **Upgrade each project.** Stop its background loop first. Then use the `dlm_upgrade_project` tool, or run `node <dev-loop-mcp>/tools/dlm.mjs upgrade` inside the project. It renames `dp.config.json`, `.dp/`, `docs/dp/`, `docs/dp-baseline.json`, `.dp-install.json` and `tools/dp.mjs` to their `dlm` names, repairs the git worktrees, patches `package.json`, `.claude/settings.json`, `.gitignore`, `.mcp.json` and `cucumber.js`, and makes one commit. In AGENTS.md and the template READMEs it changes only the forms dp wrote (`` `dp` ``, `dp status`, `dp_*` tools), so your own text that says "dp" stays. `tools/dp.mjs` becomes a tiny file that forwards to `tools/dlm.mjs`, because Claude Code sessions started before the upgrade keep calling the old hook path; restart Claude Code, then you can delete it. If you edited `tools/dp.mjs` or `docs/dp/`, or a tick or worker is still running, it writes nothing. `--dry-run` lists every step.
 
 Until a project is upgraded, the new MCP still works with it, because it runs that project's own `tools/dp.mjs`. Ledger history is not rewritten: old events with actor `dp-cli`, old `dp-archive/*` tags and old `dp/*` branches stay valid. See [MIGRATION.md](MIGRATION.md).
 
@@ -416,7 +416,7 @@ More: [`payload/docs/dlm/AGENTS-SETUP.md`](payload/docs/dlm/AGENTS-SETUP.md), [`
 
 ### Automated tests
 
-`npm test`: **198 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
+`npm test`: **204 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
 
 ### Real run, 2026-10-16
 

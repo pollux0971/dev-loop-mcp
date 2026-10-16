@@ -16,20 +16,26 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   - `dlm upgrade` / `dlm_upgrade_project` 遇到 `.dp-install.json`:先用舊清單檢查受管檔有沒有衝突(有就一個檔都不動),
     背景迴圈、tick 還在跑或還有活著的 worker 就拒絕(會寫進 `.dp/`);接著搬 `.dp/` → `.dlm/` 並 `git worktree repair`
     (worktree 與沙箱副本裡面那層 `.dp/` 也改名:升級前做完、還沒被收件的 worker 報告照樣收得到),
-    `dp.config.json` 改名並改寫裡面的 `check:dp`、`.dp/`、`$DP_PROMPT` 等,改寫使用者自己的 seed 檔
-    (`package.json` 的 scripts、`.claude/settings.json` 的 hooks、`.gitignore`、`.mcp.json`、`cucumber.js`、AGENTS.md 等範本 README 的 dp 字樣),
+    `dp.config.json` 改名並改寫裡面的 `check:dp`、專案裡的 `.dp/`、`$DP_PROMPT` 等(指到專案以外的 `.dp` 不改,結果裡提醒),
+    改寫使用者自己的 seed 檔(`package.json` 的 scripts、`.claude/settings.json` 的 hooks、`.gitignore`、`.mcp.json`、`cucumber.js`;
+    AGENTS.md 等範本 README 只改 dp 寫過的形式:`` `dp` ``、`dp status` 這類指令、`dp_*` 工具,使用者自己的 `dp[i][j]`、`dp_table` 不動),
     換上 `tools/dlm.mjs` 與 `docs/dlm/`、拿掉舊的,重新產生 STATUS.md 等產生檔,全部一個 commit(`dlm upgrade 4.7.3 → 4.8.0 (rename dp → dlm)`)。
+    整個過程拿著 `tick.lock`;`git worktree repair` 失敗就把資料夾搬回去,上一次停在一半的再跑一次會補完。
     `--dry-run` 列出改名的每一步,以及現在為什麼還不能升級。
+  - `tools/dp.mjs` 留一個只轉給 `tools/dlm.mjs` 的小檔(這個 repo 與升級過的專案都有,新專案不裝):Claude Code 開著時記住的 hooks、
+    還沒重裝的 `dp` MCP 註冊都還指著它,不會一升級就壞;重開 Claude Code、`dlm mcp install` 之後可以刪。
   - 帳本不改寫:舊事件的 actor `dp-cli` 照樣有效,派工紀錄裡 `.dp/` 底下的路徑重播時指到 `.dlm/`;舊的 `dp/*` 分支、`dp-archive/*` 標籤留著。
-  - 這台電腦:第一次執行時 `~/.config/dp` 搬到 `~/.config/dlm`(帳號清單裡指到舊資料夾的路徑一起改),舊位置留一個指過去的捷徑,
-    升級前就在跑的舊 dp 程序繼續讀寫同一份;確定沒有舊程序後可以刪掉。
+  - 這台電腦:第一次執行時 `~/.config/dp` 搬到 `~/.config/dlm`(本身是捷徑的話搬捷徑;帳號清單裡指到舊資料夾的路徑一起改,
+    中途失敗的下次啟動補上),舊位置馬上留一個指過去的捷徑,升級前就在跑的舊 dp 程序繼續讀寫同一份;確定沒有舊程序後可以刪掉。
+    使用者自己設的 `DP_*` 環境變數不再讀,`dlm doctor` 會提醒改名。
   - `dlm mcp install` 裝好 `dlm` 後,把指到 `tools/dp.mjs` 的舊 `dp` 註冊拿掉(Claude Code、Cursor、Codex 都是;指到別的就不動),
-    免得同一組工具出現兩次;專案的 `.mcp.json` 也一樣。MCP 也拒絕舊版派出去的 worker(`DP_ROLE`、在 `.dp/` 底下)。
+    免得同一組工具出現兩次(從 `claude mcp get` 回報的 scope 拿掉);專案的 `.mcp.json` 也一樣。MCP 也拒絕舊版派出去的 worker(`DP_ROLE`、在 `.dp/` 的工作目錄底下)。
   - 升級後要重開 Claude Code:hooks 的路徑換成 `tools/dlm.mjs`,執行中的 session 還記著舊的。
 - 實跑:minilang(4.7.3 建的,9 個節點、289 筆帳本)升級成功,`dlm doctor` 全過、簽章鏈完整,四道 gate 全綠,從只有 dlm MCP 的 Claude 讀得到。
-- 新測試 11 個(`test/legacy.test.mjs`):從 git 歷史拿真的 4.7.3 建專案、做到實作棒派出去,升級後用新版做完;
-  迴圈在跑或受管檔被改過時一個檔都不動;舊專案經由自己的 CLI 照常讀;設定資料夾搬家;`mcp install` 拿掉舊註冊。
-  沒有 git 歷史(不是 clone)時那幾個跳過。`npm test` 198 個全部通過。
+- 新測試 17 個(`test/legacy.test.mjs`):從 git 歷史拿真的 4.7.3 建專案、做到實作棒派出去,升級後用新版做完(舊 worker 的交件照樣收下);
+  上一次停在一半的升級再跑一次會補完;迴圈或 tick 在跑、受管檔被改過時一個檔都不動;使用者自己的 dp 字樣不動;
+  舊專案經由自己的 CLI 照常讀;設定資料夾搬家(含本身是捷徑、中途失敗);`mcp install` 從正確的 scope 拿掉舊註冊。
+  沒有 git 歷史(不是 clone)時那幾個跳過。另一個 Claude session 審過搬家程式,找到的 6 個問題都修了、各有測試。`npm test` 204 個全部通過。
 
 ## 4.7.3 — MCP 看得到提案的格式、dp_health 能用
 

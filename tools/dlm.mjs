@@ -607,11 +607,15 @@ function mcpSnippets() {
  */
 function removeLegacyMcp(cli, removeArgsList) {
   const g = spawnSync(cli, ['mcp', 'get', 'dp'], { encoding: 'utf8' });
-  if (g.error || g.status !== 0 || !/tools[\\/]dp\.mjs/.test(`${g.stdout}${g.stderr}`)) return null;
-  for (const args of removeArgsList) {
+  const out = `${g.stdout}${g.stderr}`;
+  if (g.error || g.status !== 0 || !/tools[\\/]dp\.mjs/.test(out)) return null;
+  // `claude mcp get` also finds a project or local entry; remove from the scope it reports, not just user
+  const scope = /Scope:\s*(User|Local|Project)/i.exec(out)?.[1]?.toLowerCase();
+  const tries = scope && cli === 'claude' ? [['mcp', 'remove', '--scope', scope, 'dp']] : removeArgsList;
+  for (const args of tries) {
     if (spawnSync(cli, args, { encoding: 'utf8' }).status === 0) return `✓ 拿掉了舊的 dp MCP server(4.8.0 以前的名字,指到 tools/dp.mjs)`;
   }
-  return `⚠ 舊的 dp MCP server 還在(指到 tools/dp.mjs),沒能自動拿掉:${cli} mcp remove dp`;
+  return `⚠ 舊的 dp MCP server 還在(指到 tools/dp.mjs),沒能自動拿掉:${cli} mcp remove${scope ? ` --scope ${scope}` : ''} dp`;
 }
 
 function mcpCommand(root, pos, flags) {

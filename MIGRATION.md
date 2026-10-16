@@ -17,14 +17,14 @@
 **升級步驟**
 
 1. **重裝 MCP**:從 dev-loop-mcp 的目錄跑 `node tools/dlm.mjs mcp install`。它註冊 `dlm`,並把指向 `tools/dp.mjs` 的舊 `dp` 註冊移除。重開 Claude Code。
-2. **電腦層級設定自動搬家**:新版第一次跑時,`~/.config/dp` 搬到 `~/.config/dlm`,`accounts.json` 裡的絕對路徑一併改寫。你自己設過 `DP_*` 環境變數的話(例如 CI、shell 設定),要手動改成 `DLM_*`。
+2. **電腦層級設定自動搬家**:新版第一次跑時,`~/.config/dp` 搬到 `~/.config/dlm`,`accounts.json` 裡的絕對路徑一併改寫,舊位置留一個指過去的捷徑(升級前就在跑的舊程序繼續用同一份;沒有舊程序後可以刪)。你自己設過 `DP_*` 環境變數的話(例如 CI、shell 設定),要手動改成 `DLM_*`;`dlm doctor` 會提醒。
 3. **每個專案各升級一次**:先停掉背景迴圈(`dlm_stop_loop`),再呼叫 `dlm_upgrade_project`,或在專案裡跑 `node <新版 dlm>/tools/dlm.mjs upgrade`。它會:
    - 把 `dp.config.json` 改名成 `dlm.config.json`,裡面的 `check:dp`、`.dp/`、`DP_` 一起改;
    - 把 `.dp/` 搬到 `.dlm/` 並修好 git worktree;
    - 改名 `docs/dp-baseline.json`、`.dp-install.json`;
-   - 換掉 `tools/dp.mjs` 和 `docs/dp/`。這兩個你若改過,會回報衝突、什麼都不寫;
+   - 換掉 `docs/dp/`,`tools/dp.mjs` 換成只轉給 `tools/dlm.mjs` 的小檔(升級前就開著的 Claude Code session 還會呼叫舊的 hook 路徑;重開後可以刪)。這兩個你若改過,會回報衝突、什麼都不寫;
    - 修補 `package.json` scripts、`.claude/settings.json` hooks、`.gitignore`、`.mcp.json`、`cucumber.js`;
-   - 改寫 `AGENTS.md`、`AUTONOMY.md`、`CLAUDE.md` 和範本 README 裡的 dp 用語;
+   - 改寫 `AGENTS.md`、`AUTONOMY.md`、`CLAUDE.md` 和範本 README 裡 dp 寫過的形式(`` `dp` ``、`dp status` 這類指令、`dp_*` 工具),你自己文字裡的 dp 不動;
    - 全部做成一個 commit。
 4. **還沒升級的專案照樣能用**:新的 MCP 會去跑該專案自己的 `tools/dp.mjs`。
 5. **歷史不動**:舊事件的 actor `dp-cli` 仍然有效;舊的 `dp-archive/*` tag 和 `dp/*` 分支保留。

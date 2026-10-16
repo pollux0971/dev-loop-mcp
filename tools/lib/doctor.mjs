@@ -8,7 +8,7 @@ import { loadDag } from './dag.mjs';
 import { gateCommand, readBaseline } from './brownfield.mjs';
 import { CLIS, ROLES, accountsFile, loadAccounts, loginStatus } from './accounts.mjs';
 import { hasTestGate } from './gates.mjs';
-import { isLegacyProject } from './legacy.mjs';
+import { isLegacyProject, legacyEnvVars } from './legacy.mjs';
 import { checkLedger } from './ledger.mjs';
 import { lockHolder, readJson, run } from './util.mjs';
 
@@ -177,6 +177,10 @@ function checkState(root, config) {
 
 export async function doctor(root) {
   const results = [checkNode()];
+  const oldEnv = legacyEnvVars();
+  if (oldEnv.length) {
+    results.push(warn('環境變數', `${oldEnv.join('、')} 是 4.8.0 以前的名字,dlm 不讀了`, `改成 ${oldEnv.map((v) => v.replace(/^DP_/, 'DLM_')).join('、')}`));
+  }
   if (isLegacyProject(root)) {
     // dp.config.json and tools/dp.mjs from before 4.8.0: nothing else can be checked until the files have their new names
     results.push(fail('dp → dlm', '這是 4.8.0 以前(dp)的專案,檔名還是舊的(dp.config.json、.dp/、tools/dp.mjs)',

@@ -93,7 +93,9 @@ export function refuseReason(root, env = process.env) {
   // a project not yet upgraded from dp still sends workers out with DP_ROLE, into .dp/
   if (env.DP_ROLE) return `DP_ROLE=${env.DP_ROLE}:舊版 dp 派出去的 ${env.DP_ROLE} 不能使用 dlm 的 MCP`;
   const parts = root.split(sep);
-  if (parts.includes('.dlm') || parts.includes('.dp')) return '在 dlm 的工作目錄(.dlm/ 或舊版的 .dp/)裡:這是 worker 的副本,不能使用 dlm 的 MCP';
+  // an old .dp/ counts only for its work folders: a user may well have an ordinary folder called .dp above the project
+  const oldWork = parts.some((p, i) => p === '.dp' && ['sandboxes', 'worktrees', 'scratch', 'merge-tree'].includes(parts[i + 1]));
+  if (parts.includes('.dlm') || oldWork) return '在 dlm 的工作目錄(.dlm/ 或舊版的 .dp/)裡:這是 worker 的副本,不能使用 dlm 的 MCP';
   return null;
 }
 

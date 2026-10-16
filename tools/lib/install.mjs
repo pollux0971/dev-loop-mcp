@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectProject } from './brownfield.mjs';
 import { loadDag } from './dag.mjs';
-import { LEGACY, finishMigration, migrateProject, migrationBlocker, migrationPlan } from './legacy.mjs';
+import { LEGACY, finishMigration, lockForMigration, migrateProject, migrationBlocker, migrationPlan } from './legacy.mjs';
 import { readEvents } from './ledger.mjs';
 import { renderAll, writeRendered } from './render.mjs';
 import { replay } from './state.mjs';
@@ -43,7 +43,11 @@ export function plannedFiles(name, { profile = 'full' } = {}) {
     if (profile === 'existing' && matchAny(f, NODE_TEMPLATE)) continue;
     out.push({ dest: f === 'gitignore' ? '.gitignore' : f, content, seed });
   }
-  for (const f of listFiles(join(REPO_ROOT, 'tools'))) out.push({ dest: `tools/${f}`, content: readFileSync(join(REPO_ROOT, 'tools', f)), seed: false });
+  for (const f of listFiles(join(REPO_ROOT, 'tools'))) {
+    // tools/dp.mjs only forwards to dlm.mjs for setups from before 4.8.0; a new project has nothing that calls it
+    if (f === 'dp.mjs') continue;
+    out.push({ dest: `tools/${f}`, content: readFileSync(join(REPO_ROOT, 'tools', f)), seed: false });
+  }
   return out;
 }
 
@@ -163,11 +167,7 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
   const profile = manifest.profile ?? 'full';
   let { actions, conflicts, removals } = plan(dir, plannedFiles(null, { profile }), manifest);
   if (conflicts.length) throw new DlmError(`升級衝突 ${conflicts.length} 個,一個檔都沒寫:\n  - ${conflicts.join('\n  - ')}\n把你的改動移到別的檔(或還原),再重跑`);
-  let blocker = null;
-  if (legacy) {
-    const dag = loadDag(dir);
-    blocker = migrationBlocker(dir, [...replay(readEvents(dir), dag).dispatches.values()]);
-  }
+  const blockerNow = () => migrationBlocker(dir, [...replay(readEvents(dir), loadDag(dir)).dispatches.values()]);
   const summarize = () => ({
     from: manifest.version, to: readVersion(),
     update: actions.filter((a) => a.op === 'update').map((a) => a.dest),
@@ -178,18 +178,32 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
     if (!legacy) return summarize();
     // the old config is renamed into place, not created from the template
     const s = summarize();
-    return { ...s, create: s.create.filter((f) => f !== 'dlm.config.json'), migrate: migrationPlan(dir), ...(blocker ? { blocked: blocker } : {}) };
+    const blocked = blockerNow();
+    return { ...s, create: s.create.filter((f) => f !== 'dlm.config.json'), migrate: migrationPlan(dir), ...(blocked ? { blocked } : {}) };
   }
-  if (blocker) throw new DlmError(`這是 4.8.0 以前(dp)的專案,升級時要把 .dp/ 搬成 .dlm/:${blocker}`);
-  let migrated = [];
-  if (legacy) {
+  if (!legacy) return finishUpgrade(dir, { actions, removals, profile, commit, summary: summarize() });
+
+  const refuse = (why) => new DlmError(`這是 4.8.0 以前(dp)的專案,升級時要把 .dp/ 搬成 .dlm/:${why}`);
+  const early = blockerNow();
+  if (early) throw refuse(early);
+  // hold tick.lock from here on: a tick started now would write into .dp/ while it moves
+  const release = lockForMigration(dir);
+  if (!release) throw refuse('有一次 tick 正在跑,等它結束再升級');
+  try {
+    const late = blockerNow(); // a worker may have been launched between the first check and the lock
+    if (late && !/tick 正在跑/.test(late)) throw refuse(late);
     // seed-only files (config, package.json, hooks) are the user's: rename and rewrite them in place, then plan again,
     // so the new layout counts as existing and nothing of theirs is replaced by the template
-    migrated = migrateProject(dir);
+    const { touched, warnings } = migrateProject(dir);
     ({ actions, conflicts, removals } = plan(dir, plannedFiles(null, { profile }), manifest));
     if (conflicts.length) throw new DlmError(`改名之後出現衝突(不應該發生):\n  - ${conflicts.join('\n  - ')}`);
+    return finishUpgrade(dir, { actions, removals, profile, commit, summary: summarize(), legacy: { touched, warnings } });
+  } finally {
+    release();
   }
-  const summary = summarize();
+}
+
+function finishUpgrade(dir, { actions, removals, profile, commit, summary, legacy = null }) {
   write(dir, actions, removals, profile);
   // STATUS.md and the other generated files come from the old version's templates (dp's wording, for one);
   // `dlm check` compares them with what this version renders and would fail until the next tick
@@ -198,11 +212,14 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
     const events = readEvents(dir);
     writeRendered(dir, renderAll(dir, dag, replay(events, dag), events));
   }
+  const migrated = [];
   if (legacy) {
-    migrated.push(...finishMigration(dir));
+    migrated.push(...legacy.touched, ...finishMigration(dir));
     if (ensureIgnores(dir)) migrated.push('.gitignore');
     summary.migrated = [...new Set(migrated)];
-    summary.note = '已從 dp 改名成 dlm。Claude Code 要重開才會用新的 hooks(tools/dlm.mjs);這台電腦的 MCP 也要從 dev-loop-mcp 重裝一次(dlm mcp install)';
+    if (legacy.warnings.length) summary.warnings = legacy.warnings;
+    summary.note = '已從 dp 改名成 dlm。重開 Claude Code 才會用新的 hooks(重開前的 session 還在呼叫 tools/dp.mjs,它現在只轉給 tools/dlm.mjs,重開後可以刪);'
+      + '這台電腦的 MCP 也要從 dev-loop-mcp 重裝一次(dlm mcp install)';
   }
   // 順便把 dlm 的檔裡還沒進 git 的也 commit(4.7.3 以前裝進既有專案的,tools/ 等都沒 commit;dlm doctor 會指到這裡)
   const message = legacy ? `dlm upgrade ${summary.from} → ${summary.to} (rename dp → dlm)` : `dlm upgrade ${summary.from} → ${summary.to}`;

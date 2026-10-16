@@ -7,7 +7,7 @@
 
 ![dlm hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.8.0 · Node ≥ 20 · 零依賴 · 198 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.8.0 · Node ≥ 20 · 零依賴 · 204 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**,後來叫 **dev-paradigm-mcp**(指令 `dp`)。從 4.8.0 起改叫 **dev-loop-mcp**,指令是 `dlm`,MCP 工具以 `dlm_` 開頭。從 `dp` 升上來?看[從 dp 升級](#從-dp-升級473-及以前)。
 
@@ -115,7 +115,7 @@ claude mcp list        # → dlm: node …/tools/dlm.mjs mcp - ✔ Connected
 
 1. **重裝 MCP。** 在 dev-loop-mcp 資料夾(`git pull`,或用新網址重新 clone)跑 `node tools/dlm.mjs mcp install`。它會註冊 `dlm`,並移除舊的 `dp` 註冊(指向 `tools/dp.mjs` 的那個)。重開 Claude Code。工具改成 `dlm_*`,prompts 改成 `/mcp__dlm__...`。
 2. **電腦層級的設定自動搬家。** 新版第一次跑時,`~/.config/dp` 會變成 `~/.config/dlm`,`accounts.json` 裡的絕對路徑也會改寫。環境變數改成 `DLM_*`(`DLM_CONFIG_DIR`、`DLM_ACCOUNTS_FILE`、`DLM_PROJECTS_FILE`、`DLM_KEY_FILE`)。
-3. **每個專案各升級一次。** 先停掉它的背景迴圈。再用 `dlm_upgrade_project` 工具,或在專案裡跑 `node <dev-loop-mcp>/tools/dlm.mjs upgrade`。它會把 `dp.config.json`、`.dp/`、`docs/dp/`、`docs/dp-baseline.json`、`.dp-install.json`、`tools/dp.mjs` 改成 `dlm` 的名字,修好 git worktree,修補 `package.json`、`.claude/settings.json`、`.gitignore`、`.mcp.json`、`cucumber.js`,最後做一個 commit。如果你改過 `tools/dp.mjs` 或 `docs/dp/`,會回報衝突、什麼都不寫。
+3. **每個專案各升級一次。** 先停掉它的背景迴圈。再用 `dlm_upgrade_project` 工具,或在專案裡跑 `node <dev-loop-mcp>/tools/dlm.mjs upgrade`。它會把 `dp.config.json`、`.dp/`、`docs/dp/`、`docs/dp-baseline.json`、`.dp-install.json`、`tools/dp.mjs` 改成 `dlm` 的名字,修好 git worktree,修補 `package.json`、`.claude/settings.json`、`.gitignore`、`.mcp.json`、`cucumber.js`,最後做一個 commit。AGENTS.md 和範本 README 只改 dp 寫過的形式(`` `dp` ``、`dp status`、`dp_*` 工具),你自己文字裡的 dp 不會動。`tools/dp.mjs` 會變成一個只轉給 `tools/dlm.mjs` 的小檔,因為升級前就開著的 Claude Code session 還會呼叫舊的 hook 路徑;重開 Claude Code 之後可以刪。如果你改過 `tools/dp.mjs` 或 `docs/dp/`,或還有 tick、worker 在跑,就什麼都不寫。`--dry-run` 會列出每一步。
 
 專案還沒升級之前,新的 MCP 照樣能用它,因為會去跑那個專案自己的 `tools/dp.mjs`。帳本歷史不會改寫:舊事件的 actor `dp-cli`、舊的 `dp-archive/*` tag 和 `dp/*` 分支都照樣有效。詳見 [MIGRATION.md](MIGRATION.md)。
 
@@ -413,7 +413,7 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 
 ### 自動測試
 
-`npm test`:**198 個,全部通過。** 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
+`npm test`:**204 個,全部通過。** 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
 
 ### 實跑,2026-10-16
 
