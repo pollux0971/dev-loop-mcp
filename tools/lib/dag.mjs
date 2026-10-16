@@ -1,5 +1,5 @@
-// dag.json 是「結構」的唯一真相:有哪些節點、誰依賴誰、誰擁有哪些路徑。
-// 狀態不存在這裡——狀態從 ledger 重播得出(state.mjs),避免同一件事寫兩份。
+// dag.json is the single source of truth for "structure": which nodes exist, who depends on whom, who owns which paths.
+// State is not stored here -- state is replayed from the ledger (state.mjs), to avoid writing the same thing twice.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validate } from './schema.mjs';
@@ -86,7 +86,7 @@ const staticHead = (g) => {
   return i < 0 ? g : g.slice(0, i);
 };
 
-/** 兩個 owns glob 可不可能碰到同一個檔。拿不準時回 true(寧可要求拆範圍,也不要兩個 worker 同時寫同一檔)。 */
+/** Whether two owns globs could touch the same file. When unsure, return true (better to ask for a split scope than let two workers write the same file at once). */
 export function globsOverlap(a, b) {
   if (!hasWildcard(a) && !hasWildcard(b)) return a === b;
   if (!hasWildcard(a)) return matchGlob(a, b);
@@ -96,7 +96,7 @@ export function globsOverlap(a, b) {
   return ha.startsWith(hb) || hb.startsWith(ha);
 }
 
-/** 每個節點的所有上游(遞移,不含契約)。 */
+/** All upstream of each node (transitive, contracts excluded). */
 function ancestors(dag) {
   const deps = new Map(dag.nodes.map((n) => [n.id, (n.depends_on ?? []).filter((d) => !isContractRef(d))]));
   const memo = new Map();
@@ -116,8 +116,8 @@ function ancestors(dag) {
 }
 
 /**
- * owns 重疊檢查:兩個節點之間沒有依賴順序(誰都不是誰的上游),就可能被同時派工;
- * 這時 owns 不可重疊,否則合併衝突最後都丟給人。有順序的可以重疊(x/v2 依賴 x/v1,改同一批檔是正常的)。
+ * owns overlap check: if two nodes have no dependency order (neither is upstream of the other), they may be dispatched at the same time;
+ * then their owns must not overlap, otherwise merge conflicts all end up with a person. Ordered ones may overlap (x/v2 depends on x/v1, so editing the same files is normal).
  */
 export function ownsOverlaps(dag) {
   const anc = ancestors(dag);
@@ -173,7 +173,7 @@ export function findCycle(dag) {
   return null;
 }
 
-/** 分層:同一層內互不依賴,可以同時開工。 */
+/** Layering: nodes in the same layer do not depend on each other and can start at the same time. */
 export function layers(dag) {
   const deps = new Map(dag.nodes.map((n) => [n.id, new Set((n.depends_on ?? []).filter((d) => !isContractRef(d)))]));
   const out = [];
@@ -187,7 +187,7 @@ export function layers(dag) {
   return out;
 }
 
-/** 下游節點數(遞移),用來當預設優先序:解鎖愈多的愈先做。 */
+/** Number of downstream nodes (transitive), used as the default priority: the more it unlocks, the earlier it goes. */
 export function descendantCounts(dag) {
   const down = edges(dag);
   const count = (start) => {
@@ -208,7 +208,7 @@ export function getNode(dag, id) {
   return dag.nodes.find((n) => n.id === id);
 }
 
-/** 子節點的 owns 是否都在父節點範圍內(側向延伸能不能被代批的機械判準)。 */
+/** Whether a child node's owns are all within the parent node's scope (the mechanical test for whether a lateral extension can be approved by proxy). */
 export function scopeContained(child, parent) {
   const parentPrefixes = (parent.owns ?? []).map(globPrefix);
   return (child.owns ?? []).length > 0
@@ -216,8 +216,8 @@ export function scopeContained(child, parent) {
 }
 
 /**
- * 側向延伸。prereq:父節點要等子節點完成(子節點繼承父節點的依賴,父節點新增一條邊到子節點)。
- * followup:子節點在父節點之後(子節點依賴父節點)。回傳新的 dag(不就地修改)。
+ * Lateral extension. prereq: the parent waits for the child to finish (the child inherits the parent's dependencies, and the parent gains an edge to the child).
+ * followup: the child comes after the parent (the child depends on the parent). Returns a new dag (not modified in place).
  */
 export function withSpawn(dag, parentId, spec) {
   const parent = getNode(dag, parentId);

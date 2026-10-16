@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dlm hub</title>
 <style>
-/* dlm hub:這台電腦所有 dlm 專案的總覽。資料來自 /api/v1/overview(每幾秒)與 /api/v1/events/stream(即時)。不連任何外部資源。 */
+/* dlm hub: overview of every dlm project on this machine. Data comes from /api/v1/overview (every few seconds) and /api/v1/events/stream (live). No external resources. */
 :root{
   --bg:#121216; --s1:#1a1a1f; --s2:#202026; --s3:#27272e; --s4:#30303a;
   --text:#e6e3ec; --dim:#a8a4b2; --faint:#76727f;
@@ -276,7 +276,7 @@ function addPanel(){
 function render(){
   var app = document.getElementById('app');
   var focused = document.activeElement && document.activeElement.tagName === 'INPUT';
-  if (focused) return; // 打字中不重畫
+  if (focused) return; // Do not redraw while typing
   app.textContent = '';
   app.appendChild(header());
   var left = el('div', {}, []);
@@ -302,7 +302,7 @@ if (window.EventSource) {
   es.addEventListener('ledger', function(m){
     try {
       var d = JSON.parse(m.data), f = EV[d.event.type], key = d.project + ':' + d.event.seq;
-      if (!f || seen[key]) return; // 斷線重連時會再補一次最近的,略過看過的
+      if (!f || seen[key]) return; // On reconnect the latest events are backfilled again; skip the ones already seen
       seen[key] = 1;
       var x = f(d.event);
       feed.push({ ts:d.event.ts, project:d.project, text:x[0], cls:x[1] });

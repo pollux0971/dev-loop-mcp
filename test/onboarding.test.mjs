@@ -1,4 +1,4 @@
-// 新手引導:dlm setup(互動問答)與 dlm doctor(健康檢查)。
+// Onboarding: dlm setup (interactive Q&A) and dlm doctor (health check).
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -22,7 +22,7 @@ const fresh = () => {
   init(proj, { name: 'app' });
   return proj;
 };
-/** 照題目 id 回答;沒列的回空字串(= 用預設)。也記下問過哪些題。 */
+/** Answer by question id; ones not listed get an empty string (= use the default). Also records which questions were asked. */
 const scripted = (answers) => {
   const asked = [];
   return { asked, ask: async (q) => { asked.push(q.id); return answers[q.id] ?? ''; } };
@@ -47,7 +47,7 @@ test('setup 全用預設:Claude Code 施工、Haiku 當 Verifier、L1、commit',
   assert.ok(r.committed);
   assert.equal(sh(proj, 'git status --porcelain --untracked-files=no'), '', 'commit 之後根目錄乾淨,tick 才跑得動');
   assert.deepEqual(asked.filter((id) => ['platform', 'worker_cmd', 'verifier', 'autonomy'].includes(id)), ['platform', 'worker_cmd', 'verifier', 'autonomy']);
-  // 原本 payload 設定裡的其他東西都還在
+  // Everything else in the original payload config is still there
   assert.deepEqual(cfg.gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
 });
 
@@ -80,7 +80,7 @@ test('setup:已經有自己的 .claude/settings.json 時,把 dlm 的 hooks 合�
   assert.deepEqual(s.permissions, { allow: ['Bash(npm test)'] });
   assert.ok(s.hooks.Stop);
   assert.match(JSON.stringify(s.hooks.UserPromptSubmit), /hook user-prompt/);
-  // 再跑一次不會重複加
+  // Running it again does not add it twice
   await setup(proj, { ask: scripted({ npm_install: 'n' }).ask, detect: ENV, log: quiet });
   assert.equal(readJson(join(proj, '.claude/settings.json')).hooks.UserPromptSubmit.length, 1);
 });

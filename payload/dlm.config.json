@@ -1,5 +1,5 @@
 {
-  "$comment": "worker.cmd 範例(依你的 CLI 版本確認旗標):Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DLM_PROMPT\"。verifier 範例:backend cmd、cmd claude -p --model haiku --tools \"\" --no-session-persistence(dlm setup 會幫你填)。worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dlm/SECURITY.md)。詳見 docs/dlm/AGENTS-SETUP.md",
+  "$comment": "worker.cmd example (check the flags against your CLI version): Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DLM_PROMPT\". verifier example: backend cmd, cmd claude -p --model haiku --tools \"\" --no-session-persistence (dlm setup fills this in for you). The worker builds in a copy without .git, and the code runs on this computer as you (see docs/dlm/SECURITY.md). See docs/dlm/AGENTS-SETUP.md for details",
   "main_branch": "main",
   "platform": "claude",
   "caps": {

@@ -1,4 +1,4 @@
-// 假的小模型:依 FV 決定行為。stdin 是 prompt。
+// Fake small model: behavior is chosen by FV. stdin is the prompt.
 import { readFileSync } from 'node:fs';
 const prompt = readFileSync(0, 'utf8');
 const mode = process.env.FV ?? 'ok';

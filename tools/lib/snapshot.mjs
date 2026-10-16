@@ -1,12 +1,12 @@
-// snapshot = 機器算好的結論 + 理由 + 證據指標。Front 與派工只讀這一份,不讀 dag、不讀 markdown。
+// snapshot = conclusions the machine worked out + reasons + evidence pointers. Front and dispatch read only this, not the dag and not markdown.
 import { contractMajor, contractRefMajor, descendantCounts, isContractRef } from './dag.mjs';
 import { NO_TEST_GATE, hasTestGate } from './gates.mjs';
 import { openDecisions, pendingE2e, pipelineFor } from './state.mjs';
 import { nowIso, todayUtc } from './util.mjs';
 
 /**
- * gateE2e(v4,config.integration.gate_next_version):依賴的是整合點時,除了合併,還要等使用者親手試用說 OK。
- * 這就是「版本整合時間點」:下一版的節點依賴上一版的整合點,上一版沒試用過,下一版不開工。
+ *  * gateE2e (v4, config.integration.gate_next_version): when the dependency is an integration point, besides the merge, the user must also try it by hand and say OK.
+ *  * This is the "version integration point in time": next version's nodes depend on the previous version's integration points, and if the previous version was never hand-tried, the next version does not start.
  */
 export function depsStatus(node, state, currentMajor, { dag = null, gateE2e = false } = {}) {
   const unmet = [];
@@ -107,7 +107,7 @@ export function computeSnapshot({ root, config, dag, state, behind = () => 0 }) 
       findings: isRework ? s.findings : undefined,
     });
   }
-  // 解鎖愈多下游的愈先;同分時重做優先於新開(把已花掉的成本收回來)
+  // The more downstream it unlocks, the earlier it goes; on a tie, redo goes before a new start (to recover the cost already spent)
   const kindRank = { 'next-leg': 0, rework: 1, reverify: 2, fresh: 3 };
   dispatchable.sort((a, b) => b.priority - a.priority || kindRank[a.kind] - kindRank[b.kind] || a.id.localeCompare(b.id));
 

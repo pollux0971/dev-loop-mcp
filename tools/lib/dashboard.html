@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
-/* dlm 主控台:唯讀。資料全部來自帳本重播(跟 dlm status 同一份);不連任何外部資源。 */
+/* dlm console: read only. All data comes from replaying the ledger (the same source as dlm status); no external resources. */
 :root{
   --bg:#121216; --s1:#1a1a1f; --s2:#202026; --s3:#27272e; --s4:#30303a;
   --line:rgba(255,255,255,.09);
@@ -266,7 +266,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .kpi b{display:block;font-size:22px;font-weight:600;margin-top:2px}
 .banner{margin:10px 10px 0;border-radius:14px;padding:8px 14px;background:rgba(255,217,138,.1);color:var(--gate);font-size:13px;flex:0 0 auto}
 
-/* 規劃頁:左邊是你和 Front 的規劃對話(帳本重播),右邊是路線圖進度 */
+/* Planning page: on the left is your planning chat with Front (ledger replay), on the right is the roadmap progress */
 .ps-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;flex:1;min-height:0;padding:10px}
 .ps-chat{display:flex;flex-direction:column;background:var(--bg);border-radius:var(--r-lg);overflow:hidden;min-height:0}
 .ps-chat .pch{padding:13px 16px;background:var(--s2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
@@ -354,8 +354,8 @@ var TOKEN = "__TOKEN__";
 var HUB = "__HUB__";
 var data = JSON.parse(document.getElementById('dlm-data').textContent);
 var ui = { acct:{ form:{ name:'', cli:'claude', plan:'' }, roles:null, login:null, msg:null, busy:false }, view:'console', node:null, pinned:false, tab:null, cursor:null, playing:null, railOpen:false, tlNode:null, tlAll:false, more:{} };
-// 一打開看哪一頁:有軟體在開發 → 主控台;沒有 → 規劃頁(Front · intake),跟 Front 規劃下一版。
-// data.initial_view 由 dlm 算(v4.7.3);舊版 dlm 的專案沒有這個欄位,就用看得到的資料估。之後切頁只在這次打開有效,不記住
+// Which page to show on open: if software is being developed → console; if not → planning page (Front · intake), to plan the next version with Front.
+// data.initial_view is computed by dlm (v4.7.3); a project with an older dlm lacks this field, so estimate from the data we can see. Switching pages afterwards only lasts for this opening and is not remembered
 ui.view = data.initial_view || ((data.in_progress || []).length || (data.review || []).length || (data.blocked || []).length
   || (data.decisions || []).some(function(d){ return /^(accept|escalation|stuck|testfix|spawn):/.test(d.ref); }) ? 'console' : 'planning');
 try { var saved = JSON.parse(localStorage.getItem('dlm-console') || '{}'); ui.railOpen = !!saved.railOpen; } catch (e) {}
@@ -395,7 +395,7 @@ function defaultNode(){
   return data.nodes.length ? data.nodes[0].id : null;
 }
 
-/* 重播:這個節點的事件一筆一筆出現 */
+/* Replay: this node's events appear one by one */
 function play(){
   var evs = nodeEvents(ui.node);
   if (!evs.length) return;
@@ -409,7 +409,7 @@ function play(){
 }
 function stop(){ if (ui.playing) clearInterval(ui.playing); ui.playing = null; }
 
-/* ── 版面 ─────────────────────────────── */
+/* ── Layout ─────────────────────────────── */
 function render(){
   if (!ui.node || !nodeById(ui.node)) ui.node = defaultNode();
   var app = document.getElementById('app');
@@ -501,7 +501,7 @@ function header(n){
 }
 function stampCls(st){ return st === 'done' ? 'pass' : st === 'blocked' ? 'fail' : st === 'todo' ? 'pending' : 'ask'; }
 
-/* ── 主控台:四欄 ───────────────────────── */
+/* ── Console: four columns ───────────────────────── */
 function renderConsole(main){
   var n = nodeById(ui.node);
   if (!n) { main.appendChild(el('div', { cls:'pg-wrap' }, [el('div', { cls:'pg-sub', text:'dag.json 還沒有任何節點。在 Front 說你想做什麼,intake 會把第一版放進來。' })])); return; }
@@ -726,7 +726,7 @@ function spinePane(n){
   ]);
 }
 
-/* ── 底部:要你決定的事(唯讀:只顯示該說什麼 / 該打什麼) ── */
+/* ── Bottom: what needs your decision (read only: it only shows what to say / what to type) ── */
 function inputbar(){
   var q = data.decisions[0], e2e = data.e2e[0], waiting = data.decisions.length + data.e2e.length, cmd = null, text;
   if (q) { cmd = 'dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>'); text = [q.question + (q.recommendation ? '(建議 ' + q.recommendation + ')' : '') + '  ', el('code', { text:cmd })]; }
@@ -741,7 +741,7 @@ function inputbar(){
   ]);
 }
 
-/* ── 管線頁 ─────────────────────────────── */
+/* ── Pipeline page ─────────────────────────────── */
 function pageShell(main, title, tag, sub){
   var wrap = el('div', { cls:'pg-wrap' }, [el('div', { cls:'pg-title' }, [el('h2', { text:title }), span('tag', tag)]), sub ? el('div', { cls:'pg-sub', text:sub }) : null]);
   main.appendChild(el('div', { cls:'header' }, [el('div', { cls:'story' }, [el('div', { cls:'sid', text:data.project }), el('div', { cls:'obj', text:'帳本 #' + data.ledger_seq + (data.mode && data.mode.mode === 'brownfield' ? ' · 既有專案' : '') + ' · 自治 L' + data.autonomy + ' · ' + data.counts.done + '/' + data.counts.nodes + ' 完成' })])]));
@@ -790,7 +790,7 @@ function renderPipeline(main){
   wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'節點' }), box]));
 }
 
-/* ── 規劃頁 ─────────────────────────────── */
+/* ── Planning page ─────────────────────────────── */
 var TALK = { decision_request:1, decision:1, e2e_request:1, e2e_confirm:1, halt:1, resume:1, node_added:1 };
 function proposalOf(ref){ var id = String(ref || '').replace(/^node:/, ''); return data.proposals.filter(function(p){ return p.id === id; })[0] || null; }
 function kindOf(ref){ ref = String(ref || ''); return ref.indexOf('node:') === 0 ? 'proposal' : ref.indexOf('accept:') === 0 ? 'accept' : 'stuck'; }
@@ -808,7 +808,7 @@ function releaseState(rel){
   return { st: done === ns.length && (!integ || tried) ? 'done' : 'active', ns: ns, sub: sub };
 }
 
-/* greenfield / brownfield:唯讀的切換外觀(要改在 dlm setup) */
+/* greenfield / brownfield: a read-only toggle look (change it in dlm setup) */
 function modeToggle(){
   var m = (data.mode && data.mode.mode) || 'greenfield';
   return el('div', { cls:'mode pmode', title:'專案模式(dlm setup 設定;這頁只讀)' }, [
@@ -844,7 +844,7 @@ function renderPlanning(main){
   var bf = brownfieldBanner();
   main.appendChild(el('div', { cls:'page on' }, bf ? [bf, grid] : [grid]));
 
-  // 左:對話
+  // Left: chat
   var st = el('div', { cls:'ps-stream', 'data-autoscroll':'1' });
   var reqByRef = {};
   data.timeline.forEach(function(e){
@@ -910,7 +910,7 @@ function renderPlanning(main){
     el('div', { cls:'ps-free' }, [el('div', { cls:'hint', text: q ? '等你回答:' + short(q.question, 60) + '(在 Front 回答)' : '要新功能或改需求,在 Front 說;這頁只讀。' })])
   ]));
 
-  // 右:路線圖進度
+  // Right: roadmap progress
   var rels = data.roadmap.length ? data.roadmap.map(function(x){ return { release:x.release, text:x.text.replace(/[((](已完成|這一版|進行中)[))]/g, '').trim() }; }) : [];
   data.nodes.forEach(function(n){ var rl = n.release || '(未分版)'; if (!rels.some(function(x){ return x.release === rl; })) rels.push({ release:rl, text:'' }); });
   var stp = el('div', { cls:'stepper' }, [el('div', { cls:'sh' }, ['路線圖', span('md', data.roadmap.length ? 'docs/ROADMAP.md' : '來自 dag.json')])]);
@@ -932,7 +932,7 @@ function renderPlanning(main){
   grid.appendChild(stp);
 }
 
-/* ── 時間軸頁 ─────────────────────────────── */
+/* ── Timeline page ─────────────────────────────── */
 function renderTimeline(main){
   var wrap = pageShell(main, '時間軸', 'ledger/events.jsonl', '帳本只增不改;這裡是它的原樣重播。點有 ▸ 的列看退回理由、Critic 說明、驗證與 gate 結果。');
   var f = el('div', { cls:'filters' });
@@ -956,7 +956,7 @@ function renderTimeline(main){
   wrap.appendChild(list);
 }
 
-/* ── 花費頁 ─────────────────────────────── */
+/* ── Cost page ─────────────────────────────── */
 function renderCost(main){
   var wrap = pageShell(main, '花費', 'cost events', '每一筆都是帳本裡的 cost 事件(worker 與 Critic;Verifier 小模型沒記帳)。');
   var b = data.budget || {};
@@ -988,7 +988,7 @@ function renderCost(main){
   }
 }
 
-/* ── 帳號頁(v4.6) ─────────────────────────────── */
+/* ── Accounts page (v4.6) ─────────────────────────────── */
 var ROLE_LABEL = { worker:'Worker(施工)', critic:'Critic(L2 審查)', verifier:'Verifier(小模型檢查)' };
 function acctApi(body, done){
   ui.acct.busy = true;
@@ -1012,7 +1012,7 @@ function acctLoadLogin(){
 function acctDo(body, okMsg){
   acctApi(body, function(j){
     ui.acct.msg = { ok:j.ok, text:j.out || (j.ok ? okMsg : '失敗') };
-    // 存好的那個角色改回顯示設定檔的值;其他角色還沒存的勾選不動
+    // The role that was saved goes back to showing the config file's value; checkboxes of other roles that are not saved yet are left alone
     if (body.action === 'use' && ui.acct.roles) delete ui.acct.roles[body.role];
     acctRefresh().then(function(){ if (body.action !== 'use') ui.acct.login = null; render(); });
   });
@@ -1026,7 +1026,7 @@ function renderAccounts(main){
   var usage = {}; (data.accounts || []).forEach(function(a){ usage[a.name] = a; });
   var roleOf = {}; Object.keys(cfg.roles).forEach(function(r){ cfg.roles[r].accounts.forEach(function(n){ (roleOf[n] = roleOf[n] || []).push(r); }); });
 
-  // 帳號清單
+  // Account list
   var p1 = el('div', { cls:'panel' });
   if (!cfg.registry.length) p1.appendChild(el('div', { cls:'acct-note', text:'還沒登記帳號。從下面新增第一個。' }));
   else {
@@ -1063,7 +1063,7 @@ function renderAccounts(main){
   }
   wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'這台電腦的帳號' }), p1]));
 
-  // 角色
+  // Role
   ui.acct.roles = ui.acct.roles || {};
   Object.keys(cfg.roles).forEach(function(r){ if (!ui.acct.roles[r]) ui.acct.roles[r] = { accounts:cfg.roles[r].accounts.slice(), model:cfg.roles[r].model || '' }; });
   var p2 = el('div', { cls:'panel' });
@@ -1101,7 +1101,7 @@ function renderAccounts(main){
 render();
 if (LIVE) setInterval(function(){
   if (ui.playing) return;
-  // 帳號頁正在打字時不重畫(會把輸入框清掉)
+  // Do not redraw while the accounts page is being typed in (it would clear the input box)
   if (ui.view === 'accounts' && document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName)) return;
   fetch('data.json', { cache:'no-store' }).then(function(r){ return r.json(); }).then(function(nd){
     if (nd.ledger_seq === data.ledger_seq && JSON.stringify(nd.in_progress) === JSON.stringify(data.in_progress)) return;

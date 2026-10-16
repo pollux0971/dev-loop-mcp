@@ -1,51 +1,51 @@
 /**
- * 模板自己的零輸入守門測試(P-84,來源 專案 A 協調者,2026-09-05;PITFALLS 第二次
- * 出現「模板違反自己訂的規則」——第一次是 P-83)。
+ * The template's own zero-input guard test (P-84, source: project A coordinator, 2026-09-05; PITFALLS' second
+ * occurrence of "the template violates its own rule"; the first was P-83).
  *
- * 背景:consumer 用 `check-next-gates.ts --root /nonexistent` 跟
- * `check-phase-status.ts --root /nonexistent` 撞到——兩支都 exit 1,但輸出完全沒提
- * 傳進去的路徑,跟其餘會先摸設定檔的 gate(`check-boundaries.ts`、`check-doc-rot.ts`
- * 那一類,經 `_root.ts` 的 `lookupConfig` S14 hard-error)比,少講了最關鍵的一句話。
- * 修法是 `_root.ts` 新增 `requireRootDir()` / `rootDirError()`,每支接受 `--root` 的
- * gate 在任何設定檔查找之前先呼叫。
+ * Background: a consumer ran into `check-next-gates.ts --root /nonexistent` and
+ * `check-phase-status.ts --root /nonexistent`. Both exit 1, but the output never mentions the
+ * path passed in. Compared with the other gates that touch the config file first (`check-boundaries.ts`, `check-doc-rot.ts`
+ * and the like, which go through `lookupConfig` in `_root.ts` with the S14 hard-error), they were missing the most important sentence.
+ * The fix adds `requireRootDir()` / `rootDirError()` to `_root.ts`, and every gate that accepts `--root`
+ * calls it before any config lookup.
  *
- * 這支測試檔本身就是那次事故的教訓:光修兩支不夠,要有一份**涵蓋模板自己全部 gate**
- * 的零輸入測試,新 gate 加進來時**結構上**不可能漏掉這一項檢查——`listGateFiles()`
- * 用目錄列舉(不是手抄清單)找出 `scripts/` 底下所有 `check-*.ts`(`check-all.ts` 本來
- * 就符合這個樣式),沒有 `--root` 旗標的 gate 必須明講在 `NO_ROOT_FLAG` 並附理由,
- * 兩邊都沒有 → 測試直接紅,訊息是「新守門沒進零輸入清單」。
+ * This test file itself is the lesson of that incident: fixing just two gates is not enough. There must be a zero-input test that
+ * **covers all of the template's own gates**, so that when a new gate is added it is **structurally** impossible to miss this check. `listGateFiles()`
+ * enumerates the directory (not a hand-copied list) to find every `check-*.ts` under `scripts/` (`check-all.ts` already
+ * matches this pattern). A gate without a `--root` flag must say so in `NO_ROOT_FLAG` with a reason.
+ * Neither → the test goes red, with the message "new guard is not in the zero-input list".
  *
- * ## 探針表(每支支援 `--root` 的 gate 都跑這三個探針)
+ * ## Probe table (every gate that supports `--root` runs these three probes)
  *
- * | gate                  | (a) --root 指到不存在的目錄        | (b) --root 指到空目錄                              | (c) --root 底下的設定檔壞掉(malformed JSON)              |
+ * | gate                  | (a) --root points to a missing dir  | (b) --root points to an empty dir                  | (c) config under --root is broken (malformed JSON)         |
  * |------------------------|-----------------------------------|----------------------------------------------------|-----------------------------------------------------------|
- * | check-all.ts           | ✗ --root 指到不存在的目錄:<path>  | 設定檔未找到於 .../gates.config.json               | 設定檔壞掉:.../gates.config.json                          |
- * | check-boundaries.ts    | 同上                                | 設定檔未找到於 .../boundaries.owners.json          | 先補一份合法 boundaries.owners.json,弄壞 gates.config.json |
- * | check-next-gates.ts    | 同上                                | 掃到 0 份 NEXT.md(0 目標,scanned=0)               | 弄壞 gates.config.json                                     |
- * | check-phase-status.ts  | 同上                                | 掃到 0 份 FEATURE.md(0 目標,scanned=0)            | 弄壞 gates.config.json                                     |
- * | check-standalone.ts    | 同上                                | 設定檔壞掉:.../standalone.json(ENOENT,見例外說明) | 弄壞 standalone.json 本身(見下方例外說明)                 |
+ * | check-all.ts           | ✗ --root points to a missing dir: <path> | config not found at .../gates.config.json  | config is broken: .../gates.config.json                   |
+ * | check-boundaries.ts    | same as above                     | config not found at .../boundaries.owners.json     | first add a valid boundaries.owners.json, then break gates.config.json |
+ * | check-next-gates.ts    | same as above                     | scanned 0 NEXT.md (0 targets, scanned=0)           | break gates.config.json                                    |
+ * | check-phase-status.ts  | same as above                     | scanned 0 FEATURE.md (0 targets, scanned=0)       | break gates.config.json                                    |
+ * | check-standalone.ts    | same as above                     | config is broken: .../standalone.json (ENOENT, see the exception notes) | break standalone.json itself (see the exception notes below) |
  *
- * 三個探針共同的規則:exit code 1、輸出裡有機器可讀的 `gate=<name> result=FAIL
- * scanned=0` 標記、沒有裸露的堆疊(`\n  at ...` 那種 Node 未捕捉例外的樣子,或
- * `TypeError`/`ReferenceError` 字樣)。
+ * Rules shared by all three probes: exit code 1, a machine-readable `gate=<name> result=FAIL
+ * scanned=0` marker in the output, and no bare stack trace (the look of an uncaught Node exception such as `\n  at ...`, or
+ * the words `TypeError`/`ReferenceError`).
  *
- * **例外(跟原始需求的字面描述不同,這裡記理由)**:
- *   - 原始探針 (c) 講的是「malformed gates.config.json」,但 `check-known-defects.ts`
- *     跟 `check-standalone.ts` 根本不讀 `gates.config.json`(檔頭已經講清楚各自唯一
- *     的必要設定檔是 `known-defects.json` / `standalone.json`)——對著它們弄壞
- *     `gates.config.json` 什麼都測不到(這兩支根本不會去讀那份檔案),驗的東西會
- *     跟探針 (b) 一樣。改成弄壞它們自己唯一的必要設定檔,驗的還是同一件事(S9:
- *     設定檔壞掉要大聲失敗、印出檔名、不是未捕捉的堆疊),只是換成對這兩支腳本真正
- *     有意義的檔案。
- *   - `check-standalone.ts` 的探針 (b)(空目錄)直接觸發「設定檔壞掉」
- *     (`readConfigJson` 對著不存在的 `standalone.json` 丟 ENOENT,訊息本身就
- *     帶著完整路徑),不是「0 目標」或「設定檔未找到」——這支腳本沒有走
- *     `_root.ts` 的 `lookupConfig`(它用 `readConfigJson` 直接讀,壞掉的意義
- *     跟找不到是同一句話),三種情況殊途同歸,一樣的檢查標準(exit 1、名路徑、
- *     有標記、沒有裸堆疊)一樣適用,所以不特別為它另開規則。
+ * **Exceptions (different from the literal wording of the original requirement; the reasons are recorded here)**:
+ *   - The original probe (c) says "malformed gates.config.json", but `check-known-defects.ts`
+ *     and `check-standalone.ts` never read `gates.config.json` (each file header already says that the only
+ *     required config file of each is `known-defects.json` / `standalone.json`). Breaking
+ *     `gates.config.json` for them tests nothing (those two never read that file), and what it verifies would
+ *     be the same as probe (b). Instead, break the only required config file of their own; it still verifies the same thing (S9:
+ *     a broken config must fail loudly, print the file name, and not be an uncaught stack trace), just with the file that actually
+ *     matters for these two scripts.
+ *   - Probe (b) (empty dir) of `check-standalone.ts` directly triggers "config is broken"
+ *     (`readConfigJson` throws ENOENT on the missing `standalone.json`, and the message itself
+ *     carries the full path), not "0 targets" or "config not found". This script does not go through
+ *     `lookupConfig` in `_root.ts` (it reads directly with `readConfigJson`, where broken and
+ *     missing mean the same sentence). The three cases lead to the same place, and the same checks (exit 1, names the path,
+ *     has the marker, no bare stack) apply equally, so no separate rule is opened for it.
  *
- * `check-gherkin-dup.ts` / `check-phase-coverage.ts` / `check-step-dup.ts` 完全沒有
- * `--root` 旗標(一律用 `_root.ts` 推定的 git 頂層 `ROOT`),見 `NO_ROOT_FLAG` 的理由。
+ * `check-gherkin-dup.ts` / `check-phase-coverage.ts` / `check-step-dup.ts` have no
+ * `--root` flag at all (they always use the git top-level `ROOT` inferred by `_root.ts`); see the reasons in `NO_ROOT_FLAG`.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -59,7 +59,7 @@ const SPAWN_TIMEOUT_MS = 60_000;
 const NEW_PROJECT_MESSAGE =
   '新專案剛完成初始化,目前沒有任何 features/NN-name 資料夾;這不是掃描器錯誤,下一步請依 README 建立第一個 features/01-xxx/';
 
-/** 沒有 `--root` 旗標的 gate,連同「為什麼沒有」——每一項都要有理由,不能只是清單。 */
+/** Gates without a `--root` flag, together with "why not". Every entry needs a reason; it can't be just a list. */
 const NO_ROOT_FLAG: Record<string, string> = {
   'check-gherkin-dup.ts':
     '沒有 --root 旗標;一律用 _root.ts 推定的 git 頂層 ROOT,不支援對別的 repo 跑(檔頭用法只列不帶 --root 的呼叫方式)。',
@@ -67,14 +67,14 @@ const NO_ROOT_FLAG: Record<string, string> = {
     '沒有 --root 旗標;一律用 _root.ts 推定的 git 頂層 ROOT,腳本裡完全沒有 argv 解析 --root 的邏輯。',
 };
 
-/** `check-dag.ts` 不套下面既有 gate 的共用探針表,放在專屬 describe——不是因為它的退出碼語意不同
- * (1.11.0 起它跟其他掃描器一樣,零輸入一律 FAIL),而是它**不讀 `gates.config.json`**,探針 (c)
- * (malformed config)對它天生不適用,套上去驗的東西是假的。 */
-// v2:check-dag / check-skills-mirror 已由 `dlm check dag` / `dlm check mirror` 取代(零依賴、有陽性對照)。
+/** `check-dag.ts` does not use the shared probe table of the existing gates below and gets its own describe. Not because its exit code semantics differ
+ * (since 1.11.0 it behaves like the other scanners: zero input is always FAIL), but because it **does not read `gates.config.json`**, so probe (c)
+ * (malformed config) naturally does not apply to it, and applying it would verify something fake. */
+// v2: check-dag / check-skills-mirror were replaced by `dlm check dag` / `dlm check mirror` (zero dependencies, with a positive control).
 const SPECIAL_ZERO_INPUT_GATE_FILES: string[] = [];
 
-/** `scripts/` 底下所有 `check-*.ts`(不含 `.test.ts`)——目錄列舉,不是手抄清單,
- *  新增一支 gate 檔案這裡自動看得到。 */
+/** Every `check-*.ts` under `scripts/` (excluding `.test.ts`). It enumerates the directory, not a hand-copied list,
+ *  so a newly added gate file is picked up here automatically. */
 function listGateFiles(): string[] {
   return readdirSync(SCRIPTS_DIR)
     .filter((f) => /^check-.*\.ts$/.test(f) && !f.endsWith('.test.ts'))
@@ -105,22 +105,22 @@ function writeRaw(root: string, relPath: string, content: string): void {
   writeFileSync(p, content, 'utf8');
 }
 
-/** 保證 `JSON.parse` 會炸的字串(截斷的物件),不管哪支腳本的 parser 都一樣壞。 */
+/** A string guaranteed to make `JSON.parse` blow up (a truncated object); it breaks the same way in any script's parser. */
 const MALFORMED_JSON = '{ "broken":  ';
 
 function run(gateFile: string, root: string): { code: number; output: string } {
   const scriptPath = join(SCRIPTS_DIR, gateFile);
   const r = spawnSync('npx', ['tsx', scriptPath, '--root', root], {
-    // 探針 (a) 故意傳一個不存在的 `root`——spawnSync 的 `cwd` 不能是不存在的目錄
-    // (那會讓子行程本身起不來,exit code 是 -1,不是腳本自己判斷出來的 1),兩者是
-    // 不同的東西:`--root` 是腳本要檢查的目標,`cwd` 只是子行程從哪裡起。存在就沿用
-    // `root`(方便腳本裡任何用相對路徑找東西的邏輯跟真的裝進那個目錄一樣),不存在就
-    // 退回 `SCRIPTS_DIR`(模板自己的 scripts/,一定存在)。
+    // Probe (a) deliberately passes a nonexistent `root`. spawnSync's `cwd` cannot be a missing dir
+    // (the child process itself would fail to start, with exit code -1, not the 1 the script decided on its own), and the two are
+    // different things: `--root` is the target the script checks, `cwd` is just where the child process starts. If it exists, reuse
+    // `root` (so any logic in the script that finds things by relative path behaves as if really installed in that dir); if not,
+    // fall back to `SCRIPTS_DIR` (the template's own scripts/, which always exists).
     cwd: existsSync(root) ? root : SCRIPTS_DIR,
     encoding: 'utf8',
     timeout: SPAWN_TIMEOUT_MS,
-    // 跟 check-boundaries.test.ts 同一個坑:不設這個,候選路徑裡「腳本自己所在目錄」
-    // (模板自己的 scripts/)會先中,讀到模板自己的真實設定檔,不是這裡造的 fixture。
+    // Same pitfall as check-boundaries.test.ts: without this, the "directory the script itself lives in" among the candidate paths
+    // (the template's own scripts/) matches first and reads the template's own real config file, not the fixture built here.
     env: { ...process.env, GATES_CONFIG_DIR: join(root, 'scripts') },
   });
   return { code: r.status ?? -1, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
@@ -138,9 +138,9 @@ function assertMarker(output: string, gate: string): void {
 }
 
 interface ProbeCase {
-  /** 額外要先備好的檔案(讓腳本能跑過更早的必要設定檢查,抵達真正要測的那一關)。 */
+  /** Extra files to prepare first (so the script gets past the earlier required-config checks and reaches the stage actually under test). */
   setup?: (root: string) => void;
-  /** 輸出裡都要出現的片段。 */
+  /** Fragments that must all appear in the output. */
   includes: string[];
 }
 
@@ -148,7 +148,7 @@ interface GateSpec {
   file: string;
   gate: string;
   probeB: ProbeCase;
-  /** 探針 (c) 要弄壞的那個檔案,相對 `root`。 */
+  /** The file probe (c) breaks, relative to `root`. */
   probeC: ProbeCase & { relPath: string };
 }
 
@@ -174,7 +174,7 @@ const GATE_SPECS: GateSpec[] = [
   {
     file: 'check-dry-run.ts',
     gate: 'dry-run',
-    // 空目錄:gates.config.json 找不到(選填,靜默)→ 自動偵測找不到 cucumber 設定 → 名出找過的根目錄。
+    // Empty dir: gates.config.json is not found (optional, silent) → auto-detection finds no cucumber config → names the root dir it searched.
     probeB: { includes: ['找不到 cucumber 設定', 'gate=dry-run result=FAIL scanned=0'] },
     probeC: { relPath: 'scripts/gates.config.json', includes: ['設定檔壞掉', 'gates.config.json'] },
   },
@@ -187,8 +187,8 @@ const GATE_SPECS: GateSpec[] = [
   {
     file: 'check-standalone.ts',
     gate: 'standalone',
-    // 見檔頭例外說明:空目錄直接觸發 ENOENT 的「設定檔壞掉」,不是「0 目標」或
-    // 「設定檔未找到」——訊息本身一樣帶著完整路徑,一樣算「名了路徑」。
+    // See the exception notes in the file header: an empty dir directly triggers the ENOENT "config is broken", not "0 targets" or
+    // "config not found". The message itself carries the full path just the same, so it counts as "named the path".
     probeB: { includes: ['設定檔壞掉', 'standalone.json'] },
     probeC: { relPath: 'standalone.json', includes: ['設定檔壞掉', 'standalone.json'] },
   },
@@ -229,7 +229,7 @@ describe('模板自己的零輸入清單:新增的 check-*.ts 一定要進這份
 describe.each(GATE_SPECS)('$file 的零輸入探針', ({ file, gate, probeB, probeC }) => {
   it('(a) --root 指到不存在的目錄:exit 1、名出那個路徑、印標記、沒有裸堆疊', () => {
     const missing = join(tmpdir(), `lc-zero-input-missing-${process.pid}-${Math.random().toString(36).slice(2)}`);
-    expect(existsSync(missing)).toBe(false); // 確認真的沒建過這個目錄
+    expect(existsSync(missing)).toBe(false); // confirm this dir was really never created
     const { code, output } = run(file, missing);
     expect(code).toBe(1);
     expect(output).toContain('✗ --root 指到不存在的目錄:');

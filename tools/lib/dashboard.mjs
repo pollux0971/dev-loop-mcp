@@ -1,7 +1,7 @@
-// 視覺化主控台:資料只從 dag + ledger 重播得出(跟 dlm status 同一份),不寫任何事件。
-// 產物是一個自帶資料的 HTML 檔;--serve 時同一頁每幾秒重抓 /data.json。零依賴。
-// v4.6:--serve 時「帳號」頁可以設定訂閱帳號(新增、移除、哪個角色用哪幾個)。唯一能寫的地方,做法是跑一次 `dlm account …`,
-// 跟在終端機打指令一模一樣;要帶這次啟動才有的 token,只收 127.0.0.1 來的請求。決定、批准仍然只能在 Front 或 dlm decide。
+// Visual dashboard: data comes only from replaying dag + ledger (the same source as dlm status). It writes no events.
+// The output is one HTML file with its data embedded. With --serve, the same page re-fetches /data.json every few seconds. Zero dependencies.
+// v4.6: with --serve, the "accounts" page can set subscription accounts (add, remove, which role uses which). This is the only place that writes. It runs one `dlm account …`,
+// exactly like typing the command in a terminal. It needs the token made at this launch and accepts only requests from 127.0.0.1. Decisions and approvals still go only through Front or dlm decide.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -17,10 +17,10 @@ import { openDecisions, pendingE2e, pipelineFor, replay } from './state.mjs';
 import { ASIS, readBaseline } from './brownfield.mjs';
 import { CLIS, ROLES, accountUsage, globalUsage, loadAccounts } from './accounts.mjs';
 
-/** 施工中才會有的決定(不含新功能提案 node: 與試用,那兩種在規劃頁處理)。 */
+/** Decisions that exist only while building (not new-feature proposals node: or hand trials; those two are handled on the planning page). */
 const BUILD_REFS = /^(accept|escalation|stuck|testfix|spawn):/;
 
-/** 主控台要的全部資料。純函式(除了讀檔),測試直接比對它。 */
+/** All the data the dashboard needs. A pure function (apart from reading files); tests compare against it directly. */
 export function dashboardData(root, extra = {}) {
   const config = loadConfig(root);
   const dag = loadDag(root);
@@ -28,7 +28,7 @@ export function dashboardData(root, extra = {}) {
   const state = replay(events, dag);
   const snapshot = computeSnapshot({ root, config, dag, state });
 
-  // 事件 → 節點:有 node_id 用它,只有 dispatch_id 的查派工
+  // event -> node: use node_id if present; if only dispatch_id, look up the dispatch
   const dispatchNode = new Map(events.filter((e) => e.type === 'dispatch').map((e) => [e.dispatch_id, e.node_id]));
   const nodeOf = (e) => e.node_id ?? (e.dispatch_id ? dispatchNode.get(e.dispatch_id) : null)
     ?? (typeof e.ref === 'string' && e.ref.startsWith('accept:') ? dispatchNode.get(e.ref.slice(7)) : null) ?? null;
@@ -78,7 +78,7 @@ export function dashboardData(root, extra = {}) {
     raw: pick(e, RAW_FIELDS),
   }));
 
-  // 每一次派工:工單(envelope)與 worker 的交件報告。檔案缺了就只留帳本裡的欄位。
+  // Per dispatch: the envelope (work order) and the worker's hand-in report. If a file is missing, keep only the fields from the ledger.
   const dispatches = events.filter((e) => e.type === 'dispatch').map((e) => {
     const dir = join(root, 'ledger', 'dispatch', e.dispatch_id);
     const env = readJsonSafe(join(dir, 'envelope.json'));
@@ -112,8 +112,8 @@ export function dashboardData(root, extra = {}) {
     };
   });
 
-  // v4.7.3 有沒有軟體正在開發:節點在施工、驗收、卡住、退避、可以派工,或有施工中的決定(合併、卡住、退回測試棒、子節點)。
-  // 沒有的時候主控台一打開是規劃頁(Front · intake):接下來要做的就是跟 Front 規劃下一版,提案與試用也都在那一頁。
+  // v4.7.3 Is any software being developed: a node is being built, in acceptance, stuck, in backoff, or ready to dispatch, or a decision is open while building (merge, stuck, send back test leg, child node).
+  // When none, the dashboard opens on the planning page (Front · intake): the next thing is to plan the next version with Front, and proposals and hand trials are on that same page.
   const building = snapshot.in_progress.length > 0 || snapshot.review.length > 0 || snapshot.blocked.length > 0
     || snapshot.backoff.length > 0 || snapshot.dispatchable.length > 0
     || openDecisions(state).some((d) => BUILD_REFS.test(d.ref));
@@ -126,7 +126,7 @@ export function dashboardData(root, extra = {}) {
     ledger_seq: state.maxSeq,
     halted: state.halted,
     autonomy: snapshot.autonomy,
-    // v4.5:greenfield / brownfield,既有專案另外帶測試基線與 AS-IS 有沒有寫
+    // v4.5: greenfield / brownfield; an existing project also carries the test baseline and whether AS-IS is written
     mode: projectMode(root, config),
     counts: snapshot.counts,
     in_progress: snapshot.in_progress,
@@ -138,7 +138,7 @@ export function dashboardData(root, extra = {}) {
     e2e: pendingE2e(state).map((n) => ({ id: n.id, scenarios: n.e2e.scenarios ?? [] })),
     nodes,
     cost: { total_usd: round(costTotal), by_role: mapRound(costByRole), by_node: mapRound(costByNode) },
-    // v4.6:訂閱帳號的用量(只讀帳本與這台電腦的帳號清單,不呼叫 CLI)
+    // v4.6: subscription account usage (reads only the ledger and this machine's account list; does not call the CLI)
     accounts: accountRows(config, events),
     account_config: accountConfig(config),
     timeline,
@@ -150,10 +150,10 @@ export function dashboardData(root, extra = {}) {
   };
 }
 
-/** 帳號頁要的:這台電腦登記的帳號、每個角色現在的設定。 */
+/** What the accounts page needs: the accounts registered on this machine and each role's current setting. */
 function accountConfig(config) {
   let registry = {};
-  try { registry = loadAccounts(); } catch { /* 清單壞了就當沒有 */ }
+  try { registry = loadAccounts(); } catch { /* a broken list is treated as empty */ }
   return {
     clis: Object.entries(CLIS).map(([key, c]) => ({ key, label: c.label })),
     registry: Object.entries(registry).map(([name, a]) => ({ name, cli: a.cli, plan: a.plan ?? null })),
@@ -164,12 +164,12 @@ function accountConfig(config) {
   };
 }
 
-/** 帳號用量:派工次數、冷卻、同時在跑是所有專案加起來(v4.7);花費是這個專案的。 */
+/** Account usage: dispatch count, cooldown, and concurrent runs are summed over all projects (v4.7); cost is for this project only. */
 function accountRows(config, events) {
   const usage = globalUsage();
   const mine = accountUsage(events);
   let registry = {};
-  try { registry = loadAccounts(); } catch { /* 清單壞了也照樣顯示帳本裡的 */ }
+  try { registry = loadAccounts(); } catch { /* a broken list still shows what is in the ledger */ }
   const roles = {};
   for (const role of ROLES) for (const n of config.agents[role]?.accounts ?? []) (roles[n] ??= []).push(role);
   const now = Date.now();
@@ -185,7 +185,7 @@ function accountRows(config, events) {
   });
 }
 
-/** 展開後才看的長文字:退回理由、Critic 說明、驗證結果、gate 結果。 */
+/** Long text shown only when expanded: send-back reason, Critic note, verification result, gate result. */
 function detailOf(e) {
   switch (e.type) {
     case 'reject': return (e.findings ?? []).map((f) => `[${f.check}] ${f.detail}`).join('\n') || null;
@@ -202,7 +202,7 @@ function detailOf(e) {
 const RAW_FIELDS = ['dispatch_id', 'leg', 'attempt', 'results', 'verdict', 'usd', 'role', 'ok', 'reason', 'commit', 'merge_sha', 'ref', 'choice', 'findings', 'supersedes',
   'question', 'options', 'recommendation', 'verbatim', 'scenarios'];
 
-/** 提案(intake 寫的):規劃頁用來顯示「這一版要做什麼」與 gherkin。 */
+/** Proposals (written by intake): the planning page uses them to show "what this version will build" and the gherkin. */
 function readProposals(root) {
   const dir = join(root, 'ledger', 'proposals');
   if (!existsSync(dir)) return [];
@@ -233,7 +233,7 @@ function projectMode(root, config) {
   };
 }
 
-/** docs/ROADMAP.md 的「- v1 …」行;沒有這個檔就回空陣列(規劃頁改用 dag 裡的版本)。 */
+/** The "- v1 …" lines of docs/ROADMAP.md; with no such file, return an empty array (the planning page then uses the versions in the dag). */
 function readRoadmap(root) {
   const p = join(root, 'docs', 'ROADMAP.md');
   if (!existsSync(p)) return [];
@@ -248,7 +248,7 @@ function readJsonSafe(p) {
 const round = (x) => Math.round(x * 100) / 100;
 const mapRound = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, round(v)]));
 
-/** 資料放進 <script type="application/json">:把 < 轉義,任何字串都關不掉 script 標籤。 */
+/** Put data into <script type="application/json">: escape < so no string can close the script tag. */
 const embed = (data) => JSON.stringify(data).replace(/</g, '\\u003c');
 
 export function renderDashboard(data, { live = false, intervalMs = 5000, token = '', hub = '' } = {}) {
@@ -266,7 +266,7 @@ const NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 const WORD = /^[\w.:@-]{1,60}$/;
 const DLM = fileURLToPath(new URL('../dlm.mjs', import.meta.url));
 
-/** 帳號頁的動作 → dlm account 的 argv。每個值都先檢查過,而且不經 shell。 */
+/** Account page action -> argv for dlm account. Every value is checked first, and it does not go through a shell. */
 export function accountArgv(body) {
   const bad = (m) => { throw new Error(m); };
   switch (body?.action) {
@@ -285,7 +285,7 @@ export function accountArgv(body) {
       const list = Array.isArray(body.accounts) ? body.accounts : bad('accounts 要是陣列');
       if (!list.every((n) => NAME.test(n))) bad('帳號名稱不對');
       if (body.model && !WORD.test(body.model)) bad('模型名稱只能用英數與 . : @ - _');
-      // 模型留空 = 拿掉(none);帳號清空 = 這個角色不用帳號
+      // Empty model = remove it (none); empty accounts = this role uses no account
       return ['account', 'use', body.role, list.length ? list.join(',') : 'none', '--model', body.model || 'none'];
     }
     default: return bad('不支援的動作');
@@ -298,7 +298,7 @@ function sameToken(a, b) {
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
 
-/** POST /api/account:只收這台電腦、這次啟動的頁面送來的(Host / Origin 是 127.0.0.1、帶 x-dlm-token、JSON)。 */
+/** POST /api/account: accepts only pages from this machine and this launch (Host / Origin is 127.0.0.1, has x-dlm-token, JSON). */
 function accountApi(root, req, res, { token, port }) {
   const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
   const send = (code, obj) => res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end(JSON.stringify(obj));
@@ -317,7 +317,7 @@ function accountApi(root, req, res, { token, port }) {
   });
 }
 
-/** --serve:只綁 127.0.0.1。GET 是唯讀的主控台;POST 只有帳號設定。每次請求重新重播帳本,所以永遠跟 dlm status 一致。 */
+/** --serve: bind only 127.0.0.1. GET is the read-only dashboard; POST is only for account settings. Every request replays the ledger again, so it always matches dlm status. */
 export function serveDashboard(root, { port = 7171, intervalMs = 5000, log = console.log } = {}) {
   const token = randomBytes(24).toString('hex');
   let bound = port;
@@ -349,5 +349,5 @@ export function serveDashboard(root, { port = 7171, intervalMs = 5000, log = con
   });
 }
 
-/** 頁面本體在旁邊的 dashboard.html(內嵌 CSS / JS,不連任何外部資源)。 */
+/** The page itself is in dashboard.html next to this file (inline CSS / JS, no external resources). */
 const PAGE = readFileSync(new URL('./dashboard.html', import.meta.url), 'utf8');

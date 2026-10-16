@@ -1,9 +1,9 @@
-// 事件帳:ledger/events.jsonl。只 append、不改寫。
-// 單一寫入者規則:LLM 永遠不直接寫這個檔;它們產出檔案,dlm 驗證後代為 append。
+// The event ledger: ledger/events.jsonl. Append only, never rewritten.
+// Single-writer rule: an LLM never writes this file directly; it produces files, and dlm validates them and appends on its behalf.
 //
-// 簽章鏈:每筆事件帶 prev_hash(前一行原文的 sha256)與 mac(repo 外金鑰的 HMAC)。
-// 「只增不改」由 git 的已 commit 前綴保證;「尾巴這筆是 dlm 寫的」由 mac 保證——任何能寫檔的程序都能附加一行,
-// 但拿不到金鑰就算不出 mac。舊帳本從第一筆有 mac 的事件(chain_start)開始上鏈,之前的照舊只驗 seq。
+// Signature chain: every event carries prev_hash (sha256 of the previous line's raw text) and mac (HMAC with the key outside the repo).
+// "Append only" is guaranteed by the committed prefix in git; "the tail entry was written by dlm" is guaranteed by the mac. Any process that can write the file can append a line,
+// but without the key it cannot compute the mac. An old ledger joins the chain from its first event with a mac (chain_start); earlier ones are checked for seq only, as before.
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { keyPath, loadKey, mac, macEqual } from './auth.mjs';
@@ -90,7 +90,7 @@ export function append(root, actor, type, fields) {
 }
 
 /**
- * 簽章鏈檢查。回傳 { problems, note }。沒有金鑰(例如在別台機器上看)時只驗 prev_hash 鏈,note 會說明。
+ * Signature chain check. Returns { problems, note }. With no key (for example when viewing on another machine) only the prev_hash chain is checked, and note says so.
  */
 export function verifyChain(text) {
   const lines = ledgerLines(text);
@@ -99,7 +99,7 @@ export function verifyChain(text) {
   let started = false;
   lines.forEach((line, i) => {
     let ev;
-    try { ev = JSON.parse(line); } catch { return; } // 壞行由 parseLedger 報
+    try { ev = JSON.parse(line); } catch { return; } // Bad lines are reported by parseLedger
     if (!ev.mac) {
       if (started) problems.push(`seq ${ev.seq}: 簽章鏈開始之後出現沒有簽章的事件(有人直接寫了帳本)`);
       return;
@@ -115,7 +115,7 @@ export function verifyChain(text) {
   return { problems, note };
 }
 
-/** 帳本健檢:每行合法、seq 連續遞增、簽章鏈完整、已 commit 的內容是現在內容的前綴(只增不改)。 */
+/** Ledger health check: every line is valid, seq increases without gaps, the signature chain is intact, and the committed content is a prefix of the current content (append only). */
 export function checkLedger(root, { gitRef = 'HEAD' } = {}) {
   const problems = [];
   const p = ledgerPath(root);

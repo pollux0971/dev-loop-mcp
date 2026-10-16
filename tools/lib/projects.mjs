@@ -1,5 +1,5 @@
-// v4.7 這台電腦上的 dlm 專案清單(~/.config/dlm/projects.json,DLM_PROJECTS_FILE 可改)。dlm hub 照這份清單監控、操作。
-// 清單只記名稱和路徑;專案自己的設定、帳本都還在各自的 repo 裡。
+// v4.7 The list of dlm projects on this machine (~/.config/dlm/projects.json, override with DLM_PROJECTS_FILE). dlm hub monitors and operates on projects from this list.
+// The list only keeps names and paths; each project's config and ledger stay in its own repo.
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { configDir } from './accounts.mjs';
@@ -27,7 +27,7 @@ export function isDlmProject(path) {
 
 export { isLegacyProject };
 
-/** 專案裝的 dlm 版本(看 .dlm-install.json;舊專案沒有就 null)。 */
+/** The dlm version installed in a project (read from .dlm-install.json; null for old projects without it). */
 export function projectVersion(path) {
   const m = readJson(projectPaths(path).manifest, null);
   if (m?.version) return m.version;
@@ -35,7 +35,7 @@ export function projectVersion(path) {
   return existsSync(v) ? readFileSync(v, 'utf8').trim() : null;
 }
 
-/** 登記一個專案。同一個路徑登記第二次 → 回原本那筆(不重複)。 */
+/** Register a project. Registering the same path a second time returns the original entry (no duplicate). */
 export function addProject(path, { name = null } = {}) {
   const abs = realpath(resolve(path));
   if (!isDlmProject(abs)) throw new DlmError(`${abs} 不是 dlm 專案(要有 dlm.config.json 與 tools/dlm.mjs;先 dlm init)`);
@@ -64,7 +64,7 @@ export function removeProject(name) {
   return { removed: name, path, note: '只從清單拿掉;專案的檔案、帳本都沒動' };
 }
 
-/** 名稱 → 路徑。找不到丟 DlmError(code 3 = 404)。 */
+/** Name -> path. Throws DlmError if not found (code 3 = 404). */
 export function resolveProject(nameOrPath) {
   const projects = loadProjects();
   if (projects[nameOrPath]) return { name: nameOrPath, ...projects[nameOrPath] };
@@ -74,7 +74,7 @@ export function resolveProject(nameOrPath) {
   throw new DlmError(`沒有專案「${nameOrPath}」(dlm project list 看有哪些;dlm project add <目錄> 加進來)`, 3);
 }
 
-/** 路徑 → 清單裡的名稱(沒登記就 null)。 */
+/** Path -> name in the list (null if not registered). */
 export function projectNameOf(path) {
   const abs = realpath(path);
   return Object.entries(loadProjects()).find(([, p]) => p.path === abs)?.[0] ?? null;

@@ -1,4 +1,4 @@
-// v4.6:多帳號(訂閱方案)輪流、限流換號、dlm account、主控台設定帳號。(MCP 的測試在 hub-mcp.test.mjs)
+// v4.6: multiple accounts (subscription plans) taking turns, switching accounts on rate limit, dlm account, setting accounts in the console. (MCP tests are in hub-mcp.test.mjs)
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { accountArgv, dashboardData, serveDashboard } from '../tools/lib/dashboa
 import { readEvents } from '../tools/lib/ledger.mjs';
 import { childEnv, readJson, run } from '../tools/lib/util.mjs';
 
-// 測試不碰你真的 ~/.config/dlm/accounts.json
+// Tests do not touch your real ~/.config/dlm/accounts.json
 process.env.DLM_ACCOUNTS_FILE = join(tempDir('dlm-acct-'), 'accounts.json');
 after(cleanup);
 
@@ -241,7 +241,7 @@ describe('主控台設定帳號(--serve)', () => {
       const data = await (await fetch(`http://127.0.0.1:${port}/data.json`)).json();
       assert.deepEqual(data.account_config.roles.worker.accounts, ['dash-a']);
       assert.ok(data.account_config.registry.some((a) => a.name === 'dash-a'));
-      // 模型留空 = 拿掉
+      // Model left empty = remove it
       assert.ok((await (await post({ ...use, model: '' })).json()).ok);
       assert.equal(readJson(join(proj, 'dlm.config.json')).agents.worker.model, undefined);
     } finally {

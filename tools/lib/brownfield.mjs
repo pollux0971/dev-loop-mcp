@@ -1,5 +1,5 @@
-// v4.5 既有專案(brownfield):偵測語言與測試指令、測試基線、AS-IS 草稿、characterize 的預設路徑。
-// 不匯入外部程式(v4.0 的 intake import 已移除);只處理「在這個 repo 裡繼續開發」。
+// v4.5 existing project (brownfield): detect language and test command, test baseline, AS-IS draft, default characterize paths.
+// Does not import external code (the v4.0 intake import was removed); it only handles "keep developing inside this repo".
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { git, headSha, removeWorktree } from './git.mjs';
@@ -9,7 +9,7 @@ import { atomicWrite, listFiles, matchAny, readJson, tail, writeJson } from './u
 export const BASELINE = 'docs/dlm-baseline.json';
 export const ASIS = 'docs/AS-IS.md';
 
-// dlm 自己裝進去的東西(不算「既有程式」)
+// Things dlm installed itself (not counted as "existing code")
 const DLM_PATHS = [
   'tools/**', 'ledger/**', 'prompts/**', '.claude/**', 'docs/dlm/**', 'docs/adr/**', 'docs/integration/**', 'contracts/**',
   'features/**', 'scripts/**', 'dag.json', 'dlm.config.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json', 'AGENTS.md',
@@ -19,7 +19,7 @@ const DLM_PATHS = [
 const SKIP_DIRS = ['.git', 'node_modules', '.dlm', 'dist', 'build', 'target', '.venv', 'venv', '__pycache__', 'coverage', 'reports'];
 const CODE_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.go', '.rs', '.java', '.kt', '.rb', '.php', '.cs', '.c', '.cc', '.cpp', '.h', '.swift']);
 
-/** 每種語言的測試檔慣例(給 paths.tests、node.tests 的預設)。 */
+/** Test file conventions per language (defaults for paths.tests and node.tests). */
 export const TEST_PATTERNS = {
   node: ['**/*.test.*', '**/*.spec.*'],
   python: ['**/test_*.py', '**/*_test.py', 'tests/**/*.py'],
@@ -36,15 +36,15 @@ function packageJson(root) {
   return readJson(join(root, 'package.json'), null);
 }
 
-/** npm 預設的 test script(`npm init` 產生的)不算有測試。 */
+/** npm's default test script (made by `npm init`) does not count as having tests. */
 function realNpmTest(pkg) {
   const t = pkg?.scripts?.test;
   return !!t && !/no test specified/.test(t);
 }
 
 /**
- * 看專案長什麼樣:語言、測試指令、程式檔數量、建議的模式。
- * test.cmd = null 代表用 npm script `test`(gate 照舊跑 npm run test)。
+ * Look at what the project is like: language, test command, number of code files, suggested mode.
+ * test.cmd = null means use the npm script `test` (the gate still runs npm run test).
  */
 export function detectProject(root) {
   const files = projectFiles(root);
@@ -87,8 +87,8 @@ export function detectProject(root) {
 }
 
 /**
- * brownfield 的 gate 設定:dlm 自己的檢查 + 專案原本就有的 script + 專案的測試指令。
- * 不硬塞範本的 typecheck / accept(既有專案多半沒有,不存在的 script 會讓 gate 永遠紅)。
+ * Gate setup for brownfield: dlm's own checks + the project's existing scripts + the project's test command.
+ * Do not force the template's typecheck / accept (existing projects mostly lack them, and a missing script would keep the gate red forever).
  */
 export function brownfieldGates(detect, testCmd) {
   const scripts = new Set(detect.scripts);
@@ -101,11 +101,11 @@ export function brownfieldGates(detect, testCmd) {
   return { chain, commands };
 }
 
-// ------------------------------------------------------------------ 失敗的測試是哪幾個
+// ------------------------------------------------------------------ which tests failed
 
 /**
- * 從測試輸出抓出失敗的測試名稱。抓不到任何一個 → null(看不懂就不能說「跟基線一樣」)。
- * 支援:pytest、unittest、go test、cargo test、node --test、vitest、jest、cucumber。
+ * Pull the failing test names out of the test output. If none can be found -> null (if we can't read it, we can't say "same as the baseline").
+ * Supports: pytest, unittest, go test, cargo test, node --test, vitest, jest, cucumber.
  */
 export function failingTests(output) {
   const text = String(output ?? '').replace(/\x1b\[[0-9;]*m/g, '');
@@ -114,7 +114,7 @@ export function failingTests(output) {
   for (const line of text.split('\n')) {
     let m;
     if ((m = line.match(/^(?:FAILED|ERROR) (\S+::\S+)/))) add(m[1]); // pytest
-    else if ((m = line.match(/^(?:FAIL|ERROR): (\S+) \(([^)]+)\)/))) add(m[2].endsWith(`.${m[1]}`) ? m[2] : `${m[2]}.${m[1]}`); // unittest(3.11 起括號裡已含方法名)
+    else if ((m = line.match(/^(?:FAIL|ERROR): (\S+) \(([^)]+)\)/))) add(m[2].endsWith(`.${m[1]}`) ? m[2] : `${m[2]}.${m[1]}`); // unittest (since 3.11 the parentheses already contain the method name)
     else if ((m = line.match(/^\s*--- FAIL: (\S+)/))) add(m[1]); // go
     else if ((m = line.match(/^test (\S+) \.\.\. FAILED/))) add(m[1]); // cargo
     else if ((m = line.match(/^\s*not ok \d+ - (.+?)(?:\s+#.*)?$/))) add(m[1]); // node --test (TAP)
@@ -130,8 +130,8 @@ export function readBaseline(root) {
 }
 
 /**
- * gate 紅了,但紅的都是基線裡本來就紅的測試 → 當成通過(known-red)。
- * 抓不到失敗名稱、或有任何一個不在基線裡 → 照舊是紅的。
+ * The gate is red, but every red test was already red in the baseline -> treat as passed (known-red).
+ * If no failing names can be found, or any one is not in the baseline -> still red as before.
  */
 export function knownRed(baseline, name, output) {
   const base = baseline?.gates?.find((g) => g.name === name);
@@ -143,8 +143,8 @@ export function knownRed(baseline, name, output) {
 }
 
 /**
- * 在主線的乾淨副本上跑一次專案的 gate(dlm 自己的 check:dlm 不算:還沒有節點時它一定紅),
- * 記下哪些測試本來就紅。寫到 docs/dlm-baseline.json,worker 改不到(在 paths.forbidden)。
+ * Run the project's gate once on a clean copy of main (dlm's own check:dlm does not count: with no nodes yet it is always red),
+ * and record which tests are already red. Write to docs/dlm-baseline.json, which the worker cannot change (it is in paths.forbidden).
  */
 export function recordBaseline(root, config, { log = () => {}, run } = {}) {
   const main = config.main_branch;
@@ -175,19 +175,19 @@ export function recordBaseline(root, config, { log = () => {}, run } = {}) {
   return data;
 }
 
-/** chain 裡一個名字實際要跑的指令;null = 找不到。 */
+/** The command that one name in the chain actually runs; null = not found. */
 export function gateCommand(name, config, scripts) {
   const mapped = config.gates.commands?.[name];
   if (mapped) return mapped;
   if (name in scripts) return `npm run --silent ${name}`;
-  // 既有專案自己的 package.json 沒有 check:dlm(init --existing 不覆蓋它),直接叫 dlm
+  // An existing project's own package.json has no check:dlm (init --existing does not overwrite it), so call dlm directly
   if (name === 'check:dlm') return 'node tools/dlm.mjs check';
   return null;
 }
 
-// ------------------------------------------------------------------ characterize 的預設
+// ------------------------------------------------------------------ characterize defaults
 
-/** 一個既有檔的 characterize 測試放哪裡(依語言慣例;跟節點自己的測試檔分開)。 */
+/** Where the characterize test for one existing file goes (by language convention; separate from the node's own test file). */
 export function characterizeTestPath(file, language) {
   const dir = dirname(file);
   const ext = extname(file);
@@ -200,7 +200,7 @@ export function characterizeTestPath(file, language) {
   return null;
 }
 
-/** 只跑 characterize 測試的指令(必須在現在的程式上綠)。 */
+/** Command that runs only the characterize tests (must be green on the current code). */
 export function characterizeCmd(tests, config) {
   const test = config.gates.commands?.test;
   const lang = config.project?.language;
@@ -214,7 +214,7 @@ export function characterizeCmd(tests, config) {
   return `npm test -- ${tests.join(' ')}`;
 }
 
-/** 主線上符合 globs 的既有檔(不含測試檔)。 */
+/** Existing files on main that match the globs (test files excluded). */
 export function existingFiles(root, globs, config) {
   const r = git(root, `ls-files`, { allowFail: true });
   if (r.code !== 0) return [];
@@ -222,7 +222,7 @@ export function existingFiles(root, globs, config) {
     .filter((f) => matchAny(f, globs) && !matchAny(f, config.paths.tests) && CODE_EXT.has(extname(f)));
 }
 
-// ------------------------------------------------------------------ AS-IS 草稿
+// ------------------------------------------------------------------ AS-IS draft
 
 function topDirs(files) {
   const m = new Map();
@@ -245,8 +245,8 @@ function entryPoints(root, files, pkg) {
 }
 
 /**
- * 機器能寫的部分先寫好(檔案分布、進入點、測試指令、基線);「模組在做什麼」留給 Front 讀程式後補。
- * 已經存在就不覆蓋(那是使用者確認過的內容)。
+ * Write the parts a machine can write first (file layout, entry points, test command, baseline); leave "what each module does" for Front to fill in after reading the code.
+ * If it already exists, do not overwrite it (that is content the user has confirmed).
  */
 export function asIsDraft(root, detect, baseline, testCmd) {
   const files = projectFiles(root);
@@ -290,7 +290,7 @@ export function asIsDraft(root, detect, baseline, testCmd) {
   return lines.join('\n');
 }
 
-// 規劃頁讀的是「- v<n> …」這種行(dashboard 的 readRoadmap)
+// The planning page reads lines like "- v<n> …" (readRoadmap in dashboard)
 export const ROADMAP_V0 = (name, detect) => [
   `# ${name} 路線圖`,
   '',
@@ -299,7 +299,7 @@ export const ROADMAP_V0 = (name, detect) => [
   '',
 ].join('\n');
 
-/** `dlm onboard`:基線 + AS-IS 草稿 + ROADMAP v0。回傳寫了哪些檔。 */
+/** `dlm onboard`: baseline + AS-IS draft + ROADMAP v0. Returns which files were written. */
 export function onboard(root, config, { log = () => {}, run } = {}) {
   const detect = detectProject(root);
   const written = [];

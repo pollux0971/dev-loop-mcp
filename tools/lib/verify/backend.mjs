@@ -1,4 +1,4 @@
-// 小模型的呼叫層(agents.verifier.cmd:prompt 從 stdin 進、JSON 從 stdout 出)。任何失敗(逾時、非 JSON、格式不符)都回 ABSTAIN,絕不回「沒問題」。
+// Call layer for the small model (agents.verifier.cmd: prompt in via stdin, JSON out via stdout). Any failure (timeout, non-JSON, wrong format) returns ABSTAIN, never "no problem".
 import { validate } from '../schema.mjs';
 import { verdictSchema } from '../schemas.mjs';
 import { accountEnv, loadAccounts, roleCmd } from '../accounts.mjs';
@@ -8,7 +8,7 @@ export function extractJson(text) {
   if (!text) return null;
   try {
     return JSON.parse(text);
-  } catch { /* 往下找 */ }
+  } catch { /* keep looking */ }
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
@@ -19,7 +19,7 @@ export function extractJson(text) {
   }
 }
 
-// v4.6:Verifier 有好幾個帳號時輪流用(呼叫次數多、每次很便宜,不追蹤冷卻;被限流的那次是 ABSTAIN,不會放行)
+// v4.6: when the Verifier has several accounts, rotate through them (many calls, each very cheap, so no cooldown tracking; a rate-limited call becomes ABSTAIN, which never lets anything pass)
 let turn = 0;
 function verifierAccount(v) {
   if (!v.accounts?.length) return null;
@@ -37,7 +37,7 @@ function callCmd(v, prompt) {
   return { text: r.stdout };
 }
 
-/** 回傳 { verdict, reason, model }。backend=none 時回 SKIPPED。 */
+/** Returns { verdict, reason, model }. Returns SKIPPED when backend=none. */
 export async function askVerifier(config, prompt) {
   const v = config.agents.verifier;
   if (v.backend === 'none') return { verdict: 'SKIPPED', reason: 'verifier backend 未設定' };

@@ -1,19 +1,19 @@
-// Gherkin 為英文,使用 cucumber 預設語言,不需 language 標頭。
-// @cucumber/cucumber 11 的設定檔規則:top-level 的 `export default` 本身就是 "default" 這個
-// profile 的內容,不需要(也不能)再包一層 `default: {...}`——包了那一層會讓 paths/import/tags
-// 全部被忽略(讀到的是 { default: {...} } 這個物件,none of its keys 對得上 schema),
-// cucumber 會安靜地退回內建預設值,而 import 完全不會發生,所有 step 都變成 undefined
-// (見 docs/02-decision-map.md ADR-013)。
-// 想要額外的 profile 用具名 export(例如 `export const ci = {...}`),不要塞進這個物件裡。
+// Gherkin is in English, so use cucumber's default language; no language header is needed.
+// Config file rule of @cucumber/cucumber 11: the top-level `export default` is itself the content of the "default"
+// profile. There is no need (and no way) to wrap it again in `default: {...}`. With that wrapper, paths/import/tags
+// are all ignored (what gets read is the object { default: {...} }, none of whose keys match the schema),
+// cucumber quietly falls back to its built-in defaults, the import never happens at all, and every step becomes undefined
+// (see docs/02-decision-map.md ADR-013).
+// For extra profiles use named exports (for example `export const ci = {...}`); do not put them inside this object.
 //
-// v4:paths 不再寫死。
-//   1. 命令列有給 feature 路徑(`npm run accept -- features/x/v1.feature`)時,只跑命令列給的。
-//      cucumber 會把設定檔的 paths 和命令列的路徑「合併」,v3 的單一節點驗收因此會連別的節點的場景一起跑。
-//   2. 沒給路徑時跑全部,但跳過 .dlm/pending-features.json 列的檔:已批准、但節點還沒完成的 gherkin
-//      (它們在主線上,實作還沒合併,一定是紅的)。這份清單由 dlm 維護,不要手改。
-//      v3 實測:兩個以上節點同時在做時,全 gate 的 accept 因為彼此未完成的場景永遠紅,互相卡死。
-// 注意:paths 陣列**不支援** `!` 負向排除(PITFALLS P-07),所以在這裡自己列檔。
-// _template 的樣板檔用 .feature.template 副檔名,自然不會被 *.feature 掃到;複製後要改名。
+// v4: paths are no longer hard-coded.
+//   1. When a feature path is given on the command line (`npm run accept -- features/x/v1.feature`), run only what the command line gave.
+//      cucumber merges the paths of the config file with the paths on the command line, so in v3 acceptance of a single node also ran the scenarios of other nodes.
+//   2. When no path is given, run everything, but skip the files listed in .dlm/pending-features.json: gherkin that is approved but whose node is not done yet
+//      (they are on main, the implementation is not merged yet, so they are always red). This list is maintained by dlm; do not edit it by hand.
+//      v3 real run: when two or more nodes were in progress at the same time, the full-gate accept stayed red forever because of each other's unfinished scenarios, and they were stuck on each other.
+// Note: the paths array does **not support** negative exclusion with `!` (PITFALLS P-07), so list the files ourselves here.
+// The template file in _template uses the .feature.template extension, so *.feature never picks it up; rename it after copying.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -41,7 +41,7 @@ const pending = pendingFeatures();
 const all = ROOTS.flatMap(walk).filter((p) => !pending.has(p));
 
 export default {
-  // 全部都被跳過時給一個不存在的 glob:paths 空陣列會讓 cucumber 退回它自己的預設(features/**)
+  // When everything is skipped, give a glob that does not exist: an empty paths array makes cucumber fall back to its own default (features/**)
   paths: cliPaths.length ? [] : all.length ? all : ['features/__none__/*.feature'],
   import: ['features/steps/**/*.ts'],
   tags: 'not @manual',

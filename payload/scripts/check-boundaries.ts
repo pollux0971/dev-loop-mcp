@@ -1,47 +1,47 @@
 /**
- * 邊界檢查(見 docs/02-decision-map.md ADR-004 / ADR-014)。
+ * Boundary check (see docs/02-decision-map.md ADR-004 / ADR-014).
  *
- * 規則:每個功能的程式碼只准 import
- *   1. 自己的落點(見 `scripts/boundaries.owners.json` 的 owners 表)
- *   2. contracts/ 與 packages/contracts/(owners.json 的 contractsOwner 那個擁有者)
- *   3. node 內建模組與 node_modules
- *   4. scripts/boundaries.allow.json 明列的例外邊(整合後逐條加,附理由)
+ * Rule: the code of each feature may only import
+ *   1. its own landing zone (see the owners table in `scripts/boundaries.owners.json`)
+ *   2. contracts/ and packages/contracts/ (the owner named by contractsOwner in owners.json)
+ *   3. node built-in modules and node_modules
+ *   4. the exception edges listed in scripts/boundaries.allow.json (added one by one after integration, each with a reason)
  *
- * **落點表、glue 集合、alias 對映、掃描範圍不寫死在這支程式裡**,讀
- * `scripts/boundaries.owners.json`(ROOT 下,不是模板裡那份)。這是專案自己的設定,
- * 跟 `boundaries.allow.json` 一樣不會被 `sync-gates.sh` 覆蓋——程式(這支 .ts)跟設定
- * (owners.json)分開,升級模板版本不會把專案填好的落點表洗掉。格式:
+ * **The landing-zone table, the glue set, the alias map and the scan scope are not hard-coded in this program.** It reads
+ * `scripts/boundaries.owners.json` (under ROOT, not the one inside the template). This is the project's own config,
+ * and like `boundaries.allow.json` it is not overwritten by `sync-gates.sh`. The program (this .ts) and the config
+ * (owners.json) are kept apart, so upgrading the template version does not wipe the landing-zone table the project filled in. Format:
  *
  *   {
- *     "owners": [["packages/contracts/", "contracts"], ...],   // 順序有意義,先比對較長的前綴
+ *     "owners": [["packages/contracts/", "contracts"], ...],   // order matters; longer prefixes are matched first
  *     "glue": ["infra", "steps", { "owner": "generated", "role": "glue" }],
  *     "aliases": [["@contracts/", "packages/contracts/src/"], ...],
  *     "scanDirs": ["packages", "apps", "scripts"],
- *     "contractsOwner": "contracts"                             // 對到這個擁有者的 import 一律放行
+ *     "contractsOwner": "contracts"                             // imports that resolve to this owner are always allowed
  *   }
  *
- * `glue` 陣列的每一項要嘛是字串(擁有者名稱——這個擁有者可以 import 任何東西,
- * 不當來源檢查,舊格式,行為不變),要嘛是 `{ owner, role: "glue" }`(CHANGELOG 1.4.0):
- * 除了「不當來源檢查」之外,還多一條「不准當 import 目標」——任何人 import 到這個
- * 擁有者名下的檔案都算違規(印 `glue 不准被 import`)。用在「這個資料夾是產物 /
- * 只讀寫自己,不該被任何功能依賴」的場景。
+ * Each item of the `glue` array is either a string (an owner name; this owner may import anything and
+ * is not checked as a source; old format, behavior unchanged), or `{ owner, role: "glue" }` (CHANGELOG 1.4.0):
+ * besides "not checked as a source", it also gets a rule "must not be an import target": any import of a file
+ * under this owner is a violation (the reason printed says glue must not be imported). Used when "this folder is an artifact /
+ * only reads and writes itself, and no feature should depend on it".
  *
- * `owners.json` 找不到、或找到但 `owners` 是空陣列——這兩種都當「尚未設定」,exit 1
- * 並印一句可執行的訊息(「從每個 features 資料夾的 FEATURE.md 的 owner 欄起草」)加上面這份範例,
- * 不是「留空也能跑」也不是「留空 = PASS」:一個宣稱「沒有違規」但其實根本沒有落點表可
- * 比對的 gate,比沒有這個 gate 更危險——它會讓看到綠燈的人以為邊界真的被檢查過。
+ * If `owners.json` is not found, or is found but `owners` is an empty array, both count as "not configured": exit 1
+ * and print one actionable message ("draft it from the owner column of each features folder's FEATURE.md") plus the example above.
+ * It is not "runs fine when left empty" and not "empty = PASS": a gate that claims "no violations" when it has no landing-zone table
+ * to compare against is more dangerous than no gate, because someone seeing a green light assumes the boundaries were really checked.
  *
- * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd;
- * `--root <dir>` 明講的話優先):
- *   npx tsx scripts/check-boundaries.ts                        # 複製進 repo 後執行
- *   npx tsx <template>/scripts/check-boundaries.ts             # 從模板路徑直接執行,cwd 需在目標 repo
- *   npx tsx scripts/check-boundaries.ts --verbose               # 也印出每個檔案的歸屬
- *   npx tsx scripts/check-boundaries.ts --root <dir>            # 明講根目錄(測試/對照用)
+ * Usage (the repo root is resolved from `git rev-parse --show-toplevel`, falling back to cwd if not in a git repo;
+ * an explicit `--root <dir>` takes priority):
+ *   npx tsx scripts/check-boundaries.ts                        # run after copying into the repo
+ *   npx tsx <template>/scripts/check-boundaries.ts             # run directly from the template path; cwd must be in the target repo
+ *   npx tsx scripts/check-boundaries.ts --verbose               # also print the owner of every file
+ *   npx tsx scripts/check-boundaries.ts --root <dir>            # give the root dir explicitly (for tests / comparison)
  *
- * 退出碼:0 無違規;1 有違規、有檔案不在任何落點內,或**一個檔案都沒掃到**(見下)。
+ * Exit code: 0 no violations; 1 violations, files outside any landing zone, or **not a single file scanned** (see below).
  *
- * 「掃到 0 個檔案一律 FAIL」是刻意的:落點表打錯字、SKIP_DIRS 多寫一個、
- * 副檔名清單少一個,掃描器就會安靜地變瞎,而下一個人看到綠燈以為 repo 很乾淨。
+ * "Scanning 0 files is always FAIL" is deliberate: a typo in the landing-zone table, one extra SKIP_DIRS entry,
+ * or one missing extension makes the scanner go blind quietly, and the next person sees a green light and thinks the repo is clean.
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -64,21 +64,21 @@ const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
 const VERBOSE = process.argv.includes('--verbose');
 
-/** 三支掃描器共用的那句話。看到它就知道方向是「掃描器壞了」,不是「程式碼很乾淨」。 */
+/** The one sentence shared by the three scanners. Seeing it means the direction is "the scanner is broken", not "the code is clean". */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
-/** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
+/** The name of this script in the gate's machine-readable marker (see CHANGELOG 1.3.2 (C)). */
 const GATE_NAME = 'boundaries';
 
 requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 
 /**
- * 找一份設定檔(`boundaries.owners.json` / `boundaries.allow.json`)——委派給 `_root.ts`
- * 的 `lookupConfig`(S14,來源 AI_KM 2026-09-05,PITFALLS P-73):`--root` 有沒有明講
- * 決定要不要允許退回這支腳本自己所在的目錄(那通常是模板自己的佔位設定,`--root` 明講時
- * 退回去就是 P-73 那次事故本身)。每次呼叫印一行「<name>: 設定:...」(找不到印
- * 「設定:無,使用預設」),讀 log 的人第一行就看得出這次讀了哪份設定,不用等掃描結果
- * 對不上才回頭懷疑設定檔。
+ * Find a config file (`boundaries.owners.json` / `boundaries.allow.json`). Delegates to `lookupConfig` in `_root.ts`
+ * (S14, source AI_KM 2026-09-05, PITFALLS P-73): whether `--root` is given explicitly
+ * decides whether falling back to the directory this script lives in is allowed (that is usually the template's own placeholder config; when `--root` is explicit,
+ * falling back there is the P-73 incident itself). Each call prints one line "<name>: config: ..." (when nothing is found it prints
+ * "config: none, using defaults"), so whoever reads the log sees on the first line which config was read this time, and does not have to wait for scan results
+ * to look wrong before suspecting the config file.
  */
 function findConfigFile(name: string): { path: string | undefined; hardErrorMessage: string | undefined; triedPaths: string[] } {
   const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
@@ -87,11 +87,11 @@ function findConfigFile(name: string): { path: string | undefined; hardErrorMess
 }
 
 /**
- * 一個 `glue` 項目要嘛是純字串(擁有者名稱,舊格式,行為不變:這個擁有者可以
- * import 任何東西、不當來源檢查),要嘛是 `{ owner, role: "glue" }`(CHANGELOG 1.4.0):
- * 除了「不當來源檢查」之外,**還多一條「不准當 import 目標」**——任何人 import 到
- * 這個擁有者名下的檔案都算違規,原因印 `glue 不准被 import`。用在「這個資料夾是
- * 產物 / 只能被自己讀寫,不該被任何功能依賴」的場景(例如某個生成後即棄的暫存區)。
+ * A `glue` item is either a plain string (an owner name, old format, behavior unchanged: this owner may
+ * import anything and is not checked as a source), or `{ owner, role: "glue" }` (CHANGELOG 1.4.0):
+ * besides "not checked as a source", **it also gets a rule "must not be an import target"**: any import of a file under
+ * this owner is a violation, and the reason printed says glue must not be imported. Used when "this folder is an
+ * artifact / may only be read and written by itself, and no feature should depend on it" (e.g. a throwaway scratch area left by generation).
  */
 type GlueEntry = string | { owner: string; role: 'glue' };
 
@@ -104,18 +104,18 @@ function isGlueTargetForbidden(e: GlueEntry): boolean {
 }
 
 interface OwnersConfig {
-  /** 落點 → 擁有的功能。順序有意義:先比對較長的前綴。 */
+  /** Landing zone → the feature that owns it. Order matters: longer prefixes are matched first. */
   owners: [prefix: string, owner: string][];
-  /** 這些擁有者是「膠水」,可以 import 任何東西,不當作來源檢查;見 GlueEntry。 */
+  /** These owners are "glue": they may import anything and are not checked as a source; see GlueEntry. */
   glue: GlueEntry[];
-  /** import alias → 對到的 repo 相對路徑前綴。 */
+  /** import alias → the repo-relative path prefix it maps to. */
   aliases: [alias: string, target: string][];
-  /** 要掃描的根目錄(相對 ROOT)。 */
+  /** Root directories to scan (relative to ROOT). */
   scanDirs: string[];
-  /** 對到這個擁有者的 import 一律放行(不算跨界),通常是 contracts。 */
+  /** Imports that resolve to this owner are always allowed (not counted as crossing a boundary), usually contracts. */
   contractsOwner: string;
-  /** S11(來源 nightmare-assault):涵蓋率棘輪的基準——選填。存在時,這次跑出來的
-   *  「納管/掃描」比例必須 ≥ 這裡記的比例,否則判失敗(只准升,不准降)。 */
+  /** S11 (source nightmare-assault): baseline for the coverage ratchet, optional. When present, the
+   *  "managed/scanned" ratio of this run must be >= the ratio recorded here, or the run fails (may only go up, never down). */
   coverageBaseline?: { managed: number; scanned: number };
 }
 
@@ -137,16 +137,16 @@ const OWNERS_EXAMPLE = `{
   "contractsOwner": "contracts"
 }`;
 
-/** 印一則設定錯誤、印 gate 標記(0 目標)、exit 1——每一種設定壞掉都要走這條路,
- *  不能是沒印標記行就中斷的未捕捉例外(舊版的 bug:見這支腳本 1.4.0 的反向驗證)。 */
+/** Print a config error, print the gate marker (0 targets), exit 1. Every kind of broken config must take this path;
+ *  it must not be an uncaught exception that aborts without printing the marker line (the old bug: see this script's 1.4.0 reverse verification). */
 function configError(msg: string): never {
   console.error(`✗ ${msg}`);
   console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
   process.exit(1);
 }
 
-/** owners.json 找不到、或找到但落點表是空的——這兩種都是「還沒設定」,不是兩種不同的病,
- *  用同一句可執行的訊息(消費者回報:光說「設定檔未找到」不夠,要講清楚下一步做什麼)。 */
+/** owners.json not found, or found but the landing-zone table is empty: both mean "not configured yet", not two different ailments,
+ *  so they share one actionable message (consumer feedback: just saying "config file not found" is not enough, it must say what to do next). */
 function ownersNotConfigured(pathDisplay: string): never {
   console.error(
     `✗ 尚未設定:找不到 ${pathDisplay} 或落點表是空的;從 features/*/FEATURE.md 的 owner 欄起草,` +
@@ -162,7 +162,7 @@ function loadOwnersConfig(): OwnersConfig {
   if (found.hardErrorMessage) configError(found.hardErrorMessage);
   const p = found.path;
   if (!p) ownersNotConfigured(found.triedPaths.join('、'));
-  // 解析錯誤(壞掉的 JSON)在這裡大聲失敗(S9),不會是未捕捉的堆疊。
+  // A parse error (broken JSON) fails loudly here (S9), not as an uncaught stack trace.
   const raw = readConfigJson(p, GATE_NAME) as Partial<OwnersConfig>;
   if (!Array.isArray(raw.owners) || raw.owners.length === 0) ownersNotConfigured(p);
   if (!Array.isArray(raw.glue)) configError(`${OWNERS_JSON_PATH} 缺 "glue"(陣列,可以是空的)`);
@@ -185,8 +185,8 @@ function loadOwnersConfig(): OwnersConfig {
   if (!raw.contractsOwner || typeof raw.contractsOwner !== 'string') {
     configError(`${OWNERS_JSON_PATH} 缺 "contractsOwner"(字串)`);
   }
-  // S11:coverageBaseline 選填,存在就要驗證形狀——壞掉的基準比沒有基準更危險(棘輪
-  // 比對會拿一個不合理的數字去比,S9 同一套「設定壞掉大聲失敗」原則)。
+  // S11: coverageBaseline is optional; if present, validate its shape. A broken baseline is more dangerous than none (the ratchet
+  // comparison would compare against an unreasonable number; same S9 principle of "broken config fails loudly").
   if (raw.coverageBaseline !== undefined) {
     const cb = raw.coverageBaseline as unknown;
     if (cb === null || typeof cb !== 'object' || Array.isArray(cb)) {
@@ -210,22 +210,22 @@ function loadOwnersConfig(): OwnersConfig {
   return raw as OwnersConfig;
 }
 
-/** 要掃描的副檔名——這個不太需要因專案而異,留在程式裡。 */
+/** File extensions to scan. This rarely needs to vary per project, so it stays in the code. */
 const EXTS = ['.ts', '.mts', '.js', '.mjs', '.svelte'];
 
 /**
- * 略過的目錄(S10,見 `_root.ts` 的 `DEFAULT_SKIP_DIRS`)——所有走目錄樹的 gate 共用同一份
- * 清單 + `gates.config.json` 的 `skipDirs` 追加,不准各自宣告自己的 `SKIP_DIRS`
- * (check-boundaries.test.ts 有一條 grep 測試強制這條:任何 `check-*.ts` 都不准再定義
- * 一個長得像獨立略過清單的陣列/集合)。`src-tauri` 是這支腳本原本額外加的一項,不在
- * `DEFAULT_SKIP_DIRS` 的通用清單裡(那是 Tauri 專屬的目錄名,不是每個專案都用得到)——
- * 額外加進來,不影響共用清單本身。gates.config.json 讀不到就是「沒有這份選填設定」,
- * 只用內建預設,不印訊息(跟其餘選填設定同規則)。
+ * Directories to skip (S10, see `DEFAULT_SKIP_DIRS` in `_root.ts`). All gates that walk the directory tree share one
+ * list + the `skipDirs` additions from `gates.config.json`; none may declare its own `SKIP_DIRS`
+ * (a grep test in check-boundaries.test.ts enforces this: no `check-*.ts` may define
+ * another array/set that looks like a standalone skip list). `src-tauri` is an extra entry this script originally added, not in the generic
+ * `DEFAULT_SKIP_DIRS` list (it is a Tauri-specific directory name, not used by every project) —
+ * it is added on top and does not affect the shared list itself. If gates.config.json cannot be read, that just means "there is no such optional config";
+ * only the built-in defaults are used and no message is printed (same rule as the other optional configs).
  */
 function resolveSkipDirsForBoundaries(): Set<string> {
-  // gates.config.json 是選填設定(見下方 loadAllow 同一句話):--root 明講時找不到只是
-  // 「沒有這份選填設定」,不升級成 hardErrorMessage 那種大聲失敗——那個訊息是留給
-  // owners.json 這種必要設定的。
+  // gates.config.json is optional config (see the same remark in loadAllow below): when `--root` is explicit, not finding it just means
+  // "there is no such optional config", and is not escalated to the loud failure of hardErrorMessage — that message is reserved for
+  // required config such as owners.json.
   const cfgPath = findConfigFile('gates.config.json').path;
   const cfg = loadGatesConfig(cfgPath, GATE_NAME);
   const skip = resolveSkipDirs(cfg, GATE_NAME);
@@ -238,8 +238,8 @@ interface Violation { file: string; line: number; spec: string; from: string; to
 
 function loadAllow(): AllowEdge[] {
   const p = findConfigFile('boundaries.allow.json').path;
-  if (!p) return []; // 選填設定,兩處都沒有就當沒有例外邊,不印訊息(hardErrorMessage 不理會)
-  // 解析錯誤在這裡大聲失敗(S9),不會是未捕捉的堆疊。
+  if (!p) return []; // optional config: if neither place has it, treat it as no exception edges and print nothing (hardErrorMessage is ignored)
+  // A parse error fails loudly here (S9), not as an uncaught stack trace.
   const raw = readConfigJson(p, GATE_NAME) as unknown;
   if (!Array.isArray(raw)) configError('boundaries.allow.json 必須是陣列');
   for (const e of raw as AllowEdge[]) {
@@ -271,7 +271,7 @@ function* walk(dir: string, skipDirs: Set<string>): Generator<string> {
   }
 }
 
-/** 去掉註解,避免註解裡的 "from '...'" 被誤判 */
+/** Strip comments, so a "from '...'" inside a comment is not misread */
 function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
@@ -301,7 +301,7 @@ function findImports(src: string): { spec: string; line: number }[] {
 }
 
 /**
- * 把 import 說明子轉成 repo 相對路徑。回傳 undefined 表示外部套件或內建模組(不檢查)。
+ * Turn an import specifier into a repo-relative path. Returns undefined for external packages or built-in modules (not checked).
  */
 function resolveSpec(
   aliases: OwnersConfig['aliases'],
@@ -321,11 +321,11 @@ function resolveSpec(
 }
 
 /**
- * S11(來源 nightmare-assault):把某個 unmapped 檔案歸到「相對掃描根目錄的第一層子目錄」
- * ——例如 `scanDirs` 裡有 `"packages"`,檔案是 `packages/newthing/x.ts`,歸到
- * `packages/newthing`(不是整個 `packages`,那樣看不出是哪個子資料夾漏填;也不是完整
- * 檔案路徑,那樣看不出「這是一整個目錄沒納管」還是「只有一個檔案漏了」)。理論上不會
- * 落到 fallback(unmapped 一定是從某個 scanDir 底下走出來的),防禦性寫法。
+ * S11 (source nightmare-assault): assign an unmapped file to "the first-level subdirectory relative to the scan root"
+ * — e.g. `scanDirs` has `"packages"` and the file is `packages/newthing/x.ts`, it goes to
+ * `packages/newthing` (not the whole `packages`, which would not show which subfolder was left out; and not the full
+ * file path, which would not show whether "a whole directory is unmanaged" or "just one file was missed"). In theory it never
+ * reaches the fallback (an unmapped file always comes from walking under some scanDir); this is defensive code.
  */
 function topLevelUnmanagedDir(relPath: string, scanDirs: string[]): string {
   const posix = toPosix(relPath);
@@ -345,8 +345,8 @@ function formatRatio(managed: number, total: number): string {
   return `${managed}/${total}(${pct}%)`;
 }
 
-/** S11:涵蓋率永遠印,不只在有 unmapped 檔案時才提(PITFALLS P-72——「看起來綠但沒在看
- *  那塊」:落點表只填一半、另一半資料夾從沒被納管過,舊版完全不會提到這件事)。 */
+/** S11: always print coverage, not only when there are unmapped files (PITFALLS P-72 — "looks green but is not watching
+ *  that part": the landing-zone table was filled only halfway, the other half of the folders were never managed, and the old version never mentioned it). */
 function printCoverage(managed: number, total: number, unmapped: string[], scanDirs: string[]): void {
   const pct = total > 0 ? ((managed / total) * 100).toFixed(1) : '0.0';
   console.log(`涵蓋:納管 ${managed} / 掃描 ${total} 檔(${pct}%),未納管目錄:`);
@@ -364,15 +364,15 @@ function printCoverage(managed: number, total: number, unmapped: string[], scanD
   }
 }
 
-/** S11:涵蓋率棘輪——`owners.json` 有 `coverageBaseline` 時,這次的納管比例必須 ≥ 基準,
- *  只准升不准降。回傳 `true` 代表棘輪本身判失敗(呼叫端要把這個併進整體 exit code)。 */
+/** S11: coverage ratchet — when `owners.json` has `coverageBaseline`, this run's managed ratio must be >= the baseline,
+ *  it may only go up, never down. Returns `true` if the ratchet itself fails (the caller must fold this into the overall exit code). */
 function checkCoverageRatchet(
   managed: number,
   total: number,
   baseline: OwnersConfig['coverageBaseline'],
 ): boolean {
   if (!baseline) return false;
-  // 交叉相乘比較,不用浮點除法——避免棘輪卡在浮點誤差的邊界(例如 1/3 vs 33/99)。
+  // Compare by cross-multiplying, not floating-point division — so the ratchet is not stuck on floating-point error at the boundary (e.g. 1/3 vs 33/99).
   const nowCross = managed * baseline.scanned;
   const baseCross = baseline.managed * total;
   if (nowCross < baseCross) {
@@ -396,8 +396,8 @@ function main(): void {
   const violations: Violation[] = [];
   const unmapped: string[] = [];
   let scanned = 0;
-  // found = walk() 真的在磁碟上找到的原始檔數;scanned = 有落點、非膠水、真的看了 import 的數量。
-  // 兩個都是 0 的時候掃描器是瞎的,不是 repo 很乾淨。
+  // found = number of source files walk() really found on disk; scanned = number that have a landing zone, are not glue, and really had their imports looked at.
+  // When both are 0 the scanner is blind; it does not mean the repo is clean.
   let found = 0;
 
   for (const dir of config.scanDirs) {
@@ -417,9 +417,9 @@ function main(): void {
         if (r.rel.startsWith('..')) { violations.push({ file: rel, line, spec, from, to: '(outside repo)', kind: 'absolute' }); continue; }
         const to = ownerOf(config.owners, r.rel);
         if (!to) { violations.push({ file: rel, line, spec, from, to: '(unmapped)', kind: 'unmapped-target' }); continue; }
-        // glue 的「不准被 import」比 contractsOwner 的一律放行更優先——明講的角色設定
-        // 應該贏過預設的寬容,不然這條規則永遠生效不了(from 已經在上面被排除,
-        // 所以這裡的 to 不會等於 from 本身,不會誤傷 glue 擁有者自己內部的 import)。
+        // glue's "must not be imported" has higher priority than contractsOwner's always-allow — an explicitly stated role setting
+        // should win over the default leniency, or this rule would never take effect (`from` has already been excluded above,
+        // so `to` here cannot equal `from` itself, and imports inside the glue owner itself are not hit by mistake).
         if (glueTargetForbidden.has(to)) { violations.push({ file: rel, line, spec, from, to, kind: 'glue-target' }); continue; }
         if (to === from || to === config.contractsOwner) continue;
         if (allow.some((e) => e.from === from && e.to === to)) continue;
@@ -430,10 +430,9 @@ function main(): void {
 
   console.log(`boundaries: 掃描 ${scanned} 個檔案,允許例外 ${allow.length} 條`);
 
-  // S11(來源 nightmare-assault):涵蓋率永遠印,不只在有 unmapped 時才提——舊版「只在
-  // checked==0 時宣稱不乾淨,其餘情況完全不提涵蓋了多少」,一個落點表**故意**只填一半
-  // (例如只填了 packages/,apps/ 整個資料夾從沒被納管過)在舊版看起來跟「落點表填好了」
-  // 一模一樣是綠燈,PITFALLS P-72。
+  // S11 (source nightmare-assault): always print coverage, not only when there are unmapped files — the old version "only when
+  // checked==0 claimed it was not clean, and otherwise never mentioned how much was covered"; a landing-zone table that was **deliberately** filled only halfway
+  // (e.g. only packages/ filled in, the whole apps/ folder never managed) looked exactly like "the table is fully filled" in the old version: a green light, PITFALLS P-72.
   const coverageManaged = found - unmapped.length;
   printCoverage(coverageManaged, found, unmapped, config.scanDirs);
   const ratchetFailed = checkCoverageRatchet(coverageManaged, found, config.coverageBaseline);

@@ -1,5 +1,5 @@
-// 所有送給模型的 prompt 都經過這裡。固定五層:規則 → 工單 → 資料 → 輸出格式 → 結尾提醒。
-// 指令在頭尾、資料在中間;資料一律包在 <data> 裡並標來源與時間點。
+// Every prompt sent to a model goes through here. Five fixed layers: rules -> work order -> data -> output format -> closing reminder.
+// Instructions at the head and tail, data in the middle; data is always wrapped in <data> with its source and time point.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DlmError } from './util.mjs';
@@ -57,7 +57,7 @@ export function dataFile(root, relPath, { at, maxChars = 20000 } = {}) {
   return { source: relPath, at, content: truncated ? text.slice(0, maxChars) : text, truncated };
 }
 
-/** 小模型用的迷你模板:<<NAME>> 替換。缺值就丟例外,不留空。 */
+/** Mini template for the small model: <<NAME>> substitution. A missing value throws; it is never left blank. */
 export function fillTemplate(text, vars) {
   return text.replace(/<<([A-Z_]+)>>/g, (_, k) => {
     if (!(k in vars)) throw new DlmError(`verifier 模板缺變數 ${k}`);

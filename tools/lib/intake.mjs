@@ -1,8 +1,8 @@
-// 所有「新東西進 DAG」的單一入口:
-//   feature    一個新節點
-//   bundle     一整個版本(多個節點 + gherkin + 整合點)
-// (v4.0 的 brownfield 掃描與 import 實跑沒用到,已移除;v4.5 改成:brownfield 模式下,要改到既有程式的節點自動加 characterize 棒)
-// 一律先寫提案 + decision_request;使用者在單一窗口說 yes 之後,下一個 tick 或 `dlm intake apply` 才寫進 DAG。
+// The single entry point for everything that "enters the DAG":
+//   feature    a single new node
+//   bundle     a whole version (several nodes + gherkin + integration point)
+// (The v4.0 brownfield scan and import were never used in real runs and were removed; v4.5 changed it to: in brownfield mode, a node that has to change existing code automatically gets a characterize leg)
+// Always write the proposal + decision_request first; only after the user says yes in the single window does the next tick or `dlm intake apply` write it into the DAG.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { characterizeCmd, characterizeTestPath, existingFiles } from './brownfield.mjs';
@@ -15,8 +15,8 @@ import { replay } from './state.mjs';
 import { DlmError, atomicWrite, matchAny, readJson, run, sha256, stableJson, writeJson } from './util.mjs';
 
 /**
- * 預設的驗收指令。範本的步驟定義是 TypeScript,要靠 package.json 的 accept script(NODE_OPTIONS=--import=tsx)才載入得了;
- * 直接 `npx cucumber-js <gherkin>` 會 ERR_MODULE_NOT_FOUND,實作棒永遠綠不了(v3 實測)。
+  * Default acceptance command. The template's step definitions are TypeScript and can only be loaded through the accept script in package.json (NODE_OPTIONS=--import=tsx);
+  * running `npx cucumber-js <gherkin>` directly gives ERR_MODULE_NOT_FOUND, and the dev leg could never go green (v3 real run).
  */
 export const defaultAccept = (gherkin) => `npm run accept -- ${gherkin}`;
 
@@ -29,9 +29,9 @@ function nextProposalId(root) {
 }
 
 /**
- * v4.7.3 提案裡的 parent / relation 跟 worker 提的子節點一樣生效:prereq = 父節點要等這個節點(父節點的 depends_on 加上它),
- * followup = 這個節點等父節點。以前提案只記下這兩個欄位、不接依賴:AI 對使用者說「I3 會等修好再讓你試」,實際上 I3 不會等。
- * 實跑:minilang 試用發現 expr 的遞迴深度 bug,Front 提 expr/v4(parent I3、prereq)。回傳新的 dag(不改傳進來的)。
+  * v4.7.3 parent / relation in a proposal now take effect just like the child nodes a worker proposes: prereq = the parent node waits for this node (this node is added to the parent's depends_on),
+  * followup = this node waits for the parent node. Before, a proposal only recorded these two fields without wiring dependencies: the AI told the user "I3 will wait for the fix before asking you to try it", but I3 did not actually wait.
+  * Real run: a minilang hand trial found a recursion depth bug in expr, and Front proposed expr/v4 (parent I3, prereq). Returns a new dag (does not modify the one passed in).
  */
 export function wireParents(dag, fresh) {
   const next = { ...dag, nodes: dag.nodes.map((n) => ({ ...n, ...(n.depends_on ? { depends_on: [...n.depends_on] } : {}) })) };
@@ -40,14 +40,14 @@ export function wireParents(dag, fresh) {
     if (!f.parent || !f.relation) continue;
     const child = byId.get(f.id);
     const parent = byId.get(f.parent);
-    if (!child || !parent) continue; // parent 不存在:validateDag 會指出
+    if (!child || !parent) continue; // parent does not exist: validateDag will point it out
     if (f.relation === 'prereq') parent.depends_on = [...new Set([...(parent.depends_on ?? []), child.id])];
     else child.depends_on = [...new Set([...(child.depends_on ?? []), parent.id])];
   }
   return next;
 }
 
-/** prereq 的父節點已經完成就不能再等它(要改它就另提新節點或新版本)。 */
+/** A prereq parent node that is already done can no longer be waited for (to change it, propose a new node or a new version). */
 function checkParents(root, nodes) {
   const dag = loadDag(root);
   const state = replay(readEvents(root), dag);
@@ -85,8 +85,8 @@ function propose(root, proposal, question, { recommendation = 'yes', warnings = 
 }
 
 /**
- * v4.7.3 取代還沒決定的提案:supersedes 寫 p-001 或 node:p-001。只能取代還在等決定的;被取代的不再待決、不能再批准。
- * 實測:AI 提案後發現 gherkin 算錯,重提一份,舊的只能請使用者「忽略」;兩份都被批准時,先寫進 DAG 的是舊的(錯的)那份。
+  * v4.7.3 Replace not-yet-decided proposals: supersedes holds p-001 or node:p-001. Only proposals still waiting for a decision can be replaced; a replaced one is no longer pending and can no longer be approved.
+  * Seen in a real run: the AI found its gherkin was wrong after proposing and proposed again, and the old one could only be "ignored" by the user; when both were approved, the old (wrong) one was written into the DAG first.
  */
 function supersedeRefs(root, list) {
   if (list === undefined || list === null) return [];
@@ -101,7 +101,7 @@ function supersedeRefs(root, list) {
   });
 }
 
-/** 還在等決定的舊提案跟這份有同樣的節點,又沒寫 supersedes → 提醒(兩份都批准的話,先寫進 DAG 的是舊的那份)。 */
+/** An older proposal still waiting for a decision has the same nodes as this one and has no supersedes -> remind (if both are approved, the old one is written into the DAG first). */
 function pendingOverlapWarnings(root, nodes, superseded) {
   const state = replay(readEvents(root), loadDag(root));
   const ids = new Set(nodes.map((n) => n.id));
@@ -120,11 +120,11 @@ function pendingOverlapWarnings(root, nodes, superseded) {
 }
 
 /**
- * 新專案(範本)的版面:package.json 的 workspaces(範本是 packages/*、apps/*)。範本的 npm test(vitest)只跑那底下的 *.test.ts,
- * mutation(stryker)也只測那底下的 src。phase 節點的 owns 完全落在 workspaces 外 → 提醒,不擋(真的要別的版面,
- * 改 vitest / stryker 設定是 gate 定義檔,要另開 shared 節點)。既有專案照它自己的版面,不檢查。
- * v4.7.3 實測:只看得到 MCP 的 AI 讀不到 intake skill 的範例,把程式放 src/、bin/*.mjs:合併 gate 的 test 是 0 個測試照樣綠,
- * mutation 測不到東西每次都 ABSTAIN,每一棒都要問使用者。
+  * Layout of a new project (template): workspaces in package.json (the template has packages/*, apps/*). The template's npm test (vitest) only runs *.test.ts under them,
+  * and mutation (stryker) only tests src under them. If a phase node's owns falls entirely outside workspaces -> warn, do not block (if a different layout is really wanted,
+  * changing the vitest / stryker config means gate definition files, which need a separate shared node). Existing projects keep their own layout and are not checked.
+  * v4.7.3 real run: an AI that could only see MCP could not read the intake skill's examples and put code in src/, bin/*.mjs: the merge gate's test was green with 0 tests,
+  * mutation found nothing to test and ABSTAINed every time, and every leg had to ask the user.
  */
 export function layoutWarnings(root, nodes) {
   if (brownfieldConfig(root)) return [];
@@ -140,7 +140,7 @@ export function layoutWarnings(root, nodes) {
   });
 }
 
-/** gherkin 的步驟句子(去掉關鍵字、壓空白)。英文與繁中關鍵字都認。 */
+/** The step sentences of a gherkin (keywords removed, whitespace collapsed). Both English and Traditional Chinese keywords are recognized. */
 const STEP = /^\s*(?:Given|When|Then|And|But|\*|假如|假設|假定|當|那麼|而且|並且|同時|但是)\s+(.+?)\s*$/;
 export function gherkinSteps(text) {
   return String(text ?? '').split('\n').map((l) => l.match(STEP)?.[1]?.replace(/\s+/g, ' ')).filter(Boolean);
@@ -156,10 +156,10 @@ function featureFiles(dir, out = []) {
 }
 
 /**
- * 整合點的 gherkin 沿用能力 gherkin 的句子(一字不差)→ 提醒。cucumber 一句只能有一個定義:整合點的句子會綁到能力的步驟定義,
- * 能力做完時整合點的驗收已經是綠的,測試棒做不出紅燈(intake skill 寫了這條,但只看得到 MCP 的 AI 讀不到)。
- * 比對這份提案裡其他節點的 gherkin,加上主線上 features/ 底下已有的。
- * 實測:todo-cli 的 I1 有 7/8 句跟 todo/v1 一樣,I1 的測試棒卡住。
+  * An integration point's gherkin reuses the capability gherkin's sentences (word for word) -> warn. cucumber allows only one definition per sentence: the integration point's sentences bind to the capability's step definitions,
+  * so when the capability is done the integration point's acceptance is already green and the test leg cannot produce a red light (the intake skill says this, but an AI that can only see MCP cannot read it).
+  * Compares against the other nodes' gherkin in this proposal, plus what already exists under features/ on main.
+  * Real run: todo-cli's I1 had 7/8 sentences identical to todo/v1, and I1's test leg got stuck.
  */
 export function gherkinOverlapWarnings(root, nodes, files) {
   const own = new Set(nodes.map((n) => n.gherkin).filter(Boolean));
@@ -183,7 +183,7 @@ export function gherkinOverlapWarnings(root, nodes, files) {
 
 // ------------------------------------------------------------------ feature
 
-/** 既有專案(brownfield)才有的規則。設定讀不到就當 greenfield。 */
+/** Rules that apply only to existing projects (brownfield). If the config cannot be read, treat it as greenfield. */
 function brownfieldConfig(root) {
   try {
     const c = loadConfig(root);
@@ -191,7 +191,7 @@ function brownfieldConfig(root) {
   } catch { return null; }
 }
 
-// characterize 一次最多釘幾個既有檔:owns 寫成 src/** 這種大範圍時,一棒要替整個專案補測試,做不完也驗不了
+// The most existing files characterize pins at once: when owns is a wide range like src/**, one leg would have to add tests for the whole project, which cannot be finished or verified
 export const CHARACTERIZE_MAX = 10;
 
 function withCharacterize(root, node, config) {
@@ -218,13 +218,13 @@ function normalizeFeature(root, spec, gherkinText) {
     throw new DlmError(`${node.id}:既有專案沒有 accept script(範本的 cucumber),要在 spec 寫 accept——用專案自己的測試指令只跑這個節點的測試,`
       + `例:"accept": "${t} <這個節點的測試檔>"。測試棒會照 gherkin 的每個場景寫一個測試(名稱用場景名),它必須先紅、實作後變綠`);
   }
-  // v4:只有 shared 節點能改 gate 定義檔(package.json 之類);v3 讓整合點 owns package.json 通過提案,施工時才被判越界三次(實測)
+  // v4: only shared nodes may change gate definition files (package.json and the like); in v3 an integration point owning package.json passed the proposal and was then judged out of bounds three times during construction (seen in a real run)
   const build = node.kind === 'shared' ? [] : (node.owns ?? []).filter((g) => BUILD_CONFIG_PATHS.some((b) => g === b || matchAny(g, [b])));
   if (build.length) {
     throw new DlmError(`${node.id} 的 owns 有 ${build.join(', ')}:這些是 gate 定義檔,只有 shared 節點能改(例:另提 shared/deps,owns 明列 package.json,讓 ${node.id} 依賴它)`);
   }
   if (node.kind === 'shared' && gherkinText && !node.gherkin) {
-    // v3 實測:shared 節點附 gherkin 時寫出一個叫 undefined 的檔。shared 沒有預設的 gherkin 路徑,要嘛自己指定,要嘛改成 phase
+    // v3 real run: a shared node with a gherkin wrote a file named undefined. shared has no default gherkin path, so either specify one yourself or change it to a phase node
     throw new DlmError(`${node.id} 是 shared 節點又附了 gherkin:shared 沒有預設的 gherkin 路徑。要機器驗收就在 spec 寫 gherkin 路徑與 accept,或改成 phase 節點`);
   }
   if (node.kind !== 'shared' && !node.gherkin) node.gherkin = node.kind === 'integration'
@@ -259,13 +259,13 @@ export function proposeFeature(root, spec, gherkinText, { supersedes } = {}) {
 }
 
 /**
- * v4:一次提一整個版本。bundle = { release: "v2", goal: "這一版使用者能做什麼", roadmap?: "...", nodes: [
+  * v4: propose a whole version at once. bundle = { release: "v2", goal: "what the user can do in this version", roadmap?: "...", nodes: [
  *   { id, kind, title, intent, owns, depends_on?, ..., gherkin_text?: "Feature: ...", gherkin_file?: "path" } ] }
- * - 每個版本最後要有一個整合點(kind=integration,含 @e2e 場景)——使用者親手試用的時間點;沒有就拒絕
- *   (真的不需要時寫 "no_integration_reason")。
- * - 這一版裡沒有依賴的節點,會自動依賴「上一版的整合點」:上一版沒合併、沒試用過,這一版不開工。
- * - roadmap 有寫就存成 docs/ROADMAP.md(後面幾版的方向;只有這一版會進 DAG)。
- * v3 實測:6 個節點分 4 次提案、使用者批 4 次;路線圖只存在 Front 的對話裡,換一個 session 就沒了。
+  * - The last node of every version must be an integration point (kind=integration, with @e2e scenarios) -- the point where the user tries it by hand; reject if there is none
+  *   (write "no_integration_reason" when it is really not needed).
+  * - Nodes in this version that have no dependencies automatically depend on "the previous version's integration point": if the previous version is not merged or hand-trialed, this version does not start.
+  * - If roadmap is given, it is saved as docs/ROADMAP.md (the direction of later versions; only this version enters the DAG).
+  * v3 real run: 6 nodes were proposed in 4 rounds and the user approved 4 times; the roadmap lived only in Front's conversation and was lost on switching session.
  */
 export function proposeBundle(root, bundle, { supersedes } = {}) {
   const sup = supersedeRefs(root, supersedes);
@@ -288,7 +288,7 @@ export function proposeBundle(root, bundle, { supersedes } = {}) {
     const missing = nodes.filter((n) => n.kind !== 'integration' && !(i.depends_on ?? []).includes(n.id)).map((n) => n.id);
     if (missing.length) throw new DlmError(`整合點 ${i.id} 沒有依賴這一版的 ${missing.join(', ')}:整合點要在這一版全部做完之後`);
   }
-  // 上一版的整合點:dag 是依加入順序排的,最後一個 release 不同的整合點就是上一版的
+  // Previous version's integration point: dag is ordered by insertion, so the last integration point with a different release is the previous version's
   const gate = dag.nodes.filter((n) => n.kind === 'integration' && n.release && n.release !== bundle.release).at(-1)?.id ?? null;
   const ids = new Set(nodes.map((n) => n.id));
   if (gate) {
@@ -335,7 +335,7 @@ export function applyProposal(root, id) {
   return { applied: fresh.length, nodes: fresh.map((n) => n.id) };
 }
 
-/** tick 會呼叫:把已批准但還沒套用的提案套上去。 */
+/** Called by tick: apply proposals that are approved but not yet applied. */
 export function applyApprovedProposals(root, log = () => {}) {
   const dir = join(root, PROPOSALS);
   if (!existsSync(dir)) return 0;

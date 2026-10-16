@@ -1,9 +1,9 @@
-// v4.7 `dlm hub`:一台電腦上所有 dlm 專案的總覽、監控與 API(定義在 api.mjs)。只綁 127.0.0.1。
+// v4.7 `dlm hub`: overview, monitoring and API for every dlm project on one machine (defined in api.mjs). Binds to 127.0.0.1 only.
 //
-// - 專案的操作一律交給「那個專案自己的 tools/dlm.mjs」執行(`dlm op <名稱>`,stdin 進 JSON、stdout 出 JSON),
-//   專案裝的 dlm 版本不同也不會讀錯格式;hub 自己只管專案清單、帳號、路由、快取與事件串流。
-// - 每個請求都要帶 token(~/.config/dlm/hub-token,權限 600;`dlm hub token` 看):Authorization: Bearer <token>。
-//   Host / Origin 不是 127.0.0.1 或 localhost 就拒絕(擋 DNS rebinding 與別的網站)。頁面本身內嵌 token,別的網站讀不到它。
+// - Project operations are always handed to "that project's own tools/dlm.mjs" (`dlm op <name>`, JSON in on stdin, JSON out on stdout),
+//   so a project with a different installed dlm version does not get its format misread; the hub itself only handles the project list, accounts, routing, cache and the event stream.
+// - Every request must carry a token (~/.config/dlm/hub-token, mode 600; see it with `dlm hub token`): Authorization: Bearer <token>.
+//   Reject it if Host / Origin is not 127.0.0.1 or localhost (blocks DNS rebinding and other websites). The page embeds the token itself, so other sites cannot read it.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -18,7 +18,7 @@ import { DlmError } from './util.mjs';
 
 export const hubTokenFile = () => join(configDir(), 'hub-token');
 
-/** 讀 token;沒有就產生一個(只有你自己讀得到)。 */
+/** Read the token; if there is none, create one (readable only by you). */
 export function hubToken({ create = true } = {}) {
   const p = hubTokenFile();
   if (existsSync(p)) return readFileSync(p, 'utf8').trim();
@@ -36,9 +36,9 @@ const sameToken = (a, b) => {
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 };
 
-// ------------------------------------------------------------------ 事件串流(SSE)
+// ------------------------------------------------------------------ event stream (SSE)
 
-/** 盯一個帳本檔的尾巴:只讀新增的位元組。 */
+/** Follow the tail of a ledger file: read only the newly added bytes. */
 function ledgerTail(path) {
   const file = join(path, 'ledger', 'events.jsonl');
   let pos = (() => { try { return statSync(file).size; } catch { return 0; } })();
@@ -64,7 +64,7 @@ function ledgerTail(path) {
 
 const strip = ({ mac: _m, prev_hash: _p, chain_start: _c, ...e }) => e;
 
-/** 帳本最後 n 筆(只讀檔尾 512KB)。 */
+/** The last n entries of a ledger (reads only the last 512KB of the file). */
 function lastEvents(path, n) {
   const file = join(path, 'ledger', 'events.jsonl');
   let size;
@@ -74,7 +74,7 @@ function lastEvents(path, n) {
   const fd = openSync(file, 'r');
   try { readSync(fd, buf, 0, len, size - len); } finally { closeSync(fd); }
   const lines = buf.toString('utf8').split('\n').filter(Boolean);
-  if (len < size) lines.shift(); // 第一行可能被切一半
+  if (len < size) lines.shift(); // The first line may be cut in half
   const out = [];
   for (const l of lines.slice(-n)) { try { out.push(strip(JSON.parse(l))); } catch { /* 跳過壞行 */ } }
   return out;
@@ -93,7 +93,7 @@ function stream(req, res, names, recent = 0) {
   };
   sync();
   if (recent > 0) {
-    // 先補最近的 recent 筆(所有專案依時間排),data 帶 recent:true;之後才是新事件
+    // First backfill the latest `recent` entries (all projects ordered by time), with data carrying recent:true; new events come after that
     const projects = loadProjects();
     const back = [...tails.keys()].flatMap((n) => lastEvents(projects[n].path, recent).map((e) => [n, e]));
     back.sort((a, b) => String(a[1].ts).localeCompare(String(b[1].ts)));
@@ -163,7 +163,7 @@ export async function handleApi(req, res, url, { port }) {
   return send(r.status, r.body);
 }
 
-/** 單一專案主控台頁面的帳號 API(v4.6 的頁面用,格式照舊:{ ok, out })。 */
+/** Account API for the single-project console page (used by the v4.6 page; format unchanged: { ok, out }). */
 async function legacyAccountApi(req, res, project) {
   const send = (obj) => res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end(JSON.stringify(obj));
   let body;
@@ -237,7 +237,7 @@ export function serveHub({ port = 7170, intervalMs = 5000, log = console.log } =
       return deny(f.status, f.message);
     }
   });
-  // 首頁內嵌一份總覽,打開就有資料;之後頁面每幾秒打 /api/v1/overview
+  // The home page embeds an overview so it has data on open; after that the page hits /api/v1/overview every few seconds
   let lastOverview = null;
   const overviewSafe = () => lastOverview;
   const await0 = (f) => f() ?? { projects: [], accounts: [], totals: null, loading: true };

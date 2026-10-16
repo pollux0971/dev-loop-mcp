@@ -1,9 +1,10 @@
 /**
- * scripts/check-module-cast.ts 的測試(模板 1.6.0,P-88)。
+ * Tests for scripts/check-module-cast.ts (template 1.6.0, P-88).
  *
- * 跟其餘掃描器的測試同一個形狀:暫存目錄當假 consumer 根,`--root` 明講,
- * GATES_CONFIG_DIR 指到 fixture 自己的 scripts/。三條反向驗證對應檔頭的 (a)–(c);
- * 「只擋那一種」是這支守門的核心承諾,所以對值的 `as unknown as` 一定要有一條綠的測試。
+ * Same shape as the tests of the other scanners: a temp dir acts as the fake consumer root,
+ * `--root` is given, and GATES_CONFIG_DIR points to the fixture's own scripts/. The three
+ * reverse checks match (a)-(c) in the file header; "it blocks only that one kind" is the core
+ * promise of this gate, so there must be a green test for `as unknown as` on a value.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';

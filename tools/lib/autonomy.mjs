@@ -1,11 +1,11 @@
-// AUTONOMY.md 的機械版。等級由使用者在 dlm.config.json 設;這裡只決定「這件事往哪送」。
-//   L0 每一次合併都問使用者
-//   L1 script 全綠且 Verifier 無異議 → 自動;有 ABSTAIN → 問使用者
-//   L2 ABSTAIN 交 Critic;範圍在父節點內的側向子節點自動批准
-// 永遠歸使用者:新的頂層功能、契約 major、規則層、預算、任何 @e2e 試用。
+// Mechanical version of AUTONOMY.md. The user sets the level in dlm.config.json; this only decides "where this item goes".
+//   L0 ask the user on every merge
+//   L1 scripts all green and the Verifier has no objection -> automatic; on ABSTAIN -> ask the user
+//   L2 ABSTAIN goes to the Critic; a lateral child node within the parent node's scope is approved automatically
+// Always left to the user: a new top-level feature, contract major, the rules layer, budget, any @e2e hand trial.
 
-// shared 節點(log、設定、契約這類橫切改動)影響範圍最大;沒有 accept 指令就沒有機器驗收,
-// 不管等級多高都不自動合併,至少過 Critic 或使用者。
+// shared nodes (cross-cutting changes such as log, config, contracts) have the widest impact; with no accept command there is no machine acceptance,
+// so they are never merged automatically at any level, and at least pass the Critic or the user.
 
 export function acceptRoute({ level, summary, tier, criticAvailable, kind, hasAccept = true }) {
   if (!summary.ok) return 'reject';

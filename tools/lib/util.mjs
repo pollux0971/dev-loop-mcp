@@ -1,4 +1,4 @@
-// 共用工具。零依賴,Node >= 20。
+// Shared helpers. Zero dependencies, Node >= 20.
 import { createHash } from 'node:crypto';
 import {
   closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync,
@@ -34,7 +34,7 @@ export function ensureDir(p) {
   mkdirSync(p, { recursive: true });
 }
 
-/** 寫暫存檔 → fsync → rename。AGENTS.md 硬規則 5 的實作,所有狀態檔都走這裡。 */
+/** Write a temp file -> fsync -> rename. The implementation of AGENTS.md hard rule 5; all state files go through here. */
 export function atomicWrite(path, data) {
   ensureDir(dirname(path));
   const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
@@ -69,7 +69,7 @@ export function writeJson(path, obj) {
   atomicWrite(path, stableJson(obj));
 }
 
-/** 以 O_EXCL 建鎖檔;持有者 pid 已死就視為殘鎖並接手。 */
+/** Create a lock file with O_EXCL; if the holder's pid is dead, treat it as a stale lock and take over. */
 export function withLock(lockPath, fn, { timeoutMs = 10000 } = {}) {
   ensureDir(dirname(lockPath));
   const start = Date.now();
@@ -84,9 +84,9 @@ export function withLock(lockPath, fn, { timeoutMs = 10000 } = {}) {
       let holder = NaN;
       try {
         holder = Number(readFileSync(lockPath, 'utf8'));
-      } catch { /* 讀不到就當殘鎖 */ }
+      } catch { /* unreadable: treat as a stale lock */ }
       if (!Number.isFinite(holder) || !pidAlive(holder)) {
-        try { unlinkSync(lockPath); } catch { /* 別人先清了 */ }
+        try { unlinkSync(lockPath); } catch { /* someone else cleaned it first */ }
         continue;
       }
       if (Date.now() - start > timeoutMs) {
@@ -98,7 +98,7 @@ export function withLock(lockPath, fn, { timeoutMs = 10000 } = {}) {
   try {
     return fn();
   } finally {
-    try { unlinkSync(lockPath); } catch { /* 已被清掉 */ }
+    try { unlinkSync(lockPath); } catch { /* already cleaned */ }
   }
 }
 
@@ -112,7 +112,7 @@ export function pidAlive(pid) {
   }
 }
 
-/** glob → RegExp。支援 `**`、`*`、`?`;路徑一律 posix。 */
+/** glob -> RegExp. Supports `**`, `*`, `?`; paths are always posix. */
 export function globToRegex(glob) {
   let re = '';
   for (let i = 0; i < glob.length; i++) {
@@ -150,7 +150,7 @@ export function matchAny(path, globs) {
   return (globs ?? []).some((g) => matchGlob(path, g));
 }
 
-/** glob 的固定前綴(第一個萬用字元之前的目錄),用來判斷範圍包含關係。 */
+/** The fixed prefix of a glob (the directory before the first wildcard), used to decide whether one scope contains another. */
 export function globPrefix(glob) {
   const idx = glob.search(/[*?]/);
   const head = idx < 0 ? glob : glob.slice(0, idx);
@@ -158,31 +158,31 @@ export function globPrefix(glob) {
 }
 
 /**
- * 子程序的環境:拿掉會改變子程序行為的父程序情境變數。
- * 例:dlm 在 `node --test` 底下跑時,NODE_TEST_CONTEXT 會讓 worker 的 `node --test` 默默跳過全部測試並 exit 0(假綠)。
+ * Environment for child processes: drop the parent-process context variables that change the child's behavior.
+ * Example: when dlm runs under `node --test`, NODE_TEST_CONTEXT makes the worker's `node --test` silently skip all tests and exit 0 (false green).
  */
 export function childEnv(extra = {}) {
   const env = { ...process.env, ...extra };
   delete env.NODE_TEST_CONTEXT;
-  // 值是空字串 = 要清掉這個變數(帳號切換時清掉會蓋過帳號目錄的金鑰,見 accounts.mjs)
+  // A value of empty string = clear this variable (on an account switch, clearing it overrides the key in the account directory; see accounts.mjs)
   for (const [k, v] of Object.entries(extra ?? {})) if (v === '') delete env[k];
   return env;
 }
 
-/** 以 shell 執行並回傳退出碼與輸出。永不丟例外;逾時回 code=124。只給 dlm 自己或使用者批准過的指令用。 */
+/** Run through a shell and return the exit code and output. Never throws; on timeout returns code=124. Only for dlm's own commands or commands the user has approved. */
 export function run(cmd, opts = {}) {
   return runArgv('sh', ['-c', cmd], opts);
 }
 
 /**
- * 不經 shell 直接執行 argv。worker 給的字串只能走這條:換行、引號、`;` 都只是參數裡的字,
- * 永遠不會被當成第二條指令。永不丟例外;逾時回 code=124。
+ * Run argv directly without a shell. Strings from a worker may only go this way: newlines, quotes and `;` are just words inside an argument,
+ * and are never treated as a second command. Never throws; on timeout returns code=124.
  */
 export function runArgv(file, args, { cwd, env, timeoutMs = 10 * 60 * 1000, input, exactEnv = false } = {}) {
   const started = Date.now();
   const r = spawnSync(file, args, {
     cwd,
-    // exactEnv:只給明列的變數(srt 沙箱用),不整包繼承主機環境
+    // exactEnv: pass only the listed variables (for the srt sandbox), do not inherit the whole host environment
     env: exactEnv ? env : childEnv(env),
     encoding: 'utf8',
     timeout: timeoutMs,
@@ -200,8 +200,8 @@ export function runArgv(file, args, { cwd, env, timeoutMs = 10 * 60 * 1000, inpu
 }
 
 /**
- * 不等待的鎖:拿到就回傳釋放函式,別人(活著的 pid)拿著就回 null。持有者已死視為殘鎖並接手。
- * 同一個程序重複拿也回 null:鎖是防並發,不是可重入的。
+ * Non-waiting lock: if acquired, return the release function; if someone else (a live pid) holds it, return null. A dead holder is treated as a stale lock and taken over.
+ * Acquiring it again in the same process also returns null: the lock guards against concurrency and is not reentrant.
  */
 export function tryLock(lockPath) {
   ensureDir(dirname(lockPath));
@@ -213,18 +213,18 @@ export function tryLock(lockPath) {
       return () => {
         try {
           if (readFileSync(lockPath, 'utf8').trim() === String(process.pid)) unlinkSync(lockPath);
-        } catch { /* 已被清掉 */ }
+        } catch { /* already cleaned */ }
       };
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       if (lockHolder(lockPath)) return null;
-      try { unlinkSync(lockPath); } catch { /* 別人先清了 */ }
+      try { unlinkSync(lockPath); } catch { /* someone else cleaned it first */ }
     }
   }
   return null;
 }
 
-/** 鎖檔裡的 pid;檔不在或持有者已死回 null。 */
+/** The pid in the lock file; null if the file is missing or the holder is dead. */
 export function lockHolder(lockPath) {
   let pid = NaN;
   try {
@@ -236,8 +236,8 @@ export function lockHolder(lockPath) {
 }
 
 /**
- * 不可信文字(worker 報告、模型輸出、git 輸出)要給 Front 看時一律用這個包起來。
- * 內文裡的 <untrusted / </untrusted 會被跳脫,worker 沒辦法提前關閉圍欄、假裝後面是 dlm 說的話。
+ * Untrusted text (worker reports, model output, git output) must always be wrapped with this when shown to Front.
+ * <untrusted / </untrusted inside the body are escaped, so a worker cannot close the fence early and pretend what follows was said by dlm.
  */
 export function fenceUntrusted(source, text) {
   const esc = (s) => String(s ?? '').replace(/<(\/?)(untrusted)/gi, '&lt;$1$2');

@@ -1,4 +1,4 @@
-// 只做 dlm 需要的部分:找出場景、它們的 tag(含 Feature 層 tag)、行號與步驟。不是完整 parser。
+// Only the parts dlm needs: find scenarios, their tags (including Feature-level tags), line numbers and steps. Not a full parser.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 

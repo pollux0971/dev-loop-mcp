@@ -1,74 +1,89 @@
 /**
- * 步驟重複檢查(見 docs/03-agile-workflow.md「便宜的模型做機械工作」與 PITFALLS.md P-02)。
+ * Step duplicate check (see docs/03-agile-workflow.md "cheap models do mechanical work" and PITFALLS.md P-02).
  *
- * 背景:cucumber 對「同一句話有兩個定義」的容忍度是 0——只要兩個定義的形狀都能匹配
- * 到同一句 Gherkin 文字,cucumber 就會在跑到那句時炸成 ambiguous step。這是唯一真正
- * 會讓 cucumber 崩潰的不變量:**同一個步驟形狀,全專案只准有一個定義**,不管那個定義
- * 住在哪個 *.steps.ts 檔。
+ * Background: cucumber has zero tolerance for "one sentence, two definitions". If two
+ * definitions can both match the same Gherkin text, cucumber blows up with an ambiguous
+ * step when it reaches that sentence. This is the only invariant that really crashes
+ * cucumber: **one step shape has exactly one definition in the whole project**, no matter
+ * which *.steps.ts file that definition lives in.
  *
- * 這支腳本刻意**不**檢查「有沒有進 common.steps.ts」——那是代理指標,兩個方向都會誤判:
- *   - 假綠:一句話被定義了 3 次,其中一次剛好在 common.steps.ts 裡,「有沒有在 common」
- *     這個問法會放行,但 cucumber 一樣會因為另外兩個重複定義而炸。
- *   - 假紅:一句只描述單一能力的話(例如「the current question is an apply question」),
- *     被 docs/integration 的整合場景直接重用、定義住在該能力自己的 steps 檔——這完全正常
- *     (整合場景本來就該重用能力層的字彙),但只看「有沒有在 common」會誤判成缺陷。
- * 守門只對著「恰好一個定義」這個不變量,不對著「住在哪個檔案」這個代理指標。
+ * This script deliberately does **not** check "is it in common.steps.ts". That is a proxy
+ * metric, and it gives wrong answers in both directions:
+ *   - False green: a sentence is defined 3 times, and one of them happens to be in
+ *     common.steps.ts. The "is it in common" question lets it pass, but cucumber still
+ *     blows up because of the other two duplicate definitions.
+ *   - False red: a sentence that describes a single capability (e.g. "the current question
+ *     is an apply question") is reused directly by an integration scenario in docs/integration,
+ *     and its definition lives in that capability's own steps file. This is perfectly normal
+ *     (integration scenarios should reuse the capability-level vocabulary), but "is it in
+ *     common" would misjudge it as a defect.
+ * The gate checks only the invariant "exactly one definition", not the proxy "which file it lives in".
  *
- * 規則:
- *   1. 掃 features/<NN-name>/**\/*.feature 與 docs/integration/**\/*.feature,
- *      每個 Given/When/Then/And/But 步驟句正規化:去掉開頭關鍵字、引號內容 → {string}、
- *      獨立數字 → {int}、<param> → {param}、去頭尾空白
- *   2. 掃 features/steps/*.steps.ts **全部**(不只 common.steps.ts),用正規表達式抓
- *      Given(/When(/Then( 開頭、緊接引號或 / 的定義,建一個「正規化形狀 → 定義它的檔案清單」
- *      的 Map。cucumber expression 的所有參數型別({string}/{int}/{}/{word}/...)與
- *      regex 的捕獲群都正規化成同一個萬用字 {},跟步驟句那邊的 {string}/{int}/{param}
- *      也統一收斂成 {} 再比對形狀是否相同
- *   3. 對**定義那邊**的每一種形狀(不管 feature 檔有沒有用到):
- *        定義 1 次 → OK,不管那個定義住在哪個 *.steps.ts 檔
- *        定義 ≥2 次 → 列出這句話、每個定義所在的檔案與原始寫法、目前哪些資料夾在用
- *                     (沒有任何 feature 用到就明說「目前沒有 feature 用到」),退出 1
- *      feature 裡出現但定義 0 次 → 不歸這支管(`check-dry-run.ts` 讀 dry-run 摘要行的
- *      undefined 桶,那是另一道檢查)
+ * Rules:
+ *   1. Scan features/<NN-name>/**\/*.feature and docs/integration/**\/*.feature.
+ *      Normalize every Given/When/Then/And/But step sentence: drop the leading keyword,
+ *      quoted content -> {string}, standalone numbers -> {int}, <param> -> {param}, trim
+ *   2. Scan **all** of features/steps/*.steps.ts (not only common.steps.ts). Use a regex to
+ *      find definitions that start with Given(/When(/Then( and are followed directly by a
+ *      quote or /. Build a Map of "normalized shape -> list of files that define it".
+ *      All cucumber expression parameter types ({string}/{int}/{}/{word}/...) and regex
+ *      capture groups are normalized into the same wildcard {}. The {string}/{int}/{param}
+ *      on the step sentence side are also collapsed into {} before comparing shapes
+ *   3. For every shape on the **definition side** (whether or not any feature file uses it):
+ *        defined once -> OK, no matter which *.steps.ts file the definition lives in
+ *        defined >=2 times -> list the sentence, the file and original text of each definition,
+ *                     and which folders use it now (if no feature uses it, say
+ *                     "no feature uses it right now"), exit 1
+ *      A step that appears in a feature but has 0 definitions -> not this script's job
+ *      (`check-dry-run.ts` reads the undefined bucket of the dry-run summary line; that is
+ *      a different check)
  *
- *   1.6.0 之前的第 3 條是「對每個出現在 feature 檔裡的步驟形狀」——只有 feature 已經用到
- *   的句子才會被比對定義次數,結果**跨檔逐字相同、但 feature 還沒用到**的定義完全看不見
- *   (P-87,來源 AI_KM 2026-09-08):測試 agent 新開一個 steps 檔,照抄別的 phase 的英文
- *   措辭當自己的定義,只跑自己的 tag 全綠(自己的場景還沒寫到那句),別人跑他的 tag 才炸
- *   ambiguous,而且訊息指向**別人的**場景。「自己全綠、合進去別人紅」的另一形態。
- *   另一個看不見的角落:定義用了 cucumber expression 的 optional/alternative 語法
- *   (`the log line(s) contain(s) {string}`、`a/an item`),正規化後永遠對不上任何 feature
- *   句的形狀,重複定義照樣漏。改成直接對定義清單本身找重複,兩個角落一起補上。
+ *   Before 1.6.0, rule 3 was "for every step shape that appears in a feature file". Only
+ *   sentences that a feature already used had their definition count compared, so definitions
+ *   that were **word-for-word identical across files but not yet used by any feature** were
+ *   invisible (P-87, from AI_KM 2026-09-08): a test agent opened a new steps file and copied
+ *   another phase's English wording as its own definition. Running only its own tag was all
+ *   green (its own scenarios had not reached that sentence yet), but when someone else ran
+ *   their tag it blew up as ambiguous, and the message pointed at **someone else's**
+ *   scenario. This is another form of "green on my side, red for others after the merge".
+ *   There was one more blind corner: a definition that uses cucumber expression optional/alternative
+ *   syntax (`the log line(s) contain(s) {string}`, `a/an item`) never matches the shape of any
+ *   feature sentence after normalization, so duplicate definitions slipped through. The check
+ *   now looks for duplicates in the definition list itself, which covers both corners.
  *
- * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
- *   npx tsx scripts/check-step-dup.ts               # 複製進 repo 後執行
- *   npx tsx <template>/scripts/check-step-dup.ts    # 從模板路徑直接執行,cwd 需在目標 repo
- *   npx tsx scripts/check-step-dup.ts --list        # 列出每個跨 ≥2 資料夾的句子與它的定義檔清單
- *                                                    # (0 個定義印 "(undefined)"),不判斷退出碼
+ * Usage (the repo root is resolved from `git rev-parse --show-toplevel`, falling back to cwd outside a git repo):
+ *   npx tsx scripts/check-step-dup.ts               # run after copying into the repo
+ *   npx tsx <template>/scripts/check-step-dup.ts    # run straight from the template path; cwd must be in the target repo
+ *   npx tsx scripts/check-step-dup.ts --list        # list every sentence that spans >=2 folders with its definition files
+ *                                                    # (0 definitions prints "(undefined)"); the exit code is not judged
  *
- * 退出碼:
- *   0  沒有被定義 ≥2 次的步驟形狀
- *   1  有步驟形狀被定義 ≥2 次(不管 feature 有沒有用到);或掃到 0 個 .feature 檔 / 0 個步驟句 /
- *      0 個可解析的步驟定義(這不是很乾淨,是掃描器壞了)
+ * Exit codes:
+ *   0  no step shape is defined >=2 times
+ *   1  some step shape is defined >=2 times (whether or not a feature uses it); or 0 .feature files /
+ *      0 step sentences / 0 parsable step definitions were scanned (this is not "clean", the scanner is broken)
  *
- * 反向驗證(用根目錄 scripts/ 暫放這支腳本的方式對真實資料跑,跑完刪除暫存檔案,
- * 確認 `git status` 乾淨,不要留下改動):
- *   (a) 挑一句已經定義在 features/steps/common.steps.ts 的句子(例如
- *       `it exits with status {int}`),把整行原樣複製貼進另一個能力的 *.steps.ts
- *       (例如 features/steps/scheduler.steps.ts)。重跑這支腳本 → 應該紅,列出這句話與
- *       兩個定義檔(common.steps.ts 與 scheduler.steps.ts)。
- *   (b) 刪掉剛貼的那個定義,還原檔案 → 重跑 → 應該綠。
- *   (c) 找一句只定義在某個能力自己的 *.steps.ts、但被 docs/integration 的場景重用的句子
- *       (常見情況:整合場景直接寫該能力 phase-1 已經在用的斷言字彙)。確認它不在失敗清單裡
- *       (跨資料夾但恰好 1 個定義 → OK)→ 綠,不用改任何檔案。
- *   (d) 挑一句**沒有任何 feature 用到**的定義(或自己新寫一句 `Then('nobody uses this yet', …)`
- *       在兩個 steps 檔各放一份)→ 應該紅,列出兩個檔案並註明「目前沒有 feature 用到」。
- *       這是 1.6.0 補的角落,`check-step-dup.test.ts` 有對應的自動測試。
+ * Reverse check (run the script against real data by putting it temporarily in the root
+ * scripts/, delete the temp files afterwards, and confirm `git status` is clean, leaving no changes):
+ *   (a) Pick a sentence already defined in features/steps/common.steps.ts (for example
+ *       `it exits with status {int}`) and copy the whole line as-is into another capability's
+ *       *.steps.ts (for example features/steps/scheduler.steps.ts). Run this script again ->
+ *       it should be red, listing the sentence and both definition files (common.steps.ts and
+ *       scheduler.steps.ts).
+ *   (b) Delete the definition you just pasted and restore the file -> run again -> it should be green.
+ *   (c) Find a sentence that is defined only in one capability's own *.steps.ts but reused by a
+ *       docs/integration scenario (common case: an integration scenario uses the assertion
+ *       vocabulary that the capability's phase 1 already uses). Confirm it is not in the failure
+ *       list (spans folders but has exactly 1 definition -> OK) -> green, no file needs changing.
+ *   (d) Pick a definition that **no feature uses** (or write a new `Then('nobody uses this yet', ...)`
+ *       and put one copy in each of two steps files) -> it should be red, listing both files and
+ *       noting "no feature uses it right now". This is the corner added in 1.6.0;
+ *       `check-step-dup.test.ts` has a matching automated test.
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { ROOT, loadGatesConfig, resolveConfig, resolveSkipDirs } from './_root.js';
 
-/** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
+/** This script's name in the gate's machine-readable marker (see CHANGELOG 1.3.2 (C)). */
 const GATE_NAME = 'step-dup';
 
 const LIST_ONLY = process.argv.includes('--list');
@@ -83,13 +98,16 @@ function toPosix(p: string): string {
   return p.split('\\').join('/');
 }
 
-/** S10:跟其餘會走目錄樹的 gate 共用同一份略過清單。 */
+/** S10: share the same skip list with the other gates that walk the directory tree. */
 function resolveSkipDirsForStepDup(): Set<string> {
-  // 1.7.0(#13 名冊抓到的,P-91 第五/六個實例):原本這裡自己重寫了「型別檢查 + 合併 DEFAULT_SKIP_DIRS」,
-  // 於是 1.6.3 加在共用層的 glob 硬錯對這支不生效。**上面那段註解一直寫著「不在這支腳本裡另外寫一份」,
-  // 而下一行就寫了一份**——註解描述的是意圖,不是實作,沒有東西檢查兩者一致。
-  // 1.6.3~1.6.10 的逐支盤點都沒抓到它,原因是盤點用 `grep resolveSkipDirs`,而這個函式名
-  // `resolveSkipDirsFor…` 剛好以那個字串開頭——字面掃描讀不到脈絡(P-89)。名冊用 `\bresolveSkipDirs\s*\(` 才分得出來。
+  // 1.7.0 (caught by roster #13, the fifth/sixth instance of P-91): this used to rewrite "type check + merge
+  // DEFAULT_SKIP_DIRS" by itself, so the glob hard error added to the shared layer in 1.6.3 did not apply here.
+  // **The comment above kept saying "do not write a separate copy in this script",
+  // and the very next line wrote one**. A comment describes intent, not the implementation,
+  // and nothing checks that the two agree.
+  // The per-script audits in 1.6.3~1.6.10 never caught it, because the audit used `grep resolveSkipDirs`,
+  // and this function's name `resolveSkipDirsFor...` happens to start with that string, so a literal
+  // scan cannot read the context (P-89). The roster uses `\bresolveSkipDirs\s*\(` to tell them apart.
   const p = resolveConfig(import.meta.dirname, 'gates.config.json');
   return resolveSkipDirs(loadGatesConfig(p, GATE_NAME), GATE_NAME);
 }
@@ -105,7 +123,7 @@ function* walk(dir: string, skipDirs: Set<string>): Generator<string> {
   }
 }
 
-/** features/<NN-name>/... → "features/<NN-name>";docs/integration/... → "docs/integration";其餘 undefined(不算目標,例如 features/_template)。 */
+/** features/<NN-name>/... -> "features/<NN-name>"; docs/integration/... -> "docs/integration"; anything else is undefined (not a target, e.g. features/_template). */
 function folderOf(relPath: string): string | undefined {
   const posix = toPosix(relPath);
   const m = posix.match(/^features\/(\d{2}-[^/]+)\//);
@@ -134,7 +152,7 @@ function extractSteps(file: string): { line: number; raw: string }[] {
   return out;
 }
 
-/** 步驟句正規化:去掉開頭關鍵字(呼叫端已處理)、引號內容 → {string}、獨立數字 → {int}、<param> → {param}。 */
+/** Step sentence normalization: drop the leading keyword (the caller already did), quoted content -> {string}, standalone numbers -> {int}, <param> -> {param}. */
 function normalize(raw: string): string {
   return raw
     .replace(/"[^"]*"/g, '{string}')
@@ -143,12 +161,12 @@ function normalize(raw: string): string {
     .trim();
 }
 
-/** 把正規化後的步驟句再收斂一層:{string}/{int}/{param} 全部變成同一個萬用字 {},跟定義那邊的形狀比對。 */
+/** Collapse the normalized step sentence one more level: {string}/{int}/{param} all become the same wildcard {}, to compare with the shape on the definition side. */
 function genericize(normalized: string): string {
   return normalized.replace(/\{string\}|\{int\}|\{param\}/g, '{}');
 }
 
-/** 解析字串字面值(從 quoteChar 後一個字元開始),回傳值與結尾索引(quote 之後那個位置)。 */
+/** Parse a string literal (starting at the character after quoteChar); return the value and the end index (the position after the closing quote). */
 function parseStringLiteral(src: string, start: number, quoteChar: string): { value: string; end: number } | undefined {
   let i = start;
   let value = '';
@@ -166,7 +184,7 @@ function parseStringLiteral(src: string, start: number, quoteChar: string): { va
   return undefined;
 }
 
-/** 解析 regex 字面值(從第一個 / 之後開始),回傳 source 與結尾索引(flags 之後那個位置)。 */
+/** Parse a regex literal (starting after the first /); return the source and the end index (the position after the flags). */
 function parseRegexLiteral(src: string, start: number): { source: string; end: number } | undefined {
   let i = start;
   let source = '';
@@ -191,21 +209,21 @@ function parseRegexLiteral(src: string, start: number): { source: string; end: n
   return undefined;
 }
 
-/** 去掉註解,避免註解掉的定義(例如反向驗證時 `// Then(...)`)被誤判成還活著。 */
+/** Strip comments, so a commented-out definition (e.g. `// Then(...)` during the reverse check) is not misjudged as still alive. */
 function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/(^|[^:'"`])\/\/[^\n]*/g, (_m, pre: string) => pre);
 }
 
-/** cucumber expression 的字串定義 → 形狀 key:任何 {word} 參數(不管型別)都收斂成 {}。 */
+/** cucumber expression string definition -> shape key: any {word} parameter (whatever its type) collapses to {}. */
 function literalToKey(lit: string): string {
   return lit.replace(/\{[A-Za-z0-9_]*\}/g, '{}');
 }
 
-/** regex 定義 → 形狀 key:去掉 ^ $ 錨點,把捕獲群(不處理巢狀)換成 {}。其餘 regex 語法原樣保留,
- * 只用來跟其他定義的 key 做字面比對(偵測「複製貼上同一個定義」這種真的會撞名的情況),
- * 不是完整的 regex 語意比較。 */
+/** regex definition -> shape key: drop the ^ $ anchors and replace capture groups (nesting not handled) with {}. The rest of the regex syntax stays as-is.
+ * It is only used for literal comparison with other definitions' keys (to detect a real name clash such as
+ * "the same definition copy-pasted"), not as a full regex semantic comparison. */
 function regexToKey(source: string): string {
   let body = source;
   if (body.startsWith('^')) body = body.slice(1);
@@ -220,7 +238,7 @@ function collectStepDefinitionFiles(): string[] {
     .map((name) => join(STEPS_DIR, name));
 }
 
-/** 一個步驟定義:住在哪個檔、原始寫法(字串字面值或 regex source)、是哪一種。 */
+/** One step definition: which file it lives in, its original text (string literal or regex source), and which kind it is. */
 interface StepDefinition { file: string; literal: string; kind: 'expression' | 'regex' }
 
 function extractDefinitions(rawSrc: string): { key: string; literal: string; kind: 'expression' | 'regex' }[] {
@@ -238,8 +256,8 @@ function extractDefinitions(rawSrc: string): { key: string; literal: string; kin
       const parsed = parseRegexLiteral(src, after + 1);
       if (parsed) out.push({ key: regexToKey(parsed.source), literal: `/${parsed.source}/`, kind: 'regex' });
     }
-    // 其餘(例如 `for (const phrase of [...]) { Then(phrase, ...) }` 這種變數形式)不是
-    // 「直接以引號或 / 開頭」的定義,略過——這是這支腳本刻意的限制,見檔頭註解。
+    // Anything else (e.g. the variable form `for (const phrase of [...]) { Then(phrase, ...) }`) is not
+    // a definition that "starts directly with a quote or /", so skip it. This is a deliberate limit of this script, see the header comment.
   }
   return out;
 }
@@ -301,8 +319,9 @@ function main(): void {
   );
 
   if (defCount === 0) {
-    // feature 有句子、定義卻一個都解析不到:steps 目錄放錯地方、檔名不是 *.steps.ts、或定義
-    // 全用變數形式——不管哪種,這支守門對「重複定義」什麼都檢查不了,不能宣稱通過。
+    // The features have sentences but not one definition could be parsed: the steps directory is in the wrong place,
+    // the file name is not *.steps.ts, or all definitions use the variable form. Whichever it is, this gate
+    // cannot check anything about "duplicate definitions", so it must not claim a pass.
     console.log(`✗ ${STEPS_DIR} 底下解析到 0 個步驟定義(*.steps.ts 裡 Given/When/Then 直接接引號或 / 的呼叫)。這不是很乾淨,是掃描器壞了。`);
     console.log(`gate=${GATE_NAME} result=FAIL scanned=0`);
     process.exit(1);
@@ -321,7 +340,7 @@ function main(): void {
     process.exit(0);
   }
 
-  // 1.6.0:對**定義清單本身**找重複,不再只看 feature 已經用到的句子(P-87)。
+  // 1.6.0: look for duplicates in the **definition list itself**, no longer only the sentences a feature already uses (P-87).
   const duplicated = [...defsByKey.entries()].filter(([, defs]) => defs.length >= 2);
   if (duplicated.length) {
     console.log(`\n✗ ${FAILURE_MESSAGE}`);

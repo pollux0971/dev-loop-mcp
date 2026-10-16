@@ -1,58 +1,59 @@
 /**
- * 單獨執行檢查(見 docs/02-decision-map.md ADR-005)。跑 standalone.json 裡每個非互動指令,
- * 要求退出碼符合預期且輸出含 expect 關鍵字。
+ * Standalone run check (see docs/02-decision-map.md ADR-005). Runs every non-interactive command in standalone.json
+ * and requires the exit code to match what is expected and the output to contain the expect keyword.
  *
- * 暫存目錄清理是**設定驅動**的:每個條目可以選填 `"cleanup": ["./tmp-learning", ...]`,
- * 執行前後各清一次(rm -rf,不存在也不報錯)。程式本身不寫死任何目錄名——
- * 舊版硬編一個 `tmp-learning` / `tmp-output`,換了專案的暫存目錄名字就失效,
- * 而且會不小心清到剛好同名但無關的資料夾。
+ * Temp directory cleanup is **config-driven**: each entry can optionally set `"cleanup": ["./tmp-learning", ...]`,
+ * and the paths are cleaned once before and once after the run (rm -rf, no error if they do not exist). The code
+ * itself hard-codes no directory name. The old version hard-coded `tmp-learning` / `tmp-output`, which stopped
+ * working once a project used different temp directory names,
+ * and it could also wipe an unrelated folder that happened to have the same name.
  *
- * **metadata 欄位(`_doc` 慣例)**:manifest 最上層可以放底線開頭的鍵當說明用的
- * metadata(例如 `"_doc": "這份 manifest 給 /phase-done 用,見 FEATURE.md"`),
- * 值可以是任何型別、不必是條目物件——這種鍵一律跳過,不計入 scanned、不嘗試執行。
- * 舊版沒有這個豁免,把 `_doc` 的字串值當條目物件處理,`entry.cmd` 是 `undefined`,
- * 執行到 `spawnSync(entry.cmd, ...)` 直接丟 `ERR_INVALID_ARG_TYPE` 炸掉,是消費者
- * 回報的真實事故(AI_KM,commit d3e0b80)。**不是底線開頭、但值不是物件**的鍵,
- * 不當成 metadata 放過——那通常是打錯字或格式壞掉,印 `✗ <key> 不是條目物件` 並 FAIL,
- * 不要在這裡靜默跳過、把「格式壞了」偽裝成「全部通過」。
+ * **metadata fields (the `_doc` convention)**: the top level of the manifest may hold keys that start with an underscore
+ * as descriptive metadata (for example `"_doc": "This manifest is for /phase-done, see FEATURE.md"`).
+ * The value can be of any type and need not be an entry object. Such keys are always skipped: not counted in scanned and never run.
+ * The old version had no such exemption and treated the string value of `_doc` as an entry object, so `entry.cmd` was `undefined`,
+ * and reaching `spawnSync(entry.cmd, ...)` crashed with `ERR_INVALID_ARG_TYPE`. This was a real incident
+ * reported by a consumer (AI_KM, commit d3e0b80). A key that **does not start with an underscore and whose value is not an object**
+ * is not let through as metadata: it is usually a typo or a broken format, so it prints a "<key> is not an entry object" line and FAILs.
+ * Do not skip silently here and disguise "the format is broken" as "everything passed".
  *
- * **`pending` 語意**(來源 nightmare-assault):條目可以選填
- * `"pending": "<NN-folder>/phase-N"`,代表「這個指令現在预期會紅,原因是還在等
- * 那個 phase」。解析 `features/<NN-folder>/FEATURE.md` 的 Phase 表,找 `phase-N`
- * 那一列的狀態:
- *   - 狀態是 `done` → pending 已經過期,這個條目**必須**通過,沒通過照樣 FAIL
- *     (訊息會明講「pending 已過期」,不是普通的失敗訊息——過期的 pending 比一般失敗
- *     更值得注意,代表「照理說已經解除的等待,實際上還沒解除」)。
- *   - 狀態不是 `done` → 照樣執行,但**不會**讓 gate 變紅,只是回報實際的退出碼
- *     (`○ ... pending(等 .../phase-N)實際 exit=N`),方便觀察但不擋 merge。
- *   - `features/<NN-folder>/FEATURE.md` 不存在,或裡面找不到 `phase-N` 那一列
- *     → 這是設定本身的問題(參照打錯字),FAIL,不當成「還沒 done」放過。
- * pending 條目一樣計入 `scanned=N`。
+ * **`pending` semantics** (from nightmare-assault): an entry can optionally set
+ * `"pending": "<NN-folder>/phase-N"`, meaning "this command is expected to be red right now, because it is still waiting
+ * for that phase". Parse the Phase table of `features/<NN-folder>/FEATURE.md`, find the row for `phase-N`,
+ * and look at its status:
+ *   - Status is `done` -> the pending has expired. This entry **must** pass, and it FAILs as usual if it does not
+ *     (the message says "pending has expired" outright, not an ordinary failure message. An expired pending deserves
+ *     more attention than a normal failure: it means "a wait that should have been lifted has actually not been lifted").
+ *   - Status is not `done` -> still runs, but does **not** turn the gate red; it only reports the actual exit code
+ *     (a `○ ... pending (waiting for .../phase-N) actual exit=N` line), which is good for observing but does not block the merge.
+ *   - `features/<NN-folder>/FEATURE.md` does not exist, or the `phase-N` row cannot be found in it
+ *     -> this is a problem in the config itself (a typo in the reference), so FAIL; do not let it through as "not done yet".
+ * A pending entry still counts toward `scanned=N`.
  *
- * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
- *   npx tsx scripts/check-standalone.ts                 # 複製進 repo 後執行,全部非互動
- *   npx tsx <template>/scripts/check-standalone.ts      # 從模板路徑直接執行,cwd 需在目標 repo
+ * Usage (the repo root is resolved from `git rev-parse --show-toplevel`, falling back to cwd outside a git repo):
+ *   npx tsx scripts/check-standalone.ts                 # run after copying into the repo, all non-interactive
+ *   npx tsx <template>/scripts/check-standalone.ts      # run straight from the template path; cwd must be in the target repo
  *   npx tsx scripts/check-standalone.ts --only <key>
- *   npx tsx scripts/check-standalone.ts --list          # 只列出,不執行
- *   npx tsx scripts/check-standalone.ts --timeout 60000 # 每個指令的毫秒上限(預設 120000)
- *   npx tsx scripts/check-standalone.ts --manifest <path> # 改讀別的 manifest(測試用 fixture)
+ *   npx tsx scripts/check-standalone.ts --list          # list only, do not run
+ *   npx tsx scripts/check-standalone.ts --timeout 60000 # per-command limit in milliseconds (default 120000)
+ *   npx tsx scripts/check-standalone.ts --manifest <path> # read a different manifest (a fixture for tests)
  *
- * 退出碼:0 全部通過;1 任一失敗(含過期的 pending、無效的 pending 參照、格式壞掉的條目),
- * 或 manifest **一個真正的條目都沒讀到**(metadata 鍵不算條目)。
- * 互動式(dev server)一律跳過,由 /phase-done 人工確認。
+ * Exit codes: 0 all passed; 1 any failure (including an expired pending, an invalid pending reference, a malformed entry),
+ * or the manifest has **not one real entry** (metadata keys do not count as entries).
+ * Interactive ones (dev server) are always skipped and confirmed by hand in /phase-done.
  *
- * 「讀到 0 個條目一律 FAIL」是刻意的:manifest 路徑打錯、檔案被清空、或格式改掉時,
- * 「全部通過」的退出碼 0 是騙人的——沒有東西通過,是根本沒讀到東西。
+ * "Reading 0 entries is always FAIL" is deliberate: when the manifest path is wrong, the file was emptied, or the format changed,
+ * exit code 0 for "all passed" would be a lie. Nothing passed; nothing was read at all.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ROOT as GIT_ROOT, readConfigJson, requireRootDir } from './_root.js';
 
-/** 三支掃描器共用的那句話。0 個東西的紅,方向永遠是「掃描器壞了」。 */
+/** The sentence shared by the three scanners. A red caused by 0 items always points to "the scanner is broken". */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
-/** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
+/** This script's name in the gate's machine-readable marker (see CHANGELOG 1.3.2 (C)). */
 const GATE_NAME = 'standalone';
 
 interface ManifestEntry {
@@ -60,9 +61,9 @@ interface ManifestEntry {
   interactive: boolean;
   expect?: string;
   expectExit?: number;
-  /** 執行前後各清一次的相對路徑(相對 ROOT)。不填就不清理任何東西。 */
+  /** Relative paths (relative to ROOT) cleaned once before and once after the run. If not set, nothing is cleaned. */
   cleanup?: string[];
-  /** 見檔頭「pending 語意」:格式 `<NN-folder>/phase-N`。 */
+  /** See "pending semantics" in the file header: the format is `<NN-folder>/phase-N`. */
   pending?: string;
 }
 
@@ -81,16 +82,16 @@ const timeout = Number(arg('--timeout') ?? 120_000);
 const listOnly = process.argv.includes('--list');
 const manifestPath = resolve(ROOT, arg('--manifest') ?? join(ROOT, 'standalone.json'));
 
-// 讀不到檔案、或讀到了但不是合法 JSON,都在這裡大聲失敗(S9):印
-// `✗ 設定檔壞掉:<path>: <message>` + gate 標記 + exit 1,不是未捕捉的堆疊。
+// A file that cannot be read, or one that is read but is not valid JSON, fails loudly here (S9): print
+// the "config file broken: <path>: <message>" line + the gate marker + exit 1, not an uncaught stack trace.
 const manifest = readConfigJson(manifestPath, GATE_NAME) as Manifest;
 const rawEntries = Object.entries(manifest);
 
-// _doc 慣例:底線開頭的鍵是 metadata,不當條目看,連驗證形狀都不做。
+// _doc convention: a key that starts with an underscore is metadata; it is not treated as an entry and its shape is not even validated.
 const metaEntries = rawEntries.filter(([name]) => name.startsWith('_'));
 const candidateEntries = rawEntries.filter(([name]) => !name.startsWith('_'));
 
-// 非底線開頭、但值不是物件的鍵:格式壞掉,直接 FAIL,不要放過。
+// A key that does not start with an underscore and whose value is not an object: the format is broken, so FAIL right away; do not let it through.
 const malformed = candidateEntries.filter(
   ([, value]) => typeof value !== 'object' || value === null || Array.isArray(value),
 );
@@ -107,8 +108,8 @@ console.log(
     (metaEntries.length ? `(略過 ${metaEntries.length} 個 metadata 欄位:${metaEntries.map(([k]) => k).join(', ')})` : ''),
 );
 
-// 0 個條目跟「全部通過」的退出碼一樣是 0,所以先擋在這裡。這條要在 --only 的過濾之前,
-// 「manifest 是空的」跟「--only 指到不存在的名字」是兩種完全不同的紅。
+// 0 entries would give the same exit code 0 as "all passed", so block it here first. This check must come before the --only filter:
+// "the manifest is empty" and "--only points at a name that does not exist" are two completely different reds.
 if (all.length === 0) {
   console.error(`\n✗ 讀到 0 個條目`);
   console.error(`${SCANNER_BROKEN}。manifest 路徑指錯、檔案被清空、或格式改掉時就長這樣。`);
@@ -130,7 +131,7 @@ function cleanUp(entry: ManifestEntry): void {
   }
 }
 
-/** 已知的 phase 狀態值,見 FEATURE.md 的 Phase 表(唯一狀態來源)。 */
+/** Known phase status values, see the Phase table in FEATURE.md (the only source of status). */
 const PHASE_STATUSES = ['done', 'in-progress', 'ready', 'blocked', 'todo'] as const;
 
 interface PendingResolution {
@@ -139,9 +140,9 @@ interface PendingResolution {
 }
 
 /**
- * 解析 `pending: "<NN-folder>/phase-N"` 參照,讀 `features/<NN-folder>/FEATURE.md`
- * 的 Phase 表找那一列的狀態。找不到檔案或找不到那一列都算「參照無效」,回傳 error,
- * 呼叫端要把這個條目判 FAIL,不能當成「還沒 done」靜默放過。
+ * Resolve a `pending: "<NN-folder>/phase-N"` reference: read `features/<NN-folder>/FEATURE.md`
+ * and look for that row's status in the Phase table. A missing file or a missing row both count as an "invalid reference" and return an error;
+ * the caller must judge this entry FAIL and must not quietly let it through as "not done yet".
  */
 function resolvePendingStatus(root: string, ref: string): PendingResolution {
   const m = /^(.+)\/phase-(\d+)$/.exec(ref);
@@ -160,7 +161,7 @@ function resolvePendingStatus(root: string, ref: string): PendingResolution {
     const cells = line.split('|').map((c) => c.trim());
     const headerPhaseColumn = cells.findIndex((cell) => cell.toLowerCase() === 'phase');
     if (headerPhaseColumn >= 0) {
-      // 用欄名定位,兼容舊表與新增「意圖」欄的表;不能把別張表的數字列當 phase。
+      // Locate by column name, so it works with old tables and with tables that add an "intent" column; a numeric row of another table must not be taken as a phase.
       phaseColumn = headerPhaseColumn;
       statusColumn = cells.findIndex((cell) => cell === '狀態' || cell.toLowerCase() === 'status');
       continue;
@@ -201,7 +202,7 @@ for (const [name, entry] of entries) {
     pendingStatus = resolved.status;
   }
 
-  cleanUp(entry); // 執行前先清,確保是乾淨的一次執行
+  cleanUp(entry); // Clean before the run, to make sure the run starts clean
 
   const t0 = Date.now();
   const r = spawnSync(entry.cmd, { cwd: ROOT, shell: true, encoding: 'utf8', timeout, env: process.env });
@@ -213,7 +214,7 @@ for (const [name, entry] of entries) {
   const expectOk = !entry.expect || output.includes(entry.expect);
   const passed = exitOk && expectOk;
 
-  cleanUp(entry); // 執行後也清,不留下溢出到下一次執行、或下一個條目的髒狀態
+  cleanUp(entry); // Clean after the run too, so no dirty state spills over into the next run or the next entry
 
   const why = timedOut
     ? `逾時 ${timeout} ms`
@@ -223,7 +224,7 @@ for (const [name, entry] of entries) {
   const tail = output.trim().split('\n').slice(-20).join('\n   | ');
 
   if (entry.pending && pendingStatus !== 'done') {
-    // 還在等的 pending:回報實際結果,但不算進 failed——這是設計上允許的「預期紅」。
+    // A pending that is still waiting: report the actual result but do not count it in failed. This is the "expected red" the design allows.
     console.log(`○  ${name}  pending(等 ${entry.pending})實際 exit=${r.status ?? r.signal ?? 'unknown'}(${ms} ms)`);
     continue;
   }

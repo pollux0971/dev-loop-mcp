@@ -1,5 +1,5 @@
-// `dlm setup`:互動引導。一題一題問,偵測得到的就當預設值;最後寫 dlm.config.json、裝好 hooks、commit、跑 doctor。
-// 也可以不互動:--yes(全部用預設)或 --answers file.json({ 題目 id: 答案 })。
+// `dlm setup`: interactive guide. Asks one question at a time, uses whatever it detects as the default; at the end writes dlm.config.json, installs hooks, commits, and runs doctor.
+// It can also run non-interactively: --yes (all defaults) or --answers file.json ({ questionId: answer }).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TEST_PATTERNS, brownfieldGates, detectProject } from './brownfield.mjs';
@@ -11,28 +11,28 @@ import { git } from './git.mjs';
 import { DlmError, atomicWrite, readJson, run, stableJson, tail, writeJson } from './util.mjs';
 
 /**
- * 預設的 worker / critic 指令(Claude Code)。headless 下沒被允許的工具會直接被拒,所以明確放行 Bash;
- * worker 跟你是同一個使用者,擋 rm -rf / sudo(這兩類刪掉的東西救不回來)。
- * worker 在沒有 .git 的副本裡施工(見 sandbox.mjs)。
+ * Default worker / critic command (Claude Code). Tools that are not allowed are simply denied in headless mode, so Bash is allowed explicitly;
+ * the worker is the same OS user as you, so rm -rf / sudo are blocked (what those delete cannot be recovered).
+ * The worker builds in a copy with no .git (see sandbox.mjs).
  */
 export const CLAUDE_WORKER_DENY = ['Bash(rm -rf *)', 'Bash(rm -fr *)', 'Bash(sudo *)'];
 export const CLAUDE_WORKER_CMD = `claude -p --output-format json --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools ${CLAUDE_WORKER_DENY.map((r) => `"${r}"`).join(' ')} < "$DLM_PROMPT"`;
 export const CLAUDE_CRITIC_TOOLS = ['Read', 'Grep', 'Glob', 'Bash(npm test*)', 'Bash(npm run *)', 'Bash(npx vitest*)', 'Bash(npx cucumber-js*)', 'Bash(git diff*)', 'Bash(git log*)', 'Bash(git show*)'];
-// v4:v3 的預設沒給任何工具權限,headless 下 Critic 連 Read 都會被拒,「實際確認」做不到;改成唯讀工具 + 跑測試
+// v4: v3's default granted no tool permissions, so in headless mode the Critic was denied even Read and could not "actually confirm"; changed to read-only tools + running tests
 export const CLAUDE_CRITIC_CMD = `claude -p --output-format json --allowedTools ${CLAUDE_CRITIC_TOOLS.map((t) => `"${t}"`).join(' ')} --disallowedTools "Edit" "Write" "NotebookEdit"`;
 export const CLAUDE_VERIFIER_CMD = 'claude -p --model haiku --tools "" --no-session-persistence';
-/** worker_cmd 的這個答案 = 維持用帳號那個 CLI 的預設指令(worker 已經設了帳號時的預設)。 */
+/** The worker_cmd answer meaning "keep the default command of the account's CLI" (the default when the worker already has accounts). */
 export const VIA_ACCOUNTS = '(用帳號)';
 
 export function detectEnvironment() {
   return { claude: hostHas('claude') };
 }
 
-/** 問答小工具:ask(q) 回傳使用者輸入的字串(空字串 = 用預設)。 */
+/** Q&A helper: ask(q) returns the string the user typed (empty string = use the default). */
 function asker(ask, log) {
   const choose = async (id, text, choices, def) => {
-    // key 本身是數字時(自治等級 0/1/2)直接用 key 當編號:v3 顯示 1) L0 2) L1 3) L2,
-    // 在 --answers 裡寫 "2" 會被當成第 2 個選項 L1(實測),畫面上的編號跟等級也對不起來
+    // When the key itself is a number (autonomy level 0/1/2), use the key as the number: v3 showed 1) L0 2) L1 3) L2,
+    // so "2" in --answers was taken as the 2nd option L1 (seen in a real run), and the on-screen numbers did not match the levels either
     const numeric = choices.every((c) => /^\d+$/.test(c.key));
     const label = (c, i) => (numeric ? c.key : String(i + 1));
     const lines = choices.map((c, i) => `  ${label(c, i)}) ${c.label}${c.key === def ? '(預設)' : ''}${c.note ? ` —— ${c.note}` : ''}`);
@@ -56,12 +56,12 @@ function asker(ask, log) {
   return { choose, input, yesno };
 }
 
-/** 把 dlm 的 hooks 合併進專案既有的 .claude/settings.json(已經有就不重複加)。回傳是否有改。 */
+/** Merge dlm's hooks into the project's existing .claude/settings.json (not added twice if already there). Returns whether anything changed. */
 export function mergeClaudeHooks(root) {
   return mergeHooks(join(root, '.claude', 'settings.json'), DLM_CLAUDE_HOOKS);
 }
 
-/** v4.6:把 dlm 的 MCP server 加進專案的 .mcp.json(Claude Code 的專案層 MCP 設定;已經有就不動)。 */
+/** v4.6: Add dlm's MCP server to the project's .mcp.json (Claude Code's project-level MCP config; left alone if already there). */
 export function mergeMcpJson(root) {
   const p = join(root, '.mcp.json');
   const cur = existsSync(p) ? readJson(p) : {};
@@ -101,7 +101,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
 
   log('\n— dlm setup —  按 Enter 用預設值。隨時可以重跑。\n');
 
-  // 0. v4.5:greenfield / brownfield。偵測到既有程式就預設 brownfield
+  // 0. v4.5: greenfield / brownfield. If existing code is detected, default to brownfield
   const proj = projectDetect ?? detectProject(root);
   const modeDefault = raw.project?.mode ?? proj.suggested_mode;
   const mode = await choose('mode', '這是新專案還是既有專案?', [
@@ -115,21 +115,21 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     const def = raw.gates?.commands?.test ?? proj.test.cmd ?? (npmTest ? 'npm test' : '');
     let testCmd = await input('test_cmd', '專案的測試指令(gate 合併前會在臨時樹跑它)', def);
     while (!testCmd) testCmd = await input('test_cmd', '一定要有測試指令(沒有測試就先寫一個會跑的,例 npm test)', '');
-    // 'npm test' 等於跑 npm script test,照舊走 npm run(不用另外對應)
+    // 'npm test' is the same as running the npm script test, so it still goes through npm run (no separate mapping needed)
     bfGates = brownfieldGates(proj, testCmd === 'npm test' && npmTest ? null : testCmd);
   }
 
-  // 1. 施工 AI
+  // 1. Dev AI
   const platform = await choose('platform', '施工用哪個 AI 工具?', [
     { key: 'claude', label: 'Claude Code', note: env.claude ? '已安裝' : '沒找到 claude 指令' },
     { key: 'custom', label: '其他(自己填指令)' },
   ], cur.agents.worker.cmd && cur.platform !== 'claude' ? 'custom' : 'claude');
-  // v2 的 Claude 預設(只有 acceptEdits)在 headless 下跑不了任何指令,視同沒設定,換成新的預設
+  // v2's Claude default (acceptEdits only) cannot run any command in headless mode, so treat it as unset and use the new default
   const v2ClaudeDefault = cur.agents.worker.cmd === 'claude -p --output-format json --permission-mode acceptEdits < "$DLM_PROMPT"';
   if (v2ClaudeDefault) log('  你原本的 Claude 指令是 v2 預設(acceptEdits),headless 下 worker 跑不了測試,預設值已換成新的寫法。');
   const keepOld = cur.agents.worker.cmd && cur.platform === platform && !v2ClaudeDefault;
-  // v4.7.3:worker 已經用帳號(沒有自己的 cmd,跑帳號那個 CLI 的預設指令)→ 預設維持。以前重跑 setup 一律寫進 Claude 的固定指令,
-  // 蓋過帳號的預設(換不了 CLI、帶不進 model)。實測:只想改預算而重跑 setup,worker 就變成 custom_cmd
+  // v4.7.3: the worker already uses accounts (no cmd of its own, runs the account CLI's default command) -> keep that default. Before, re-running setup always wrote Claude's fixed command,
+  // overriding the account default (could not switch CLI, could not pass a model). Seen in a real run: re-running setup just to change the budget turned the worker into custom_cmd
   const pool = cur.agents.worker.accounts ?? [];
   const viaAccounts = !cur.agents.worker.cmd && pool.length > 0;
   const workerDefault = viaAccounts ? VIA_ACCOUNTS
@@ -144,7 +144,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   // 2. Verifier
   const verifier = { ...(raw.agents?.verifier ?? {}) };
   if (platform === 'claude') {
-    // v4:用 Claude 的小模型、關掉所有工具,當「只能說不」的檢查員
+    // v4: use Claude's small model with all tools off, as a checker that can only say no
     const curKey = cur.agents.verifier.backend === 'cmd' && cur.agents.verifier.cmd !== CLAUDE_VERIFIER_CMD ? 'keep' : 'haiku';
     const choices = [
       { key: 'haiku', label: '用 Claude Haiku(小模型、不給任何工具;每一棒多幾次很便宜的呼叫)' },
@@ -158,7 +158,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     log('先不用 Verifier(有 gherkin 的最後一棒會來問你);要用的話在 agents.verifier.cmd 填一個讀 stdin、回 JSON 的指令。');
   }
 
-  // 3. 自治、預算、平行
+  // 3. Autonomy, budget, parallelism
   const levels = [
     { key: '0', label: 'L0:每次合併都問我' },
     { key: '1', label: 'L1:機器全過就自動合併,沒把握才問我' },
@@ -174,7 +174,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   const budget = Number(await input('budget', '每天最多花多少美金?', String(cur.budget.daily_usd)));
   const parallel = Number(await input('parallel', '同時最多幾個 worker?', String(cur.caps.parallel)));
 
-  // 寫設定(保留你其他的設定),驗證不過就還原
+  // Write the config (keeping your other settings); restore it if validation fails
   const next = {
     ...raw,
     project: { ...(raw.project ?? {}), mode, ...(mode === 'brownfield' ? { language: proj.language } : {}) },
@@ -185,7 +185,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     caps: { ...(raw.caps ?? {}), parallel: Number.isInteger(parallel) && parallel > 0 ? parallel : cur.caps.parallel },
   };
   if (bfGates) {
-    // 既有專案:gate 跑專案自己的測試;範本專用的 dry-run(cucumber)與 mutation(stryker)沒裝就關掉
+    // Existing project: the gate runs the project's own tests; the template-only dry-run (cucumber) and mutation (stryker) are turned off if not installed
     next.gates = { ...(raw.gates ?? {}), chain: bfGates.chain, commands: bfGates.commands };
     const deps = (() => { const p = readJson(join(root, 'package.json'), {}); return { ...p.dependencies, ...p.devDependencies }; })();
     next.verify = {
@@ -208,21 +208,21 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   // 4. hooks
   if (next.platform === 'claude') {
     if (mergeClaudeHooks(root)) { written.push('.claude/settings.json'); log('✓ 已把 dlm 的 hooks 加進 .claude/settings.json(你原本的設定都還在)'); }
-    // v4.7:MCP 改成這台電腦裝一次(dlm mcp install),不再寫進每個專案的 .mcp.json
+    // v4.7: MCP is installed once per machine (dlm mcp install), no longer written into each project's .mcp.json
     log('提示:要讓 Claude Code 直接呼叫 dlm(所有專案共用一個 MCP),跑一次 node tools/dlm.mjs mcp install');
   } else {
     log(`提醒:${next.platform} 沒有 hooks。Front 轉達的決定照樣記錄,只是不會附上你原話的簽章。`);
   }
 
-  // 5. 依賴:合併 gate 要跑測試,沒有 node_modules 會全紅
+  // 5. Dependencies: the merge gate runs tests, and without node_modules everything would be red
   const pkg = readJson(join(root, 'package.json'), null);
   const hasDeps = pkg && Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length > 0;
   if (hasDeps && !existsSync(join(root, 'node_modules')) && await yesno('npm_install', '還沒裝依賴(合併前的測試要用)。現在 npm install?(要下載,幾分鐘)', true)) {
     log('  npm install 中…');
     let r = run('npm install --no-audit --no-fund', { cwd: root, timeoutMs: 30 * 60000 });
     if (r.code !== 0) {
-      // npm 10 遇到某些套件的選用 peer 依賴會當掉(Cannot read properties of null (reading 'edgesOut')),
-      // 改用相容模式再試一次
+      // npm 10 crashes on the optional peer dependencies of some packages (Cannot read properties of null (reading 'edgesOut')),
+      // retry in compatibility mode
       log(`  npm install 失敗(${tail(r.stderr || r.stdout, 200).trim().split('\n').pop()}),改用 --legacy-peer-deps 再試一次…`);
       r = run('npm install --no-audit --no-fund --legacy-peer-deps', { cwd: root, timeoutMs: 30 * 60000 });
     }
@@ -230,7 +230,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     if (r.code === 0 && existsSync(join(root, 'package-lock.json'))) written.push('package-lock.json');
   }
 
-  // 6. commit(根目錄有未 commit 的變更時 tick 會拒絕執行)
+  // 6. commit (tick refuses to run when the root has uncommitted changes)
   let committed = false;
   if (await yesno('commit', `把設定 commit 起來?(${written.join('、')})`, true)) {
     git(root, `add -- ${written.map((f) => `'${f}'`).join(' ')}`);

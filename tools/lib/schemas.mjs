@@ -1,4 +1,4 @@
-// 所有機器可讀格式的 schema。改這裡 = 改硬約定(磁碟格式),要走使用者決策。
+// Schemas for all machine-readable formats. Changing this = changing a hard contract (the on-disk format), which needs a user decision.
 
 export const NODE_ID = {
   phase: '^[a-z0-9][a-z0-9-]*/v[0-9]+(\\.[0-9]+)*$',
@@ -10,8 +10,8 @@ export const CONTRACT_REF = '^contracts@[0-9]+$';
 const str = { type: 'string', minLength: 1 };
 const strArr = { type: 'array', items: str };
 
-// test-fix:實作棒回報「測試或步驟寫錯」、Critic 或使用者認可後,只改測試的一棒(v4)
-// characterize:既有專案(brownfield)裡,節點要改到既有程式時排在最前面的一棒:只寫測試、把現有行為釘住,在現在的程式上必須綠(v4.5)
+// test-fix: a leg that changes only tests, run after the dev leg reports "the test or steps are wrong" and the Critic or the user agrees (v4)
+// characterize: in an existing project (brownfield), the first leg when a node has to change existing code: it only writes tests that pin down current behavior, and they must be green on the current code (v4.5)
 export const LEGS = ['characterize', 'test', 'dev', 'integrate', 'test-fix'];
 
 export const nodeSchema = {
@@ -32,12 +32,12 @@ export const nodeSchema = {
     relation: { enum: ['prereq', 'followup'] },
     tier: { enum: ['strict', 'standard', 'loose'] },
     pipeline: { type: 'array', items: { enum: LEGS }, minItems: 1 },
-    // v4:這個節點屬於哪個版本(dlm intake bundle 寫入,例 v1、v2)。只用來顯示與分組;版本之間的先後靠 depends_on 上一版的整合點
+    // v4: which version this node belongs to (written by dlm intake bundle, e.g. v1, v2). Used only for display and grouping; the order between versions comes from depends_on the previous version's integration point
     release: str,
-    // v4.5:這個節點的測試檔放哪裡(glob)。沒寫就從 owns 推(owns 目錄底下的 *.test.* / *.spec.*,加上專案語言的慣例)
+    // v4.5: where this node's test files go (glob). If absent, inferred from owns (*.test.* / *.spec.* under the owns directories, plus the project language's conventions)
     tests: strArr,
-    // v4.5:要改到的既有程式。targets 是會被改的既有檔,tests 是釘住它們現有行為的測試檔,cmd 是在現在的程式上必須綠的指令。
-    // 有 targets(而且沒寫 skip)時,pipeline 最前面多一棒 characterize。skip = 不釘的理由(例:這些檔的行為本來就要整個換掉)
+    // v4.5: the existing code to change. targets are the existing files that will be changed, tests are the test files that pin down their current behavior, cmd is the command that must be green on the current code.
+    // When there are targets (and no skip), the pipeline gets an extra characterize leg at the very front. skip = the reason for not pinning (e.g. the behavior of these files is going to be replaced entirely)
     characterize: {
       type: 'object',
       additionalProperties: false,
@@ -65,7 +65,7 @@ export const configSchema = {
     main_branch: str,
     worktree_dir: str,
     platform: { enum: ['claude', 'generic'] },
-    // v4.5:greenfield = 從零開始(用範本的 TS / vitest / cucumber);brownfield = 既有專案(gate 跑專案自己的測試指令)
+    // v4.5: greenfield = start from zero (uses the template's TS / vitest / cucumber); brownfield = existing project (the gate runs the project's own test command)
     project: {
       type: 'object',
       additionalProperties: false,
@@ -96,7 +96,7 @@ export const configSchema = {
       additionalProperties: false,
       properties: {
         chain: strArr, timeout_minutes: { type: 'integer', minimum: 1 }, install: { enum: ['auto', 'link', 'ci-offline'] },
-        // v4.5:chain 裡的名字對應的指令(例 { "test": "python3 -m pytest -q" })。沒列的名字照舊跑 npm script
+        // v4.5: the command each name in the chain maps to (e.g. { "test": "python3 -m pytest -q" }). Names not listed still run as npm scripts
         commands: { type: 'object', additionalProperties: str },
       },
     },
@@ -122,13 +122,13 @@ export const configSchema = {
       additionalProperties: false,
       properties: { daily_usd: { type: 'number', minimum: 0 } },
     },
-    // v4:版本整合關卡。gate_next_version = 依賴整合點的節點,要等整合點合併「而且」你試用確認過才開工
+    // v4: version gate. gate_next_version = nodes that depend on an integration point do not start until the integration point is merged "and" you have confirmed it by hand trial
     integration: {
       type: 'object',
       additionalProperties: false,
       properties: { gate_next_version: { type: 'boolean' }, precheck_green: { type: 'boolean' } },
     },
-    // v4:有新的待決事項時執行的指令(環境變數 DLM_NOTIFY_TEXT 是內容)。null = 不通知
+    // v4: command run when there is a new pending decision (env var DLM_NOTIFY_TEXT holds the content). null = no notification
     notify: {
       type: 'object',
       additionalProperties: false,
@@ -190,7 +190,7 @@ export const configSchema = {
     agent: {
       type: 'object',
       additionalProperties: false,
-      // v4.6:accounts = 這個角色輪流用的帳號(dlm account add 建的);model = 那個 CLI 的模型名稱
+      // v4.6: accounts = the accounts this role rotates through (created by dlm account add); model = that CLI's model name
       properties: { cmd: { type: ['string', 'null'] }, timeout_minutes: { type: 'integer', minimum: 1 }, accounts: strArr, model: str },
     },
   },
@@ -202,7 +202,7 @@ const finding = {
   properties: { check: str, detail: str, evidence: { type: 'string' } },
 };
 
-/** 每種事件的必填欄位。seq/ts/actor/type 由 ledger.append 補。 */
+/** Required fields of each event type. seq/ts/actor/type are filled in by ledger.append. */
 export const EVENT_FIELDS = {
   node_added: { required: ['node_id', 'approved_by'], props: { node_id: str, approved_by: str, spec_sha: str } },
   node_imported: { required: ['node_id', 'status', 'source'], props: { node_id: str, status: { enum: ['done', 'todo', 'blocked'] }, source: str } },
@@ -220,11 +220,11 @@ export const EVENT_FIELDS = {
     props: { dispatch_id: str, commit: str, report_path: str, changes: { type: 'integer', minimum: 0 }, violations_path: str },
   },
   worker_blocked: { required: ['dispatch_id', 'reason'], props: { dispatch_id: str, reason: str, spawn: { type: 'object' }, report_path: str, violations_path: str, fix_leg: { enum: ['test'] } } },
-  // class:infra(429、5xx、連線、沒啟動成功)不算 worker 的嘗試次數,改退避重派;quality 照常算一次
+  // class: infra (429, 5xx, connection, failed to start) does not count as a worker attempt and is re-dispatched with backoff; quality counts as one attempt as usual
   worker_failed: {
     required: ['dispatch_id', 'reason'],
-    // halted(v4):dlm halt 時收掉的 worker,不算嘗試次數、不退避
-    // limited_account / limited_until(v4.6):這次是帳號額度用完,那個帳號冷卻到 limited_until;switched = 有別的帳號可以換,不算連續失敗
+    // halted (v4): a worker collected on dlm halt; does not count as an attempt, no backoff
+    // limited_account / limited_until (v4.6): this time the account quota ran out, and that account cools down until limited_until; switched = another account is available, not counted as a consecutive failure
     props: {
       dispatch_id: str, reason: str, class: { enum: ['infra', 'quality', 'halted'] }, retry_after: str,
       limited_account: str, limited_until: str, switched: { type: 'boolean' },
@@ -252,7 +252,7 @@ export const EVENT_FIELDS = {
   },
   gates: {
     required: ['dispatch_id', 'ok', 'results'],
-    // main_sha:跑 gate 時主線的位置。合併前主線的程式碼變了,這份 gate 結果就過期,要重跑
+    // main_sha: where main was when the gate ran. If main's code changed before the merge, this gate result is stale and must be re-run
     props: {
       dispatch_id: str, ok: { type: 'boolean' }, tree_sha: { type: 'string' }, main_sha: { type: 'string' },
       results: { type: 'array' }, output_tail: { type: 'string' },
@@ -263,7 +263,7 @@ export const EVENT_FIELDS = {
     props: { ref: str, dispatch_id: str, verdict: { enum: ['PASS', 'FAIL', 'ASK_USER'] }, reason: str, findings: { type: 'array' } },
   },
   leg_done: { required: ['dispatch_id', 'node_id', 'leg'], props: { dispatch_id: str, node_id: str, leg: { enum: LEGS } } },
-  // v4:插入一棒(目前只有 test-fix)。節點回到 todo,下一次派工先做這一棒,做完再接原本的下一棒
+  // v4: insert a leg (currently only test-fix). The node goes back to todo, the next dispatch does this leg first, then continues with the original next leg
   leg_reopen: { required: ['node_id', 'leg', 'ref'], props: { node_id: str, leg: { enum: ['test-fix'] }, ref: str, findings: { type: 'array', items: finding } } },
   reject: { required: ['dispatch_id', 'node_id', 'reason'], props: { dispatch_id: str, node_id: str, reason: str, findings: { type: 'array', items: finding } } },
   accept: { required: ['dispatch_id', 'node_id', 'merge_sha'], props: { dispatch_id: str, node_id: str, merge_sha: str } },
@@ -275,9 +275,9 @@ export const EVENT_FIELDS = {
       ref: str, question: str,
       options: { type: 'array', minItems: 2, items: { type: 'object', required: ['key', 'label'], properties: { key: str, label: str } } },
       recommendation: { type: 'string' }, reason: { type: 'string' }, blocks: strArr, from: str, detail_path: { type: 'string' },
-      // v4.7.3:這份提案取代哪幾份還沒決定的提案(ref,例 node:p-001)。被取代的不再列為待決,也不能再批准
+      // v4.7.3: which not-yet-decided proposals this proposal replaces (ref, e.g. node:p-001). A replaced one is no longer listed as pending and can no longer be approved
       supersedes: strArr,
-      // question 只放 dlm 自己產生的文字;worker / 模型 / git 輸出放這裡,給 Front 看時一律加圍欄
+      // question holds only text dlm generated itself; worker / model / git output goes here, and is always fenced when shown to Front
       untrusted_text: { type: 'string' }, untrusted_source: { type: 'string' },
     },
   },
@@ -295,14 +295,14 @@ export const EVENT_FIELDS = {
   note: { required: ['text'], props: { text: str, node_id: str, dispatch_id: str } },
 };
 
-// manager / migration:v4.0 以前的帳本裡可能有,留著讓舊帳本重播得過
-// dp-cli:4.8.0 以前的名字(dp 改名 dlm)。舊帳本的事件不改寫,新事件一律寫 dlm-cli
+// manager / migration: old ledgers from before v4.0 may contain them; kept so that old ledgers still replay
+// dp-cli: the name before 4.8.0 (dp was renamed to dlm). Events in old ledgers are not rewritten; new events always write dlm-cli
 export const ACTORS = ['orchestrator', 'user', 'critic', 'manager', 'verifier', 'dlm-cli', 'dp-cli', 'migration'];
 
 /**
- * 哪些事件只能由哪些 actor 寫。批准權從角色搬到事件之後,這張表就是權責表的機械版。
- * 施工流程的事件只有 orchestrator 能寫;任何人手動補一筆 accept 都會被 `dlm check ledger` 抓到。
- * 使用者解除封鎖(ref 以 user# 開頭)另外在 ledger.validateEvent 檢查。
+ * Which events only certain actors may write. After approval authority moved from roles to events, this table is the mechanical version of the responsibility table.
+ * Construction-flow events can only be written by the orchestrator; anyone adding an accept by hand is caught by `dlm check ledger`.
+ * An unblock by the user (ref starts with user#) is checked separately in ledger.validateEvent.
  */
 export const EVENT_ACTORS = {
   decision: ['user', 'critic'],
@@ -392,7 +392,7 @@ export const reportSchema = {
     summary: { type: 'string', minLength: 1, maxLength: 800 },
     claims: { type: 'array', items: claimSchema },
     ticket_problems: strArr,
-    // v4:實作棒發現測試或步驟定義本身寫錯(與 gherkin 矛盾)時填 "test",dlm 會改派 test-fix 棒,不再重派實作棒
+    // v4: when the dev leg finds the test or step definitions themselves wrong (contradicting the gherkin), it sets "test"; dlm then dispatches a test-fix leg instead of re-dispatching the dev leg
     fix_leg: { enum: ['test'] },
     spawn: spawnSchema,
     local_modifications: strArr,
@@ -428,7 +428,7 @@ export const criticSchema = {
   additionalProperties: false,
   properties: {
     verdict: { enum: ['PASS', 'FAIL', 'ASK_USER'] },
-    // v3 實測:Critic 的理由常超過 1500 字,整筆被判格式錯誤後退回問使用者。上限放寬,記帳時再截短
+    // v3 real run: the Critic's reasons often exceeded 1500 characters, and the whole thing was judged malformed and sent back to ask the user. The limit is relaxed; truncate shorter when booking
     reason: { type: 'string', minLength: 1, maxLength: 8000 },
     findings: { type: 'array', items: finding },
     question: { type: 'string' },

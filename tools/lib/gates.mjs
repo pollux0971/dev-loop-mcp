@@ -1,20 +1,20 @@
-// 全 gate 單一入口。chain 是 package.json scripts 的名字(v4.5:或 gates.commands 對應的指令);
-// 空 chain、找不到指令都算失敗——「清單沒填」不是「沒事可做」。
-// v4.5:既有專案有測試基線(docs/dlm-baseline.json)時,紅的測試全都是基線裡本來就紅的,這個 gate 算通過(known-red)。
+// Single entry point for the full gate. chain is a list of package.json script names (v4.5: or the matching commands in gates.commands);
+// an empty chain or a missing command counts as a failure: "list not filled in" is not "nothing to do".
+// v4.5: when an existing project has a test baseline (docs/dlm-baseline.json) and every red test was already red in the baseline, this gate passes (known-red).
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { gateCommand, knownRed, readBaseline } from './brownfield.mjs';
 import { sandboxExec } from './sandbox.mjs';
 import { readJson, tail } from './util.mjs';
 
-/** chain 裡有沒有真的跑專案測試的 script(test、test:*、accept*)。 */
+/** Whether the chain has a script that really runs the project tests (test, test:*, accept*). */
 export function hasTestGate(chain) {
   return (chain ?? []).some((name) => name === 'test' || name.startsWith('test:') || name.startsWith('accept'));
 }
 
 export const NO_TEST_GATE = 'gates.chain 沒有任何測試類 script(test、test:*、accept*):合併前不會跑專案測試,自治等級 >= 1 時 dlm 拒絕執行 tick。請把 test 加進 dlm.config.json 的 gates.chain';
 
-/** 在 gates profile 的沙箱裡跑(沒有網路、看不到家目錄);root 用來找要唯讀掛載的 node_modules。 */
+/** Run inside the gates profile sandbox (no network, home directory hidden); root is used to find the node_modules to mount read-only. */
 export function runGates(cwd, config, { log = () => {}, root = cwd } = {}) {
   const chain = config.gates.chain ?? [];
   const results = [];
@@ -24,7 +24,7 @@ export function runGates(cwd, config, { log = () => {}, root = cwd } = {}) {
   }
   const pkgPath = join(cwd, 'package.json');
   const scripts = existsSync(pkgPath) ? (readJson(pkgPath).scripts ?? {}) : {};
-  // 基線讀根目錄(主線)的,不讀被測的樹:分支改不到它(在 paths.forbidden),這裡再保險一次
+  // Read the baseline from the root (main), not from the tree under test: a branch cannot change it (it is in paths.forbidden); this is a second safeguard
   const baseline = readBaseline(root);
   let output = '';
   for (const name of chain) {

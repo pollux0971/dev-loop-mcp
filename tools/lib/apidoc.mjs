@@ -1,5 +1,5 @@
-// v4.7 從 api.mjs 與 flow.mjs 產生文件:docs/dlm/API.md、docs/dlm/openapi.json、docs/dlm/FLOW.md。
-// `dlm api md|openapi|flow` 印出來;payload 裡的那三份就是這樣產生的,測試會比對,所以文件跟實作不會對不上。
+// v4.7 Generate docs from api.mjs and flow.mjs: docs/dlm/API.md, docs/dlm/openapi.json, docs/dlm/FLOW.md.
+// `dlm api md|openapi|flow` prints them; the three copies in payload are made this way, and a test compares them, so the docs and the implementation cannot drift apart.
 import { ROUTES, openapi } from './api.mjs';
 import { FLOW, PROMPTS, RULES, toolName } from './flow.mjs';
 
@@ -23,7 +23,7 @@ function params(r) {
   const rows = [];
   for (const [, k] of r.path.matchAll(/\{(\w+)\}/g)) rows.push([k, 'path', 'string', '必填', PATH_DESC[k]]);
   for (const [k, s] of Object.entries(r.query ?? {})) rows.push([k, 'query', typeOf(s), (r.required ?? []).includes(k) ? '必填' : '', s.description]);
-  // 物件與物件陣列往下展開(spec.id、bundle.nodes[].gherkin_text…),必填照各層自己的 required
+  // Objects and arrays of objects are expanded downward (spec.id, bundle.nodes[].gherkin_text…); required follows each level's own required
   const walk = (prefix, s, required) => {
     rows.push([prefix, 'body', typeOf(s), required ? '必填' : '', s.description]);
     const inner = s.type === 'array' && s.items?.properties ? { s: s.items, at: `${prefix}[]` } : s.properties ? { s, at: prefix } : null;

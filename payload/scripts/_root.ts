@@ -1,13 +1,14 @@
 /**
- * 所有守門腳本共用的 repo 根解析。
+ * Repo root resolution shared by all gate scripts.
  *
- * 舊版用 `resolve(import.meta.dirname, '..')`,也就是「腳本自己所在目錄的上一層」——
- * 這要求腳本必須先被複製進目標 repo 的 scripts/ 才能用。改成用 git 找目前 cwd 所在
- * 的 repo 頂層,腳本就能留在模板裡,直接用 `npx tsx <template>/scripts/x.ts`
- * 對「執行時的 cwd 所在的 repo」跑,不必複製。
+ * The old version used `resolve(import.meta.dirname, '..')`, i.e. the parent of the script's own
+ * directory. That required the script to be copied into the target repo's scripts/ first. Now we
+ * ask git for the top level of the repo that contains the current cwd, so the script can stay in
+ * the template and run directly with `npx tsx <template>/scripts/x.ts` against the repo of the
+ * cwd at run time, with no copying.
  *
- * 解法:優先問 git(`git rev-parse --show-toplevel`,以 process.cwd() 為準);
- * 不在 git repo 裡(或找不到 git 執行檔)就退回 process.cwd() 本身。
+ * Approach: ask git first (`git rev-parse --show-toplevel`, based on process.cwd());
+ * if we are not in a git repo (or there is no git executable), fall back to process.cwd() itself.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -16,8 +17,9 @@ import { join, resolve } from 'node:path';
 
 export function resolveRoot(): string {
   try {
-    // stdio 顯式指定,避免不在 git repo 裡時 git 把 "fatal: not a git repository" 印到
-    // 終端機——這條路徑是刻意的退回,不是使用者需要看到的錯誤。
+    // Set stdio explicitly so git does not print "fatal: not a git repository" to the
+    // terminal when we are outside a git repo. This fallback is deliberate, not an error
+    // the user needs to see.
     return execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -32,7 +34,7 @@ export const ROOT: string = resolveRoot();
 
 const ISOLATED_TEMP_PACKAGE_JSON = '{"name":"dev-loop-test-fixture","private":true,"type":"commonjs"}';
 
-/** 建立隔離且可觀測的測試 fixture 根目錄,並用自己的 package.json 固定模組型別。 */
+/** Create an isolated, observable test fixture root dir, and pin the module type with its own package.json. */
 export function makeIsolatedTempDir(prefix: string, base: string = tmpdir()): string {
   const tempBase = resolve(base);
   mkdirSync(tempBase, { recursive: true });
@@ -43,20 +45,23 @@ export function makeIsolatedTempDir(prefix: string, base: string = tmpdir()): st
 }
 
 /**
- * P-84(來源 專案 A 協調者,2026-09-05):`--root` 明講了一個不存在的目錄時,
- * `check-next-gates.ts`、`check-phase-status.ts` 會照樣往下跑到「掃到 0 份 xxx」的
- * 一般空目標訊息——那句訊息完全沒提到 `--root` 傳了什麼,也沒提到那個目錄根本不存在,
- * 跟其餘會先摸設定檔的 gate(`check-boundaries.ts`、`check-doc-rot.ts` 那一類,經
- * `lookupConfig` 的 S14 hard-error)比起來,少講了最關鍵的一句話。
+ * P-84 (source: project A coordinator, 2026-09-05): when `--root` names a directory that does
+ * not exist, `check-next-gates.ts` and `check-phase-status.ts` kept running until the generic
+ * empty-target message "scanned 0 xxx". That message says nothing about what `--root` was given,
+ * nor that the directory does not exist at all. Compared with the other gates that touch the
+ * config file first (`check-boundaries.ts`, `check-doc-rot.ts` and the like, via the S14
+ * hard-error in `lookupConfig`), it leaves out the most important sentence.
  *
- * 修法:`--root` 明講時,搶在任何設定檔查找之前先確認那個目錄真的存在、真的是目錄——
- * 不是的話直接印「✗ --root 指到不存在的目錄:<絕對路徑>」+ gate 標記(scanned=0)、
- * exit 1,不繼續往下跑到「掃到 0 個東西」的一般訊息(那句話是給「目錄存在但沒東西」
- * 這種情況用的,兩種原因不該共用同一句話)。
+ * Fix: when `--root` is given, check before any config lookup that the directory really exists
+ * and really is a directory. If not, print "✗ --root 指到不存在的目錄:<absolute path>" plus the
+ * gate marker (scanned=0) and exit 1. Do not keep running to the generic "scanned 0 things"
+ * message (that one is for "the directory exists but is empty"; the two causes should not
+ * share one sentence).
  *
- * `rootDirError` 只回傳訊息字串、不印、不 exit——`check-doc-links.ts` 的 `main()` 是
- * 純函式(回傳 `{ code, output }`,自己不 `process.exit`,見該檔開頭說明),要用這個
- * 版本自己組輸出;其餘直接呼叫 `process.exit` 的 gate 用下面的 `requireRootDir`。
+ * `rootDirError` only returns the message string. It does not print and does not exit.
+ * `main()` in `check-doc-links.ts` is a pure function (it returns `{ code, output }` and never
+ * calls `process.exit`; see the note at the top of that file), so it uses this version and builds
+ * its own output. The other gates that call `process.exit` directly use `requireRootDir` below.
  */
 export function rootDirError(root: string): string | undefined {
   let ok: boolean;
@@ -70,19 +75,23 @@ export function rootDirError(root: string): string | undefined {
 }
 
 /**
- * `rootDirError` 的「印出來、印 gate 標記、exit 1」版本,給會自己 `process.exit` 的
- * gate 用(多數 `check-*.ts` 都是這一類)。`rootExplicit` 是「這次呼叫有沒有給
- * `--root`」——沒有明講就不檢查(模組層級從 git 推定出來的 `ROOT` 一定存在,不需要
- * 也不應該在這裡擋)。呼叫端要在**任何設定檔查找之前**呼叫這個函式(S14 的
- * hard-error 是下一關,不是這一關)。
+ * The "print it, print the gate marker, exit 1" version of `rootDirError`, for gates that call
+ * `process.exit` themselves (most `check-*.ts` are of this kind). `rootExplicit` says whether
+ * this run was given `--root`. If it was not given, we do not check (the module-level `ROOT`
+ * inferred from git always exists, so there is no need to block here and we should not). The
+ * caller must call this function **before any config lookup** (the S14 hard-error is the next
+ * gate, not this one).
  */
 /**
- * 1.7.0(#18):提早失敗時印的 gate 標記要能帶「這支 gate 專屬」的尾欄。
- * 起因:`check-all.ts` 的摘要行加了 `ran=`(這次真的執行了幾個),但它有兩條失敗路徑會經過
- * 這裡(`requireRootDir`、`failConfig`)印標記——只改 check-all 自己那幾行的話,`ran=` 會
- * **時有時無**,解析 `ran=` 的 consumer 會在設定檔壞掉那一次拿不到值。那正是 P-93 的形狀
- * (總結的輸出漏掉一種狀態,比沒有更糟)。所以不在共用層特判 gate 名稱,而是讓需要尾欄的
- * gate 在啟動時自己登記;沒登記的 gate 標記完全不變。
+ * 1.7.0 (#18): the gate marker printed on an early failure must be able to carry a trailing field
+ * that is "specific to this gate".
+ * Cause: the summary line of `check-all.ts` gained `ran=` (how many actually ran this time), but
+ * two failure paths print the marker through here (`requireRootDir`, `failConfig`). If only the
+ * lines in check-all itself were changed, `ran=` would be **sometimes there, sometimes not**, and
+ * a consumer that parses `ran=` would get no value in the run where the config file is broken.
+ * That is exactly the shape of P-93 (a summary that omits one state is worse than no summary).
+ * So the shared layer does not special-case gate names. Instead, a gate that needs a trailing
+ * field registers it itself at startup; the marker of a gate that did not register is unchanged.
  */
 let markerSuffix = '';
 export function setMarkerSuffix(suffix: string): void {
@@ -102,27 +111,32 @@ export function requireRootDir(root: string, rootExplicit: boolean, gateName: st
 }
 
 /**
- * 設定檔位置解析(CHANGELOG 1.3.2 (A);env 優先權見 CHANGELOG 1.3.4 (3))。
+ * Config file location resolution (CHANGELOG 1.3.2 (A); env precedence see CHANGELOG 1.3.4 (3)).
  *
- * `sync-gates.sh` 把守門腳本複製進 consumer 的**安裝目錄**——預設是 `scripts/`,
- * 但 cucumber 設定不在根目錄的專案常把它裝在別處(例如 `features/scripts/`),設定檔
- * (`gates.config.json`、`boundaries.*.json`)也一起裝在那裡。過去每支腳本只認
- * `ROOT/scripts/<name>`,裝在別處的設定就永遠讀不到——不會報錯,只會安靜套用預設值
- * 或觸發自動偵測,像是設定死掉了一樣(專案 B 實測的迴歸)。
+ * `sync-gates.sh` copies the gate scripts into the consumer's **install directory**. The default
+ * is `scripts/`, but projects whose cucumber config is not at the root often install it
+ * elsewhere (for example `features/scripts/`), and the config files (`gates.config.json`,
+ * `boundaries.*.json`) are installed there too. In the past every script only looked at
+ * `ROOT/scripts/<name>`, so a config installed elsewhere was never read. No error: defaults were
+ * silently applied or auto-detection kicked in, as if the config were dead (a regression seen in
+ * a real run in project B).
  *
- * 找設定檔的順序:
- *   0. 環境變數 `GATES_CONFIG_DIR`(若設且該目錄存在)
- *   1. 呼叫端腳本自己所在的目錄(`import.meta.dirname`,sync 後就是 consumer 的安裝目錄)
+ * Order in which the config file is searched:
+ *   0. env var `GATES_CONFIG_DIR` (if set and the directory exists)
+ *   1. the directory of the calling script itself (`import.meta.dirname`; after sync this is the consumer's install directory)
  *   2. `ROOT/scripts/`
- * 三處都沒有 → 回傳 `undefined`,呼叫端印「設定檔未找到於 <搜尋過的路徑>」(必要設定)
- * 或靜默套用內建預設(選填設定,行為不變)。
+ * Not in any of the three -> return `undefined`. The caller prints "config file not found in
+ * <searched paths>" (required config) or silently applies the built-in defaults (optional
+ * config, behavior unchanged).
  *
- * 為什麼要有第 0 順位:`verify-against.sh` 直接對模板路徑下的 `.ts` 執行(不經
- * `sync-gates.sh` 複製),此時「呼叫端腳本自己所在的目錄」(順位 1)是**模板自己的
- * `scripts/` 目錄**,裡面放的是給新專案抄的佔位設定——對 boundaries 這種硬性設定,
- * 永遠讀到模板的佔位 owners.json,對 consumer 的真實落點表永遠比出「差異」
- * (CHANGELOG 1.3.4 (3))。`GATES_CONFIG_DIR` 讓 `verify-against.sh` 明講「這次跑
- * 模板版時,設定要去哪裡找」,不受「腳本實際放在哪個目錄」影響。
+ * Why there is a position 0: `verify-against.sh` runs the `.ts` under the template path directly
+ * (without copying via `sync-gates.sh`). Then "the directory of the calling script itself"
+ * (position 1) is **the template's own `scripts/` directory**, which holds placeholder configs
+ * meant to be copied into new projects. For a hard config like boundaries, it would always read
+ * the template's placeholder owners.json, and always find a "difference" against the consumer's
+ * real landing table (CHANGELOG 1.3.4 (3)). `GATES_CONFIG_DIR` lets `verify-against.sh` say
+ * explicitly "where to find the config for this run of the template version", regardless of
+ * which directory the script actually sits in.
  */
 export function resolveConfig(scriptDir: string, name: string): string | undefined {
   for (const candidate of configSearchPaths(scriptDir, name)) {
@@ -131,7 +145,7 @@ export function resolveConfig(scriptDir: string, name: string): string | undefin
   return undefined;
 }
 
-/** `resolveConfig` 實際會依序嘗試的路徑(env 優先權存在時 3 個,否則 2 個),供找不到時的錯誤訊息使用。 */
+/** The paths `resolveConfig` actually tries, in order (3 when the env var applies, otherwise 2), for the error message when nothing is found. */
 export function configSearchPaths(scriptDir: string, name: string): string[] {
   const paths: string[] = [];
   const envDir = process.env.GATES_CONFIG_DIR;
@@ -143,44 +157,49 @@ export function configSearchPaths(scriptDir: string, name: string): string[] {
 }
 
 /**
- * S14(來源 AI_KM,2026-09-05;PITFALLS P-73)——`--root` 明講對別的 repo 跑守門時的設定檔
- * 解析,跟上面 `resolveConfig`/`configSearchPaths` 是同一個問題的另一半:那兩個函式綁死
- * 模組層級的 `ROOT`(現場 cwd 所在的 git repo),完全不知道呼叫端可能用 `--root <dir>`
- * 明講了一個**不同**的目標 repo(`check-boundaries.ts`、`check-doc-rot.ts` 這幾支支援
- * `--root` 的腳本各自另外維護一份 `configSearchPathsList`,原因正是這裡)。
+ * S14 (source AI_KM, 2026-09-05; PITFALLS P-73): config file resolution when `--root` names
+ * another repo to run the gates on. It is the other half of the same problem as `resolveConfig` /
+ * `configSearchPaths` above. Those two are tied to the module-level `ROOT` (the git repo of the
+ * current cwd) and do not know that the caller may have used `--root <dir>` to name a
+ * **different** target repo (scripts that support `--root`, such as `check-boundaries.ts` and
+ * `check-doc-rot.ts`, each keep their own `configSearchPathsList` for exactly this reason).
  *
- * 事故(P-73):consumer 在**模板路徑**下對別的 repo 跑
- * `check-boundaries.ts --root /data/python/AI_KM`,沒有設 `GATES_CONFIG_DIR`——搜尋順序
- * 舊版是「腳本自己所在目錄 → `<root>/scripts/`」,不管 `--root` 有沒有明講都一樣,順位 1
- * 永遠先中——於是靜默套用了**模板自己的**佔位 `boundaries.owners.json`(FAIL
- * scanned=0 / 248 unmapped),不是 consumer 裝好的那份;加上 `GATES_CONFIG_DIR` 才對。
- * 跟 P-43 同型:模板端「看起來綠」蓋住了真正該讀的設定沒被讀到。
+ * Incident (P-73): a consumer ran `check-boundaries.ts --root /data/python/AI_KM` against another
+ * repo from the **template path**, without setting `GATES_CONFIG_DIR`. The old search order was
+ * "the script's own directory -> `<root>/scripts/`", the same whether or not `--root` was given,
+ * so position 1 always hit first. It silently applied the **template's own** placeholder
+ * `boundaries.owners.json` (FAIL scanned=0 / 248 unmapped) instead of the consumer's installed
+ * one; it only worked once `GATES_CONFIG_DIR` was added. Same type as P-43: the template side
+ * "looks green" and hides that the config that should have been read was not read.
  *
- * 修法(這裡是規則,呼叫端把 `rootExplicit` 設成「這次呼叫有沒有給 `--root`」):
- *   - `--root` **沒有**明講(consumer 裝好之後在自己 repo 裡正常執行)→ 順序不變:
- *     `GATES_CONFIG_DIR` → 腳本自己所在目錄(sync 後是 consumer 的安裝目錄)→
- *     `<root>/scripts/`。
- *   - `--root` **明講**了 → 「腳本自己所在目錄」這個候選整個拿掉,只剩
- *     `GATES_CONFIG_DIR` → `<root>/scripts/`——找不到就是**缺席要抱怨,不要降級**:
- *     回傳的 `hardErrorMessage` 讓呼叫端印出來、印 gate 標記、`exit 1`,不准安靜地退回
- *     模板自己目錄下的範例設定當作「找到了」繼續跑(那正是這次事故的成因)。
- *   `GATES_CONFIG_DIR` 兩種情況下都優先,不受 `rootExplicit` 影響——它就是「這次跑模板版
- *   時,設定要去哪裡找」的明講管道(`verify-against.sh` 用的就是它)。
+ * Fix (the rule lives here; the caller sets `rootExplicit` to "whether this run was given `--root`"):
+ *   - `--root` was **not** given (the consumer runs normally in its own repo after install) ->
+ *     order unchanged: `GATES_CONFIG_DIR` -> the script's own directory (after sync, the
+ *     consumer's install directory) -> `<root>/scripts/`.
+ *   - `--root` **was** given -> the candidate "the script's own directory" is dropped entirely,
+ *     leaving only `GATES_CONFIG_DIR` -> `<root>/scripts/`. If not found, that is an **absence to
+ *     complain about, not to degrade**: the returned `hardErrorMessage` makes the caller print it,
+ *     print the gate marker and `exit 1`. It must not quietly fall back to the example config in
+ *     the template's own directory as if it were "found" (that was the cause of this incident).
+ *   `GATES_CONFIG_DIR` wins in both cases, regardless of `rootExplicit`. It is the explicit
+ *     channel for "where to find the config for this run of the template version" (it is what
+ *     `verify-against.sh` uses).
  *
- * 同時回傳 `source`(供每支 gate 印「設定:<resolved path>」透明度那一行——找不到就是
- * 「設定:無,使用預設」,讓讀 log 的人第一行就看得出這次到底讀了哪份設定,不用等到掃描
- * 結果對不上才回頭懷疑設定檔)。
+ * It also returns `source` (for the "config: <resolved path>" transparency line each gate prints.
+ * If nothing is found it is "設定:無,使用預設", so whoever reads the log sees on the first line
+ * which config was actually read, and does not have to doubt the config file only after the scan
+ * result looks wrong).
  */
 export interface ConfigLookup {
-  /** 解析出來的路徑;找不到是 `undefined`。 */
+  /** The resolved path; `undefined` if not found. */
   path: string | undefined;
-  /** 給「設定:...」那一行印的說明文字。 */
+  /** The description text to print on the "設定:..." line. */
   source: string;
-  /** 只有「`--root` 明講、且 `GATES_CONFIG_DIR` 沒有覆蓋、且 `<root>/scripts/<name>`
-   *  也沒有」這個組合才會填——呼叫端看到有值就代表要大聲失敗,不是靜默略過。 */
+  /** Filled in only for the combination "`--root` given, `GATES_CONFIG_DIR` does not override, and
+   *  `<root>/scripts/<name>` is missing too". If the caller sees a value, it must fail loudly, not skip silently. */
   hardErrorMessage?: string;
-  /** 依序嘗試過的路徑,供呼叫端自己組「找不到」訊息時引用(跟舊版 `configSearchPaths`
-   *  的用途一樣,這裡是 `rootExplicit` 版本)。 */
+  /** The paths tried, in order, for callers that build their own "not found" message
+   *  (same purpose as the old `configSearchPaths`; this is the `rootExplicit` version). */
   triedPaths: string[];
 }
 
@@ -220,30 +239,36 @@ export function lookupConfig(
 }
 
 /**
- * 設定檔壞掉要大聲失敗(S9,來源:專案 A 協調者)。
+ * A broken config file must fail loudly (S9, source: project A coordinator).
  *
- * 動機:一個消費者實測到,`gates.config.json` 打壞(手改壞掉的 JSON、鍵打錯字、
- * 型別填錯)之後,有些 gate 直接丟出未捕捉的例外(堆疊噴到終端機,沒有印
- * `gate=<name> result=FAIL scanned=0` 這行機器可讀標記,CI 看起來像是腳本本身壞掉,
- * 不是設定壞掉),有些 gate 用 `try { JSON.parse(...) } catch { return {} }` 悄悄套用
- * 內建預設值——後者更危險:gate 印「PASS」,但其實整份設定形同沒填,「看起來有跑」
- * 但其實完全沒套用使用者的設定。兩種都不對。
+ * Motivation: one consumer saw that after `gates.config.json` was broken (hand-edited broken
+ * JSON, a mistyped key, a wrong value type), some gates threw an uncaught exception (the stack
+ * spilled to the terminal, without the machine-readable marker line
+ * `gate=<name> result=FAIL scanned=0`, so CI looked as if the script itself was broken, not the
+ * config). Other gates used `try { JSON.parse(...) } catch { return {} }` and quietly applied the
+ * built-in defaults. The latter is more dangerous: the gate prints "PASS", but the whole config
+ * is effectively empty, so it "looks like it ran" while the user's config was never applied at
+ * all. Both are wrong.
  *
- * 統一規則,所有讀設定檔的 gate 都要走這三個共用函式:
- *   1. 解析錯誤(檔案讀不到、JSON.parse 炸掉)→ `readConfigJson()` 印
- *      `✗ 設定檔壞掉:<path>: <message>`,印 gate 標記(scanned=0)、exit 1。
- *      不是未捕捉的堆疊,也不是悄悄回退預設值。
- *   2. 已知鍵型別填錯(例如 `chain` 不是陣列、`runTimeoutMs` 不是數字)→
- *      `requireConfigType()` 印 `✗ 設定檔鍵型別錯:<key> 應為 <type>`,同樣印標記、exit 1。
- *   3. `gates.config.json` 出現不認識的頂層鍵(打錯字最常見的癥狀)→
- *      `requireKnownTopLevelKeys()` 印 `✗ 設定檔有不認識的鍵:<key>(打錯字?)已知鍵:<list>`,
- *      同樣印標記、exit 1。這一條只對 `gates.config.json` 有意義(它是唯一被多支 gate
- *      共讀共寫、容易「這支 gate 沒認得但那支認得」的設定檔;`boundaries.owners.json`
- *      這類單一 gate 專用的設定檔,結構錯誤直接照該 gate 自己既有的訊息處理即可)。
+ * Uniform rule: every gate that reads a config file goes through these three shared functions:
+ *   1. Parse error (file unreadable, JSON.parse blows up) -> `readConfigJson()` prints
+ *      `✗ 設定檔壞掉:<path>: <message>`, prints the gate marker (scanned=0), exit 1.
+ *      Not an uncaught stack, and not a quiet fallback to defaults.
+ *   2. A known key has the wrong type (for example `chain` is not an array, `runTimeoutMs` is not
+ *      a number) -> `requireConfigType()` prints `✗ 設定檔鍵型別錯:<key> 應為 <type>`, also
+ *      prints the marker, exit 1.
+ *   3. `gates.config.json` has a top-level key nobody knows (the most common symptom of a typo)
+ *      -> `requireKnownTopLevelKeys()` prints
+ *      `✗ 設定檔有不認識的鍵:<key>(打錯字?)已知鍵:<list>`, also prints the marker, exit 1.
+ *      This only makes sense for `gates.config.json` (it is the only config file read and written
+ *      by many gates together, so it is prone to "this gate does not know it but that gate does";
+ *      for single-gate config files such as `boundaries.owners.json`, a structure error can just
+ *      be handled with that gate's own existing message).
  *
- * `readConfigJson` / `requireConfigType` / `requireKnownTopLevelKeys` 都是 `never` 型別的
- * 失敗路徑(exit 1),呼叫端不需要、也不應該再自己 catch 一次——「設定檔壞掉」永遠是
- * 同一句話、同一種退出方式,不該每支 gate 各自決定要不要處理。
+ * `readConfigJson` / `requireConfigType` / `requireKnownTopLevelKeys` are all failure paths of
+ * type `never` (exit 1). The caller does not need to, and should not, catch again: "config file
+ * broken" is always the same sentence and the same way of exiting, and each gate should not
+ * decide for itself whether to handle it.
  */
 function failConfig(gateName: string, message: string): never {
   console.error(`✗ ${message}`);
@@ -251,9 +276,10 @@ function failConfig(gateName: string, message: string): never {
   process.exit(1);
 }
 
-/** 讀一份**已知存在**的 JSON 設定檔(呼叫端通常先用 `resolveConfig` / `configSearchPaths`
- *  確認過路徑存在);讀檔失敗或 `JSON.parse` 失敗都印「設定檔壞掉」並 exit 1,不丟出
- *  未捕捉的例外,也不悄悄回退成 `{}`。 */
+/** Read a JSON config file that is **known to exist** (the caller usually already confirmed the path
+ *  exists with `resolveConfig` / `configSearchPaths`). A read failure or a `JSON.parse` failure
+ *  prints "設定檔壞掉" and exits 1. It does not throw an uncaught exception and does not quietly
+ *  fall back to `{}`. */
 export function readConfigJson(path: string, gateName: string): unknown {
   let text: string;
   try {
@@ -268,8 +294,8 @@ export function readConfigJson(path: string, gateName: string): unknown {
   }
 }
 
-/** `requireConfigType` 認得的型別名稱。`'array'` 特別用 `Array.isArray` 判斷
- *  (JS 的 `typeof [] === 'object'`,不能直接用 `typeof`)。 */
+/** The type names `requireConfigType` understands. `'array'` is checked with `Array.isArray`
+ *  (in JS `typeof [] === 'object'`, so `typeof` cannot be used directly). */
 export type ConfigValueKind = 'array' | 'number' | 'string' | 'boolean' | 'object';
 
 function actualKind(value: unknown): string {
@@ -278,31 +304,33 @@ function actualKind(value: unknown): string {
   return typeof value;
 }
 
-/** `value` 的型別跟 `kind` 不符 → 印 `✗ 設定檔鍵型別錯:<key> 應為 <kind>`、印標記、exit 1。
- *  呼叫端只在 `value !== undefined` 時呼叫這個函式——「這個鍵沒填」是另一回事(通常有
- *  自己的預設值或「尚未設定」流程),不該被這裡當成型別錯。 */
+/** If the type of `value` does not match `kind`, print `✗ 設定檔鍵型別錯:<key> 應為 <kind>`, print the marker, exit 1.
+ *  The caller only calls this when `value !== undefined`. "This key was not filled in" is a
+ *  different matter (it usually has its own default or a "not configured yet" flow) and must
+ *  not be treated as a type error here. */
 export function requireConfigType(value: unknown, key: string, kind: ConfigValueKind, gateName: string): void {
   const ok = kind === 'array' ? Array.isArray(value) : !Array.isArray(value) && value !== null && typeof value === kind;
   if (!ok) failConfig(gateName, `設定檔鍵型別錯:${key} 應為 ${kind}(實際:${actualKind(value)})`);
 }
 
 /**
- * `gates.config.json` 已知的頂層鍵清單(S9)。**每個 gate 新增一個頂層鍵都要加進這裡**——
- * 不管是哪支 gate 讀的:這份清單是「所有 gate 認得的鍵」的聯集,不是「這支 gate 自己用
- * 得到的鍵」的子集,不然 gate A 新增的鍵在 gate B 眼裡永遠是「不認識的鍵」。
+ * The list of known top-level keys of `gates.config.json` (S9). **Whenever a gate adds a
+ * top-level key, it must be added here**, no matter which gate reads it: this list is the union
+ * of "keys any gate knows", not the subset of "keys this one gate uses". Otherwise a key added by
+ * gate A would always be an "unknown key" in the eyes of gate B.
  *   cucumberCwd / phaseCoverage — check-phase-coverage.ts
  *   docLinks                    — check-doc-links.ts
  *   gherkinDup                  — check-gherkin-dup.ts
- *   sync                        — sync-gates.sh(語言選集)
+ *   sync                        — sync-gates.sh (language selection)
  *   chain                       — check-all.ts
- *   unwired                     — sync-gates.sh(接線檢查允許清單)
+ *   unwired                     — sync-gates.sh (wiring check allowlist)
  *   nextGates                   — check-next-gates.ts
- *   skipDirs                    — 所有掃描器共用的略過目錄清單(S10,見 SKIP_DIRS)
- *   docRot                      — check-doc-rot.ts(S7)
- *   knownDefects                — check-known-defects.ts(S8)
- *   phaseStatus                 — check-phase-status.ts(S15)
- *   moduleCast                  — check-module-cast.ts(1.6.0,P-88)
- *   dryRun                      — check-dry-run.ts(1.6.0,P-86):tags
+ *   skipDirs                    — skip-directory list shared by all scanners (S10, see SKIP_DIRS)
+ *   docRot                      — check-doc-rot.ts (S7)
+ *   knownDefects                — check-known-defects.ts (S8)
+ *   phaseStatus                 — check-phase-status.ts (S15)
+ *   moduleCast                  — check-module-cast.ts (1.6.0, P-88)
+ *   dryRun                      — check-dry-run.ts (1.6.0, P-86): tags
  */
 export const KNOWN_GATES_CONFIG_KEYS = [
   'cucumberCwd',
@@ -321,8 +349,8 @@ export const KNOWN_GATES_CONFIG_KEYS = [
   'dryRun',
 ] as const;
 
-/** `obj` 的頂層鍵裡,有沒有不在 `knownKeys` 的——通常是打錯字(`"chian"` 之類)。
- *  命中就印 `✗ 設定檔有不認識的鍵:<key>(打錯字?)已知鍵:<list>`、印標記、exit 1。 */
+/** Whether the top-level keys of `obj` include any that are not in `knownKeys`, usually a typo (something like `"chian"`).
+ *  On a hit, print `✗ 設定檔有不認識的鍵:<key>(打錯字?)已知鍵:<list>`, print the marker, exit 1. */
 export function requireKnownTopLevelKeys(
   obj: Record<string, unknown>,
   knownKeys: readonly string[],
@@ -333,11 +361,13 @@ export function requireKnownTopLevelKeys(
     if (!knownKeys.includes(key)) {
       failConfig(
         gateName,
-        // 1.6.6(P-94):訊息要指出「不是打錯字時該走哪條路」。原本只寫「打錯字?」,
-        // 於是 consumer 的 worker 想加自己的 gate 設定時,第一直覺是去手改模板的
-        // `KNOWN_GATES_CONFIG_KEYS`(並留一條 HOTFIX)——而正確做法(自帶設定檔)
-        // 模板裡早就有先例(`check-doc-rot.ts` 的 `doc-rot.blacklist.json`),
-        // 只是**存在但沒有被指出來**。差別在於前者要靠人想到,後者不用。
+        // 1.6.6 (P-94): the message must say which way to go when it is not a typo. It used to
+        // say only "打錯字?", so when a consumer's worker wanted to add config for its own gate,
+        // the first instinct was to hand-edit the template's `KNOWN_GATES_CONFIG_KEYS` (and leave
+        // a HOTFIX). But the right way (ship your own config file) already has a precedent in the
+        // template (`doc-rot.blacklist.json` of `check-doc-rot.ts`); it just **existed but was
+        // not pointed out**. The difference is that the former depends on someone thinking of it,
+        // the latter does not.
         `設定檔有不認識的鍵:${key}(打錯字?)已知鍵:${knownKeys.join(', ')}(${path})\n` +
           `  如果這不是打錯字、而是你自己的 gate 需要設定:**不要改模板的 KNOWN_GATES_CONFIG_KEYS**,` +
           `讓那支 gate 自帶一份設定檔(先例:check-doc-rot.ts 的 doc-rot.blacklist.json)。` +
@@ -348,11 +378,12 @@ export function requireKnownTopLevelKeys(
 }
 
 /**
- * 讀一份 `gates.config.json`,做 S9 規定的兩件事:解析錯誤大聲失敗(`readConfigJson`)、
- * 頂層鍵不認識大聲失敗(`requireKnownTopLevelKeys`)。找不到檔案回傳 `undefined`
- * (`gates.config.json` 對大多數 gate 是選填設定,找不到不是錯,呼叫端自己決定要不要
- * 當成「必要設定缺席」處理)。回傳值刻意是 `Record<string, unknown>`(未細分型別)——
- * 每支 gate 自己從裡面挑要的鍵、自己用 `requireConfigType` 檢查那個鍵的型別。
+ * Read one `gates.config.json` and do the two things S9 requires: fail loudly on a parse error
+ * (`readConfigJson`), and fail loudly on an unknown top-level key (`requireKnownTopLevelKeys`).
+ * If the file is not found, return `undefined` (`gates.config.json` is optional config for most
+ * gates, so not finding it is not an error; the caller decides whether to treat it as "required
+ * config absent"). The return value is deliberately `Record<string, unknown>` (not narrowed):
+ * each gate picks the keys it wants and checks the type of that key itself with `requireConfigType`.
  */
 export function loadGatesConfig(path: string | undefined, gateName: string): Record<string, unknown> | undefined {
   if (!path) return undefined;
@@ -366,19 +397,23 @@ export function loadGatesConfig(path: string | undefined, gateName: string): Rec
 }
 
 /**
- * 所有掃描目錄樹的 gate 共用的略過目錄清單(S10,來源 AI_KM)。
+ * The skip-directory list shared by every gate that scans a directory tree (S10, source AI_KM).
  *
- * 背景:`check-boundaries.ts` 的 `SKIP_DIRS` 原本沒有 `.next`,一個用 Next.js 的消費者
- * 因此吃到 511 筆雜訊違規(整個 apps 底下每個子專案的 `.next` 建置產物被當成原始碼掃描)。每支掃描器各自
- * 維護一份略過清單,漏一個新框架的建置產物目錄名,同一種事故就會在別的 gate 再發生一次。
+ * Background: `SKIP_DIRS` in `check-boundaries.ts` originally had no `.next`, so a consumer using
+ * Next.js got 511 noise violations (the `.next` build output of every sub-project under apps was
+ * scanned as source code). If each scanner keeps its own skip list, missing the build output
+ * directory name of one new framework makes the same incident happen again in another gate.
  *
- * 移到這裡當唯一清單,**每一支會走目錄樹的 gate 都要 import 這個常數**,不准各自宣告
- * 自己的 `SKIP_DIRS`(有測試強制這條,見 check-boundaries.test.ts 的 grep 測試)。
+ * Moved here as the single list. **Every gate that walks a directory tree must import this
+ * constant** and must not declare its own `SKIP_DIRS` (a test enforces this; see the grep test
+ * in check-boundaries.test.ts).
  *
- * `gates.config.json` 的 `skipDirs`(字串陣列)**追加**在預設清單之後,不取代——專案有
- * 自己的建置產物目錄名時不必改任何一支 gate 本體。刻意不讀 `.gitignore`:那份檔案的規則
- * (glob、否定樣式)比這裡需要的複雜得多,而且 `.gitignore` 排除的東西不見得是「這不是
- * 原始碼」,兩者語意不同,硬套會兩邊都不準。
+ * `skipDirs` (a string array) in `gates.config.json` is **appended** after the default list, not
+ * a replacement. A project with its own build output directory names does not have to change any
+ * gate itself. It deliberately does not read `.gitignore`: the rules in that file (globs,
+ * negation patterns) are far more complex than needed here, and what `.gitignore` excludes is not
+ * necessarily "not source code". The two mean different things, and forcing one onto the other
+ * makes both inaccurate.
  */
 export const DEFAULT_SKIP_DIRS: readonly string[] = [
   'node_modules',
@@ -394,27 +429,28 @@ export const DEFAULT_SKIP_DIRS: readonly string[] = [
   '.turbo',
   '.cache',
   'target',
-  '.stryker-tmp',   // 變異測試沙盒是**整個 repo 的複本**;任何走訪檔案樹的掃描器踩進去都會
-                    // 把自己的 fixture 與舊 worktree 的整份模板當成真命中,而且 `scanned=N`
-                    // 會隨「那一刻磁碟上剛好有沒有沙盒」跳動,連量尺一起壞掉(1.6.2,P-90)
+  '.stryker-tmp',   // The mutation-testing sandbox is a **copy of the whole repo**; any scanner that walks the file tree and steps into it
+                    // would count its own fixtures and the whole template of old worktrees as real hits, and `scanned=N`
+                    // would jump with "whether a sandbox happens to be on disk at that moment", breaking the yardstick too (1.6.2, P-90)
   '__pycache__',
   '.venv',
   'venv',
   'reports',
 ];
 
-/** `DEFAULT_SKIP_DIRS` + `gates.config.json` 的 `skipDirs`(追加、去重)。
- *  `gatesConfig` 通常是 `loadGatesConfig(...)` 的回傳值;沒有設定檔或沒填 `skipDirs`
- *  就只用內建預設。`skipDirs` 存在但型別不是陣列 → 用 `requireConfigType` 大聲失敗
- *  (跟其他已知鍵型別錯一致,不悄悄忽略)。 */
+/** `DEFAULT_SKIP_DIRS` + `skipDirs` of `gates.config.json` (appended, de-duplicated).
+ *  `gatesConfig` is usually the return value of `loadGatesConfig(...)`; with no config file or no
+ *  `skipDirs`, only the built-in defaults are used. If `skipDirs` exists but is not an array ->
+ *  fail loudly with `requireConfigType` (consistent with the other known-key type errors, not
+ *  silently ignored). */
 export function resolveSkipDirs(gatesConfig: Record<string, unknown> | undefined, gateName: string): Set<string> {
   const extra = gatesConfig?.skipDirs;
   if (extra === undefined) return new Set(DEFAULT_SKIP_DIRS);
   requireConfigType(extra, 'skipDirs', 'array', gateName);
   const extraStrings = (extra as unknown[]).filter((s): s is string => typeof s === 'string');
-  // glob 硬錯,不是靜默忽略(1.6.3,P-91):這個集合是**逐字比對**的,`learning-*` 這種寫法
-  // 一個目錄都排除不到,而且不報錯——consumer 會以為問題解決了,於是不再追。
-  // 「回傳值長得像回執」那一族最壞的一種。打錯字跟不支援 glob 的症狀一模一樣,所以寧可大聲失敗。
+  // A glob is a hard error, not silently ignored (1.6.3, P-91): this set is matched **verbatim**, so something like `learning-*`
+  // excludes not a single directory, and does not report an error either. The consumer would think the problem was solved and stop chasing it.
+  // The worst kind of the "return value looks like a receipt" family. A typo and an unsupported glob look exactly the same, so we prefer to fail loudly.
   const globbed = extraStrings.filter((d) => /[*?[\]]/.test(d));
   if (globbed.length > 0) {
     failConfig(
@@ -427,14 +463,16 @@ export function resolveSkipDirs(gatesConfig: Record<string, unknown> | undefined
 }
 
 /**
- * `.claude/worktrees/<name>` 這種一整段前綴形式的排除(`DEFAULT_SKIP_DIRS` 裡
- * `.claude/worktrees` 那一項是「路徑片段」寫法,單純用「目錄名字完全等於這個字串就跳過整棵
- * 子樹」的掃描器——例如 `check-boundaries.ts` 的 `walk()`——沒辦法用它跳過 `.claude/worktrees`
- * 本身以外的東西,因為 `.claude` 跟 `worktrees`是兩層,不會有任何一層的目錄名字剛好等於
- * `.claude/worktrees` 這個帶斜線的字串)。這個函式把 `skipDirs` 集合拆成「單層目錄名」
- * (逐層比對,例如 `node_modules`)跟「多層路徑前綴」(例如 `.claude/worktrees`)兩組,
- * 給需要精準比對相對路徑前綴的掃描器(`check-doc-links.ts` 走的是「相對 ROOT 的路徑
- * 前綴」邏輯,不是逐層目錄名)用。
+ * Exclusion of a whole multi-level prefix such as `.claude/worktrees/<name>`. The
+ * `.claude/worktrees` entry in `DEFAULT_SKIP_DIRS` is written as a "path fragment". A scanner
+ * that just skips a whole subtree when "the directory name equals this string" (for example
+ * `walk()` in `check-boundaries.ts`) cannot use it to skip anything other than `.claude/worktrees`
+ * itself, because `.claude` and `worktrees` are two levels, and no single level has a directory
+ * name equal to the string `.claude/worktrees` with a slash in it. This function splits the
+ * `skipDirs` set into two groups: "single-level directory names" (compared level by level, for
+ * example `node_modules`) and "multi-level path prefixes" (for example `.claude/worktrees`), for
+ * scanners that must match a relative path prefix exactly (`check-doc-links.ts` uses the logic
+ * "path prefix relative to ROOT", not level-by-level directory names).
  */
 export function splitSkipDirs(skipDirs: Set<string>): { segments: Set<string>; prefixes: string[] } {
   const segments = new Set<string>();
@@ -447,10 +485,11 @@ export function splitSkipDirs(skipDirs: Set<string>): { segments: Set<string>; p
 }
 
 /**
- * `features/<folder>/FEATURE.md` 的 Phase 表(唯一狀態來源)有沒有 `phaseNum` 那一列
- * (`check-next-gates.ts` 的 `phaseRowExists` 沒有 export,這裡是同一套邏輯的共用版——
- * 見 S8:`check-known-defects.ts` 的 `fix_in` 參照要驗證 phase 表格列真的存在,
- * 不重新發明一套解析)。檔案不存在或找不到那一列都回傳 `false`。
+ * Whether the Phase table of `features/<folder>/FEATURE.md` (the only source of status) has a row
+ * for `phaseNum` (`phaseRowExists` in `check-next-gates.ts` is not exported; this is the shared
+ * version of the same logic. See S8: the `fix_in` reference in `check-known-defects.ts` must
+ * verify that the phase table row really exists, without inventing a new parser). Returns `false`
+ * if the file does not exist or the row is not found.
  */
 export function featurePhaseRowExists(root: string, folder: string, phaseNum: string): boolean {
   const featurePath = join(root, 'features', folder, 'FEATURE.md');
@@ -464,7 +503,7 @@ export function featurePhaseRowExists(root: string, folder: string, phaseNum: st
   return false;
 }
 
-/** `docs/02-decision-map.md` 裡有沒有 `## ADR-<id> · ...` 這個標題。 */
+/** Whether `docs/02-decision-map.md` has a heading `## ADR-<id> · ...`. */
 export function adrExists(root: string, id: string): boolean {
   const p = join(root, 'docs', '02-decision-map.md');
   if (!existsSync(p)) return false;

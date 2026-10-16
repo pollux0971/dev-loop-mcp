@@ -1,5 +1,5 @@
-// orchestrator:取代 v1 的「接線 agent」與「整合/清樹 agent」。純 script,不做判斷。
-// 每一步都由 ledger 狀態決定,所以任何時候中斷後重跑都得到同樣結果(冪等)。
+// orchestrator: replaces v1's "wiring agent" and "integration / tree-cleaning agent". Pure script, makes no judgments.
+// Every step is decided by the ledger state, so re-running after an interruption at any point gives the same result (idempotent).
 import { copyFileSync, existsSync, readdirSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { globalUsage, isAccountLimit, limitedUntil, logAccountEvent, pickAccount } from './accounts.mjs';
@@ -34,7 +34,7 @@ import { runArgv } from './util.mjs';
 
 export const STATE_PATHS = ['ledger', 'dag.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json'];
 
-/** 因 git 設定被改而停機時,halt 的 reason 以此開頭;使用者 resume 時 dlm 才會把現在的設定記成新基準。 */
+/** When halting because the git config was changed, the halt reason starts with this; only when the user resumes does dlm record the current config as the new baseline. */
 export const GIT_CONFIG_HALT = '[git-config]';
 
 export class Ctx {
@@ -66,7 +66,7 @@ export class Ctx {
   }
 }
 
-/** v4.7:跟帳號有關的事件另外記一份在這台電腦(跨專案選號用,見 accounts.mjs)。 */
+/** v4.7: events about accounts are also logged separately on this machine (used to pick an account across projects, see accounts.mjs). */
 function mirrorAccountEvent(root, ev, d) {
   const account = ev.account ?? d?.account ?? null;
   if (ev.type === 'dispatch' && ev.account) logAccountEvent(root, { type: 'dispatch', dispatch_id: ev.dispatch_id, account: ev.account });
@@ -80,19 +80,19 @@ export function commitState(ctx, message) {
   return commitAll(ctx.root, STATE_PATHS.filter((p) => existsSync(join(ctx.root, p))), message);
 }
 
-// ---------------------------------------------------------------- 沙箱副本(worker 不碰 .git)
+// ---------------------------------------------------------------- sandbox copy (the worker never touches .git)
 //
-// worker 不在 git worktree 裡施工:dlm 把 worktree 匯出成一份沒有 .git 的副本(.dlm/sandboxes/<dispatch>/),
-// worker 只看得到這份。結束後 dlm 在沙箱外比對「副本 vs 派工時的清單」(含被 ignore 的檔),
-// 範圍內的變動同步回 worktree、由 dlm commit;碰到 .git、.dlm、node_modules、symlink 的一律記成違規。
+// The worker does not work inside the git worktree: dlm exports the worktree as a copy with no .git (.dlm/sandboxes/<dispatch>/),
+// and the worker sees only that copy. When it finishes, dlm compares outside the sandbox "the copy vs the manifest taken at dispatch" (including ignored files),
+// syncs in-scope changes back into the worktree and commits them itself; anything touching .git, .dlm, node_modules or symlinks is always recorded as a violation.
 
-// 沙箱副本裡 dlm 自己管理的檔(工單、prompt、report、log),不算 worker 的變動
+// Files in the sandbox copy that dlm manages itself (work order, prompt, report, log); they do not count as worker changes
 const SANDBOX_DLM_FILES = ['.dlm/envelope.json', '.dlm/prompt.md', '.dlm/report.json', '.dlm/worker.log'];
 const manifestPath = (ctx, id) => join(ctx.root, '.dlm', 'manifests', `${id}.json`);
 
 function prepareSandbox(ctx, wt, dispatchId, envelope, prompt) {
   const sbx = join(ctx.root, '.dlm', 'sandboxes', dispatchId);
-  // .mcp.json 不給 worker(v4.6):裡面註冊了 dlm 自己的 MCP,worker 的 CLI 載入它就能替使用者 decide
+  // .mcp.json is not given to the worker (v4.6): it registers dlm's own MCP, and if the worker's CLI loaded it the worker could decide on behalf of the user
   copyTree(wt, sbx, { skip: ['.git', 'node_modules', '.dlm', '.mcp.json'] });
   ensureDir(join(sbx, '.dlm'));
   writeJson(join(sbx, '.dlm', 'envelope.json'), envelope);
@@ -102,7 +102,7 @@ function prepareSandbox(ctx, wt, dispatchId, envelope, prompt) {
   return sbx;
 }
 
-/** worker 結束後:比對副本、同步範圍內的變動、dlm commit。回傳 { changed, violations }。 */
+/** After the worker finishes: compare the copy, sync in-scope changes, dlm commits. Returns { changed, violations }. */
 function syncSandbox(ctx, d, message) {
   const before = readJson(manifestPath(ctx, d.dispatch_id), {});
   const after = treeManifest(d.sandbox, { skipPaths: SANDBOX_DLM_FILES });
@@ -131,7 +131,7 @@ function syncSandbox(ctx, d, message) {
     }
   }
   if (safe.length) {
-    // -f:被 ignore 的檔也要進 commit,這樣 paths 檢查才看得到(worker 寫到 dist/ 之類的地方不會被漏掉)
+    // -f: ignored files must also go into the commit so the paths check can see them (a worker writing to dist/ or similar is not missed)
     git(d.worktree, `add -A -f -- ${safe.map((x) => `'${x.replace(/'/g, `'\\''`)}'`).join(' ')}`);
     const staged = git(d.worktree, 'diff --cached --quiet', { allowFail: true });
     if (staged.code !== 0) git(d.worktree, `-c user.name=dlm -c user.email=dlm@localhost commit --quiet -m '${message.replace(/'/g, '')}'`);
@@ -142,13 +142,13 @@ function syncSandbox(ctx, d, message) {
 function cleanupSandbox(ctx, d) {
   if (!d.sandbox) return;
   removeTree(d.sandbox);
-  try { unlinkSync(manifestPath(ctx, d.dispatch_id)); } catch { /* 已刪 */ }
+  try { unlinkSync(manifestPath(ctx, d.dispatch_id)); } catch { /* already deleted */ }
 }
 
 // ---------------------------------------------------------------- harvest
 
-// 從 worker log 尾巴辨識基礎設施失敗(限流、5xx、過載、連線)。拿不準就當 quality:寧可多算一次嘗試,
-// 也不要把 worker 自己的問題當成網路問題無限重派。
+// Recognize infrastructure failures (rate limit, 5xx, overload, connection) from the tail of the worker log. When unsure, treat it as quality: better to count one extra attempt
+// than to treat the worker's own problem as a network problem and dispatch again forever.
 const INFRA_LOG = new RegExp([
   '\\b429\\b', 'too many requests', 'rate[ _-]?limit', 'overloaded', 'insufficient_quota', 'quota exceeded',
   '\\b(?:500|502|503|504|529)\\b[^\\n]{0,40}(?:error|internal|gateway|unavailable|timeout|overloaded)',
@@ -157,18 +157,18 @@ const INFRA_LOG = new RegExp([
   'request timed out', 'connection (?:timed out|reset|refused)',
 ].join('|'), 'i');
 
-// 沒登入 / 金鑰錯:重試幾次都一樣,不退避、直接停機請你處理(放在 infra 前面判斷,因為這類輸出常同時帶 api_error)
+// Not logged in / wrong key: retrying gives the same result, so no backoff; halt right away and ask you to handle it (checked before infra, because this kind of output often also carries api_error)
 const AUTH_LOG = /not logged in|please run \/login|invalid (?:x-)?api[ _-]?key|authentication_error|\b401\b[^\n]{0,40}(?:unauthori[sz]ed|auth)|missing api key|no api key|OAuth token has expired/i;
 
-/** 'auth' | 'infra' | 'quality'。auth 在帳本裡記成 infra(不算 worker 的嘗試),但會立刻停機。 */
+/** 'auth' | 'infra' | 'quality'. auth is recorded as infra in the ledger (it does not count as a worker attempt), but halts at once. */
 export function classifyFailure(logText) {
   const t = tail(logText ?? '', 4000);
   if (AUTH_LOG.test(t)) return 'auth';
-  // v4.6:訂閱額度用完(usage limit reached / weekly limit / resets 3pm)也是基礎設施,換帳號或等重置就好
+  // v4.6: running out of subscription quota (usage limit reached / weekly limit / resets 3pm) is also infrastructure; switch account or wait for the reset
   return INFRA_LOG.test(t) || isAccountLimit(t) ? 'infra' : 'quality';
 }
 
-/** worker 的工作目錄:新流程是沙箱副本,舊的在途派工是 worktree 本身。 */
+/** The worker's working directory: in the new flow it is the sandbox copy; for old in-flight dispatches it is the worktree itself. */
 const workDir = (d) => d.sandbox ?? d.worktree;
 
 function readWorkerLog(d) {
@@ -177,8 +177,8 @@ function readWorkerLog(d) {
 }
 
 /**
- * 記一次 worker 失敗。infra 不加嘗試次數,改成指數退避(上限可設);全系統連續 N 次 infra 就停機通知,
- * 不把節點判成卡住——三個 worker 共用一個帳號時,429 會一起來,那不是任何一個節點的錯。
+ * Record one worker failure. infra does not add to the attempt count; it uses exponential backoff instead (cap is configurable); N consecutive infra failures across the whole system halt and notify,
+ * without judging the node as stuck: when three workers share one account, the 429s arrive together, and that is not any one node's fault.
  */
 function workerFailed(ctx, d, reason, cls) {
   if (cls === 'auth') {
@@ -196,7 +196,7 @@ function workerFailed(ctx, d, reason, cls) {
     const delayMs = Math.min(caps.infra_backoff_seconds * 1000 * 2 ** (n - 1), caps.infra_backoff_max_minutes * 60000);
     fields.retry_after = new Date(Date.now() + delayMs).toISOString();
     fields.reason = `${reason}(基礎設施失敗,不算嘗試次數;這個節點第 ${n} 次,${Math.round(delayMs / 1000)} 秒後重派)`;
-    // v4.6:帳號額度用完 → 那個帳號冷卻;pool 裡還有別的帳號就馬上換一個重派,不退避、不算連續失敗
+    // v4.6: account quota used up -> that account goes into cooldown; if the pool has another account, switch to it and dispatch again at once, with no backoff and no counting as a consecutive failure
     const log = readWorkerLog(d);
     if (d.account && isAccountLimit(log)) {
       fields.limited_account = d.account;
@@ -204,7 +204,7 @@ function workerFailed(ctx, d, reason, cls) {
       const usage = globalUsage();
       usage[d.account] = { ...(usage[d.account] ?? {}), limited_until: fields.limited_until };
       let next = null;
-      try { next = pickAccount(ctx.config.agents.worker.accounts, usage); } catch { /* 帳號清單有問題:照舊退避 */ }
+      try { next = pickAccount(ctx.config.agents.worker.accounts, usage); } catch { /* problem with the account list: back off as before */ }
       if (next?.name) {
         fields.retry_after = new Date().toISOString();
         fields.switched = true;
@@ -229,9 +229,9 @@ function saveLogTail(ctx, d) {
 }
 
 /**
- * v4:停機時把還在跑的 worker 收掉。v3 的 halt 只寫一筆事件,worker 繼續跑到 lease 到期,
- * 恢復後被當成失敗 reset --hard,把使用者停機期間在 worktree 手動修好的東西一起洗掉(v3 實測)。
- * 這裡不碰 worktree:沙箱副本直接丟掉,worktree 保持停機當下的樣子;記成 halted,不算嘗試、不退避。
+ * v4: on halt, stop the workers that are still running. v3's halt only wrote one event; the worker kept running until the lease expired,
+ * and after resume it was treated as a failure and reset --hard, wiping out what the user had fixed by hand in the worktree during the halt (v3 real run).
+ * This does not touch the worktree: the sandbox copy is simply discarded and the worktree stays as it was at halt; recorded as halted, not counted as an attempt, no backoff.
  */
 export function haltWorkers(ctx) {
   const stopped = [];
@@ -246,7 +246,7 @@ export function haltWorkers(ctx) {
   return stopped;
 }
 
-/** 現在有哪些事在等使用者(決定、試用、停機),給通知比對用。 */
+/** What is waiting on the user right now (decisions, hand trials, halt), used to compare for notifications. */
 export function awaitingKeys(state) {
   const keys = [...state.decisions.values()].filter((r) => r.request && !r.answer).map((r) => r.request.ref);
   for (const n of state.nodes.values()) if (n.e2e?.requestedSeq && !n.e2e.confirm) keys.push(`e2e:${n.id}`);
@@ -255,9 +255,9 @@ export function awaitingKeys(state) {
 }
 
 /**
- * v4:有新的事要使用者處理時,跑 dlm.config.json 的 notify.cmd(例:`osascript -e 'display notification ...'`、
- * `curl -d @- https://ntfy.sh/xxx`)。內容走環境變數 DLM_NOTIFY_TEXT 與 stdin,不會被拼進指令字串。
- * 通知失敗不影響 tick。
+ * v4: when something new needs the user, run notify.cmd from dlm.config.json (e.g. `osascript -e 'display notification ...'`,
+ * `curl -d @- https://ntfy.sh/xxx`). The content goes through the environment variable DLM_NOTIFY_TEXT and stdin, and is never spliced into the command string.
+ * A notification failure does not affect the tick.
  */
 export function notifyNew(ctx, before) {
   const cmd = ctx.config.notify?.cmd;
@@ -292,7 +292,7 @@ async function harvestOne(ctx, d) {
     killSandboxed({ pid: d.pid });
     saveLogTail(ctx, d);
     resetAttempt(ctx, d);
-    // lease 到期是 worker 做太久(或卡在迴圈),算它一次;log 裡看得出是限流/連線才算 infra
+    // lease expiry means the worker took too long (or is stuck in a loop); count it once; it counts as infra only if the log shows rate limiting / connection problems
     workerFailed(ctx, d, 'lease 到期,已終止 worker', classifyFailure(readWorkerLog(d)));
     return;
   }
@@ -401,7 +401,7 @@ async function routeBlocked(ctx, d, report) {
   const route = escalationRoute({ level, criticAvailable: criticConfigured(ctx.config) });
   const reopenable = canReopenTest(ctx, node, d.leg);
   if (report.fix_leg === 'test' && reopenable) {
-    // v4:實作棒說「測試/步驟寫錯了」。v3 只會把同一棒原樣重派(Critic PASS → unblock),實作棒改不了測試,永遠卡住。
+    // v4: the dev leg says "the tests / steps are wrong". v3 could only dispatch the same leg again as is (Critic PASS -> unblock); the dev leg cannot change tests, so it stayed stuck forever.
     const findings = [{ check: 'test-fix', detail: `實作棒(${d.dispatch_id})回報測試或步驟定義與 gherkin 矛盾:${tail([report.summary, ...(report.ticket_problems ?? [])].join(';'), 1200)}` }];
     const tooMany = s.reopens >= (ctx.config.caps.test_reopens ?? 2);
     if (route === 'critic' && !tooMany) {
@@ -436,7 +436,7 @@ async function routeBlocked(ctx, d, report) {
     });
     return;
   }
-  // v4:Critic 已經「指引重試」過一次還是卡住,再叫 Critic 只會原樣重派同一棒(v3 實測的迴圈),直接問使用者
+  // v4: if the Critic already "guided a retry" once and the node is still stuck, calling the Critic again would only dispatch the same leg as is (the loop seen in a v3 real run), so ask the user directly
   let criticSays = null;
   if (route === 'critic' && s.escalations < 1) {
     const c = callCritic(ctx, d, node, { escalation: report });
@@ -461,7 +461,7 @@ async function routeBlocked(ctx, d, report) {
       ...(green?.green ? [SKIP_TEST_LEG] : []),
       { key: 'block', label: '先擱置' },
     ],
-    // v4:重複卡住、或 Critic 判斷要你決定時,不推薦「重試」——沒有新指示的重試通常重蹈覆轍(v3/v4 實測)
+    // v4: when stuck repeatedly, or when the Critic says you must decide, do not recommend "retry": a retry with no new instructions usually repeats the same mistake (v3/v4 real run)
     recommendation: green?.green ? 'skip' : repeated || criticSays ? 'block' : 'retry',
     reason: green?.green ? skipReason(green)
       : criticSays ? 'Critic 判斷這不是 worker 能自己解的(見 Critic 的說明),要重試請在原話裡寫具體指示'
@@ -472,13 +472,13 @@ async function routeBlocked(ctx, d, report) {
   });
 }
 
-/** 這個節點的 pipeline 有測試棒,而且卡住的是測試棒之後的實作類棒:才能退回測試棒修正。 */
+/** Only when this node's pipeline has a test leg and the stuck leg is a dev-type leg after it can we send it back to the test leg to fix. */
 function canReopenTest(ctx, node, leg) {
   const pipeline = pipelineFor(node, ctx.config);
   return pipeline.includes('test') && !['characterize', 'test', 'test-fix'].includes(leg) && !!node.gherkin;
 }
 
-/** v4:插一棒 test-fix。實作棒這一次的內容退回(留標籤),測試修好後實作棒從乾淨的狀態重來。 */
+/** v4: insert a test-fix leg. This dev leg's content is sent back (a tag is kept); after the tests are fixed, the dev leg starts over from a clean state. */
 function reopenTestLeg(ctx, d, ref, findings) {
   const tagName = resetAttempt(ctx, d);
   if (tagName) findings = [...findings, { check: 'previous-attempt', detail: `實作棒卡住時的內容留在標籤 ${tagName};測試棒不要改實作` }];
@@ -522,7 +522,7 @@ function callCritic(ctx, d, node, extra) {
   }
   if (extra?.escalation) add('worker-escalation', { summary: extra.escalation.summary, ticket_problems: extra.escalation.ticket_problems ?? [] });
   if (extra?.testFix && existsSync(d.worktree)) {
-    // 測試棒寫的東西不在這一棒的 diff 裡:從分支和主線分岔的地方算起,只看測試與步驟定義
+    // What the test leg wrote is not in this leg's diff: count from where the branch forked from main, and look only at tests and step definitions
     const fork = git(d.worktree, `merge-base ${ctx.config.main_branch} HEAD`, { allowFail: true }).stdout.trim();
     const tdiff = fork ? git(d.worktree, `diff ${fork} HEAD -- features/steps ${testGlobs(node, ctx.config).map((g) => `':(glob)${g}'`).join(' ')}`, { allowFail: true }).stdout : '';
     add('test-diff', tdiff.length > 15000 ? `${tdiff.slice(0, 15000)}\n…(截斷)` : tdiff || '(找不到測試棒的改動)');
@@ -539,7 +539,7 @@ function callCritic(ctx, d, node, extra) {
     return { error: e.message };
   }
   atomicWrite(join(ctx.dispatchDir(d.dispatch_id), `critic-prompt-${ctx.state.maxSeq}.md`), prompt);
-  // v4:在交件分支的 worktree 裡審(v3 在主線根目錄跑,Critic 讀到的是還沒合併的舊程式)
+  // v4: review inside the worktree of the handed-in branch (v3 ran it in the main root directory, so the Critic read the old code that was not merged yet)
   const cwd = existsSync(d.worktree) ? d.worktree : ctx.root;
   let account = null;
   if (ctx.config.agents.critic.accounts?.length) {
@@ -548,7 +548,7 @@ function callCritic(ctx, d, node, extra) {
   }
   const r = callAgent(ctx.config.agents.critic, prompt, criticSchema, { cwd, config: ctx.config, role: 'critic', account });
   if (r.cost) ctx.append('orchestrator', 'cost', { dispatch_id: d.dispatch_id, usd: r.cost, role: 'critic', ...(account ? { account: account.name } : {}) });
-  // 帳本只存摘要長度;完整回覆另存檔(v3 實測:reason 超過上限時整個回覆被當成格式錯誤丟掉)
+  // The ledger stores only a summary-length reason; the full reply is saved to a separate file (v3 real run: when reason exceeded the limit, the whole reply was thrown away as a format error)
   if (r.value) {
     atomicWrite(join(ctx.dispatchDir(d.dispatch_id), `critic-${ctx.state.maxSeq}.json`), `${JSON.stringify(r.value, null, 2)}\n`);
     if (r.value.reason?.length > 1500) r.value.reason = `${r.value.reason.slice(0, 1500)}…(全文見 ledger/dispatch/${d.dispatch_id}/critic-${ctx.state.maxSeq}.json)`;
@@ -556,7 +556,7 @@ function callCritic(ctx, d, node, extra) {
   return r;
 }
 
-/** 被退回或失敗的一次嘗試:留標籤、把 worktree 退回這次嘗試開始前的樣子。越界的改動不會跟著下一次進主線。 */
+/** An attempt that was sent back or failed: keep a tag and reset the worktree to how it was before this attempt started. Out-of-bounds changes do not follow the next attempt into main. */
 function resetAttempt(ctx, d) {
   if (!existsSync(d.worktree)) return null;
   const tagName = `dlm-rejected/${d.dispatch_id}`;
@@ -575,7 +575,7 @@ function reject(ctx, d, reason, findings) {
     dispatch_id: d.dispatch_id,
     node_id: d.node_id,
     reason,
-    // 回灌給 worker 的只有驗收與 gate 的輸出;worker 自選指令的重跑輸出不帶(否則就是外洩通道)
+    // Only acceptance and gate output is fed back to the worker; the re-run output of commands the worker chose itself is not included (otherwise it is a leak channel)
     findings: findings.map((f) => ({
       check: f.check, detail: f.detail,
       ...(f.evidence && !WORKER_CHOSEN.includes(f.check) ? { evidence: tail(f.evidence, 1500) } : {}),
@@ -584,8 +584,8 @@ function reject(ctx, d, reason, findings) {
 }
 
 /**
- * merge-tree 的依賴。不再一律 symlink 根目錄的 node_modules:worker(沒有沙箱時)寫得到它,
- * 改壞測試框架就能讓最後一道 gate 失效。有 lockfile 就用本機快取裝一份乾淨的(--ignore-scripts,不執行任何安裝腳本)。
+ * Dependencies for the merge tree. No longer always a symlink to the root node_modules: the worker (when there is no sandbox) can write to it,
+ * and breaking the test framework would defeat the last gate. If there is a lockfile, install a clean copy from the local cache (--ignore-scripts, runs no install scripts).
  */
 function installDeps(ctx, dir) {
   const mode = ctx.config.gates.install ?? 'auto';
@@ -597,8 +597,8 @@ function installDeps(ctx, dir) {
   const r = runArgv('npm', ['ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, timeoutMs: ctx.config.gates.timeout_minutes * 60000 });
   ctx.log(`  [merge-tree] install=npm-ci-offline exit=${r.code} ms=${r.ms}`);
   if (r.code === 0) return { ok: true };
-  // v4:worker 在 workspaces(packages/*、apps/*)底下新增一個套件的 package.json,lockfile 就對不上,npm ci 一定失敗,
-  // 而 worker 改不到 package-lock.json(gate 定義檔)。這種情況退回 symlink 根目錄的 node_modules,不把它當成 gate 紅(v4 實測)
+  // v4: when the worker adds a package.json for a new package under workspaces (packages/*, apps/*), the lockfile no longer matches and npm ci always fails,
+  // and the worker cannot change package-lock.json (a gate definition file). In that case fall back to a symlink to the root node_modules and do not count it as a red gate (v4 real run)
   if (mode === 'auto' && /can only install packages when your package\.json and package-lock\.json/.test(r.stdout + r.stderr)) {
     ctx.log('  [merge-tree] lockfile 跟新增的 workspace 套件對不上,改用根目錄的 node_modules(之後在根目錄 npm install 更新 lockfile)');
     linkDeps(ctx.root, dir);
@@ -617,7 +617,7 @@ function runMergeGates(ctx, d) {
     if (!t.ok) return { ok: false, results: [], output_tail: `和主線合併就衝突:\n${tail(t.output, 2000)}` };
     const inst = installDeps(ctx, t.dir);
     if (!inst.ok) return { ok: false, results: [{ name: 'install', exit: inst.code, ms: inst.ms }], output_tail: inst.output, tree_sha: t.sha };
-    // 別的節點已批准但還沒做完的 gherkin 不算進這次的全 gate(它們一定紅);這個節點自己的照跑
+    // Gherkin of other nodes that are approved but not finished is left out of this full gate (it is always red); this node's own gherkin still runs
     writePendingFeatures(t.dir, pendingFeatures(ctx.dag, ctx.state, d.node_id));
     return { ...runGates(t.dir, ctx.config, { log: (l) => ctx.log(`  [merge-tree] ${l}`), root: ctx.root }), tree_sha: t.sha };
   });
@@ -627,8 +627,8 @@ function runMergeGates(ctx, d) {
 }
 
 /**
- * gate 結果過期了嗎:跑 gate 之後主線的程式碼有沒有變。只有 dlm 狀態檔(ledger、STATUS.md…)變動不算,
- * 否則每次 tick 存檔都會讓結果過期。沒有 main_sha 的舊紀錄一律當過期。
+ * Is the gate result stale: did the code on main change after the gate ran. A change only in dlm state files (ledger, STATUS.md...) does not count,
+ * otherwise every tick's save would make the result stale. Old records without main_sha are always treated as stale.
  */
 function gatesStale(ctx, d) {
   const main = headSha(ctx.root, ctx.config.main_branch);
@@ -646,7 +646,7 @@ function finalize(ctx, d, node) {
     return;
   }
   const main = ctx.config.main_branch;
-  // 等決定的這段時間(可能幾小時)別的節點可能已經合併;在舊主線上綠的 gate 不代表在新主線上綠
+  // While waiting for a decision (possibly hours) other nodes may have merged; a gate that was green on the old main does not mean it is green on the new main
   if (!isAncestor(ctx.root, d.branch, main) && gatesStale(ctx, d)) {
     ctx.log(`  ${d.dispatch_id} 的 gate 結果是在舊主線上跑的,在新主線上重跑`);
     runMergeGates(ctx, d);
@@ -713,7 +713,7 @@ export async function processDone(ctx) {
       continue;
     }
     const acceptRef = `accept:${d.dispatch_id}`;
-    if (ctx.state.decisions.has(acceptRef)) continue; // 等使用者或已由 applyDecisions 處理
+    if (ctx.state.decisions.has(acceptRef)) continue; // waiting on the user, or already handled by applyDecisions
     const route = acceptRoute({
       level: ctx.config.autonomy.level, summary, tier: node.tier, criticAvailable: criticConfigured(ctx.config),
       kind: node.kind, hasAccept: !!node.accept,
@@ -735,7 +735,7 @@ export async function processDone(ctx) {
         ctx.append('orchestrator', 'note', { text: `Critic 呼叫失敗(${c.error}),改問使用者`, dispatch_id: d.dispatch_id });
       }
     }
-    // v4:機器檢查(mutation、證據…)排前面、模型題排後面,每行截短;v3 用 tail 截 1500 字,最重要的 mutation 那行被切掉
+    // v4: machine checks (mutation, evidence...) first, model questions after, each line shortened; v3 cut to the last 1500 characters with tail, and the most important mutation line got cut off
     const MODEL_CHECKS = ['scenario-honesty', 'claim-supported'];
     const ordered = [...summary.abstains].sort((a, b) => MODEL_CHECKS.includes(a.check) - MODEL_CHECKS.includes(b.check));
     const lines = ordered.map((a) => `- ${a.check}:${String(a.detail ?? '').slice(0, 220)}`);
@@ -750,7 +750,7 @@ export async function processDone(ctx) {
       question: `要合併 ${node.id} 的 ${d.leg} 棒嗎?${abstains ? `有 ${summary.abstains.length} 項沒把握,見下方` : ''}${unverifiedShared ? '(shared 節點沒有 accept 指令,沒有機器驗收)' : ''}`,
       ...(abstains ? { untrusted_text: abstains, untrusted_source: 'verifier' } : {}),
       options: [{ key: 'yes', label: '合併' }, { key: 'no', label: '退回重做(原話會交給 worker)' }],
-      // v4:能走到這裡代表 script 檢查與合併後全 gate 都綠、沒有任何 FAIL;「沒把握」不是「有問題」,v3 推薦退回只會讓人每次都改選合併
+      // v4: reaching here means the script checks and the post-merge full gate are all green, with no FAIL; "not sure" is not "has a problem", and v3 recommending send-back only made people switch to merge every time
       recommendation: 'yes',
       reason: `script 檢查全過、合併後全 gate 綠;FAIL 0、ABSTAIN ${summary.abstains.length}${summary.abstains.length ? '(沒把握的項目值得看一眼,但沒有找到問題)' : ''}${unverifiedShared ? ';shared 節點沒有機器驗收,請確認用途' : ''}`,
       blocks: [],
@@ -780,7 +780,7 @@ export function applyDecisions(ctx) {
       if (!d) continue;
       const parent = ctx.state.nodes.get(d.node_id);
       if (parent.status !== 'blocked') continue;
-      // v4:決定之後父節點又被封鎖(別的原因)時不要再套用一次(v3 會重複 unblock,把新的待決事項繞過去,實測)
+      // v4: if the parent node was blocked again (for another reason) after the decision, do not apply it a second time (v3 would unblock again and bypass the new pending decision, seen in a real run)
       if (parent.lastSeq > rec.answer.seq) continue;
       if (choice === 'yes') applySpawn(ctx, d, d.spawn, `decision:${ref}`);
       else ctx.append('orchestrator', 'unblock', { node_id: d.node_id, ref, note: `子節點提案沒被批准:${verbatim}。請在原範圍內完成。` });
@@ -788,10 +788,10 @@ export function applyDecisions(ctx) {
       const nodeId = kind === 'stuck' ? target.split('#')[0] : ctx.state.dispatches.get(target)?.node_id;
       const s = nodeId && ctx.state.nodes.get(nodeId);
       if (!s || s.status !== 'blocked') continue;
-      if (s.lastSeq > rec.answer.seq) continue; // 決定之後又被封鎖,是新的一次
+      if (s.lastSeq > rec.answer.seq) continue; // blocked again after the decision, so this is a new one
       if (choice === 'retry') ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: verbatim });
       if (choice === 'skip') {
-        // v4.7.3:使用者決定跳過整合點的測試棒。決定時的狀態可能變了,套用前再重跑一次驗收:還是綠的才記 leg_done
+        // v4.7.3: the user decided to skip the integration point's test leg. The state may have changed since the decision, so re-run acceptance before applying: only record leg_done if it is still green
         const d = kind === 'stuck'
           ? [...ctx.state.dispatches.values()].reverse().find((x) => x.node_id === nodeId && x.leg === 'test')
           : ctx.state.dispatches.get(target);
@@ -817,7 +817,7 @@ export function applyDecisions(ctx) {
 // ---------------------------------------------------------------- dispatch
 
 function testGlobs(node, config) {
-  // v4.5:節點自己寫了 tests 就用它;沒寫就從 owns 推,加上專案語言的慣例(go 的 *_test.go 跟程式放在一起)
+  // v4.5: if the node wrote its own tests, use them; otherwise infer from owns, plus the project language's convention (go's *_test.go sits next to the code)
   if (node.tests?.length) return node.tests;
   const lang = config?.project?.language ?? 'node';
   return (node.owns ?? []).flatMap((g) => {
@@ -833,11 +833,11 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
   const cfg = ctx.config;
   const cap = capabilityOf(node.id);
   const steps = [`features/steps/${cap}.steps.*`, `features/steps/${cap}/**`];
-  // 整合點的步驟照 features/steps/README.md 放 integration.steps.ts
+  // Integration point steps go in integration.steps.ts, per features/steps/README.md
   if (node.kind === 'integration') steps.push('features/steps/integration.steps.*', 'features/steps/integration/**');
-  // 例外只有兩種,都走使用者批准的 shared 節點(變更也走 DAG,不走旁路):
-  //   shared/contracts* 可以改 contracts/;
-  //   shared/* 的 owns 明列某個 gate 定義檔(例:shared/deps 列 package.json、package-lock.json)時可以改那個檔。
+  // There are only two exceptions, both through a shared node approved by the user (the change also goes through the DAG, not a side path):
+  //   shared/contracts* may change contracts/;
+  //   when the owns of shared/* explicitly lists a gate definition file (e.g. shared/deps lists package.json, package-lock.json), that file may be changed.
   const owns = new Set(node.owns ?? []);
   const forbidden = cfg.paths.forbidden.filter((g) => {
     if (node.id.startsWith('shared/contracts') && g.startsWith('contracts/')) return false;
@@ -848,7 +848,7 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
   let acceptance = [];
   let doneWhen;
   const green = node.accept ? [{ cmd: node.accept, expect_exit: 0 }] : [];
-  // v4.5:characterize 棒寫的測試只有那一棒能改;後面每一棒都不准動,實作棒還要讓它保持綠(現有行為沒被改壞)
+  // v4.5: tests written by the characterize leg can be changed only by that leg; no later leg may touch them, and the dev leg must also keep them green (existing behavior not broken)
   const ch = characterizes(node) ? node.characterize : null;
   if (ch && cand.leg !== 'characterize') forbidden.push(...ch.tests);
   if (ch && !['characterize', 'test', 'test-fix'].includes(cand.leg)) green.push({ cmd: ch.cmd, expect_exit: 0 });
@@ -871,9 +871,9 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
     case 'test-fix':
       allowed = [...testGlobs(node, cfg), ...steps];
       if (node.gherkin) forbidden.push(node.gherkin);
-      // 實作棒卡住時的內容已退回,實作仍不存在,修好的測試一樣應該是紅的。
-      // v4.7.3:整合點例外——它接的東西多半已經在主線上(能力節點做的),修好的測試常常就是綠的,要求紅只會讓這一棒永遠過不了
-      // (實跑:minilang 的 I3,test-fix 棒回報「實作已經讓它全綠,硬改紅會不忠於規格」)。整合點的 test-fix 不檢查紅綠,下一棒(integrate)照樣要綠
+      // The content from when the dev leg got stuck has been sent back, so the implementation still does not exist and the fixed tests should still be red.
+      // v4.7.3: integration points are an exception. What they wire up is mostly already on main (done by capability nodes), so the fixed tests are often green, and requiring red would make this leg never pass
+      // (seen in a real run: minilang's I3, where the test-fix leg reported "the implementation already makes it all green; forcing it red would not be faithful to the spec"). The test-fix leg of an integration point does not check red / green, and the next leg (integrate) must still be green
       acceptance = node.accept && node.kind !== 'integration' ? [{ cmd: node.accept, expect_exit: -1 }] : [];
       doneWhen = '只修正 findings 指出的測試或步驟定義錯誤,讓測試忠實反映規格(gherkin,以及 findings 引用的節點規格);不改任何實作檔、不改 gherkin。'
         + (node.kind === 'integration' ? '整合點的實作可能已經存在,修好的測試是綠的也沒關係,下一棒會驗。' : '')
@@ -939,11 +939,11 @@ export function buildWorkerPrompt(ctx, node, envelope, wt) {
 }
 
 /**
- * v4.7.3 整合點的測試棒做不出紅燈:能力節點已經把整合 gherkin 全部做到了(驗收在動手前就是綠的)。
- * 測試棒只能造假(重複定義步驟弄成 ambiguous、寫故意失敗的測試);誠實的 worker 會回報卡住,重試也一樣,版本永遠到不了試用。
- * dlm 自己在這一棒的樹上重跑驗收(用完即丟的副本):綠的才多給使用者一個選項「跳過測試棒」(記 leg_done,接著跑整合棒)。
- * 只限整合點的測試棒:能力節點的驗收一開始就綠,代表 gherkin 沒寫到新東西,該回頭改規格。
- * 實測:todo-cli 的 I1。只看得到 MCP 的 AI 把命令列入口放在能力節點裡,整合 gherkin 又沿用能力的句子,I1 的測試棒卡住。
+ * v4.7.3: the integration point's test leg cannot produce a red: the capability nodes already did all of the integration gherkin (acceptance was green before any work started).
+ * The test leg could only fake it (define steps twice to make them ambiguous, write tests that fail on purpose); an honest worker reports stuck, and a retry is the same, so the version never reaches hand trial.
+ * dlm re-runs acceptance itself on this leg's tree (a throwaway copy): only if it is green does the user get one extra option, "skip the test leg" (record leg_done, then run the integrate leg).
+ * Only for an integration point's test leg: if a capability node's acceptance is green from the start, the gherkin did not describe anything new and the spec should be revised.
+ * Seen in a real run: todo-cli's I1. An AI that could only see the MCP put the command-line entry point in a capability node, the integration gherkin reused the capability's sentences, and I1's test leg got stuck.
  */
 export function integrationAlreadyGreen(ctx, d, node) {
   if (!d || d.leg !== 'test' || node?.kind !== 'integration' || !node.accept || !d.worktree || !existsSync(d.worktree)) return null;
@@ -957,9 +957,9 @@ export function integrationAlreadyGreen(ctx, d, node) {
   }
 }
 /**
- * v4.7.3 派整合點的測試棒之前先檢查:驗收在這棵樹(主線 + 分支)上已經是綠的 → 測試棒不可能誠實地先紅,派了只會卡住、問使用者、再跳過。
- * 只在第一次派這個節點、而且不是重做(沒有 findings,例如試用失敗後重做,測試棒可能要補測試)時檢查。
- * 實跑:todo-cli I1、wordfreq I1、minilang I3 都是測試棒卡住 → 使用者選 skip;minilang I3 的 worker 直接建議「把 I3 當作已滿足」。
+ * v4.7.3: before dispatching an integration point's test leg, check: if acceptance is already green on this tree (main + branch), the test leg cannot honestly go red first, and dispatching it would only get stuck, ask the user, then skip.
+ * Checked only the first time this node is dispatched, and not on a redo (no findings; for example after a failed hand trial the test leg may need to add tests).
+ * Seen in a real run: todo-cli I1, wordfreq I1 and minilang I3 all got stuck at the test leg -> the user chose skip; minilang I3's worker directly suggested "treat I3 as already satisfied".
  */
 function integrationGreenBeforeTest(ctx, node, cand, wt) {
   if (cand.leg !== 'test' || node.kind !== 'integration' || !node.accept) return null;
@@ -994,7 +994,7 @@ function blockStuck(ctx, cand) {
       ...(green?.green ? [SKIP_TEST_LEG] : []),
       { key: 'block', label: '先擱置' },
     ],
-    // v4:v3 一律推薦 retry;連續失敗後沒有新指示的重試幾乎都是同樣的結果
+    // v4: v3 always recommended retry; after repeated failures a retry with no new instructions almost always gives the same result
     recommendation: green?.green ? 'skip' : 'block',
     reason: green?.green ? skipReason(green) : `同一棒已連續 ${cand.attempt - 1} 次沒通過;要重試請在原話裡寫具體指示,不然會重複同樣的失敗`,
     blocks: [cand.id],
@@ -1003,14 +1003,14 @@ function blockStuck(ctx, cand) {
 }
 
 /**
- * 這一棒從哪裡算起。同一棒的重試沿用第一次的起點(被 blocked 前收進來的半成品也要一起驗);
- * v4:換了一棒(被退回測試棒、或 pipeline 改了)就從現在算起——v3 會沿用前一棒的起點,
- * 測試棒被算進前一棒 integrate 留下的實作檔,判越界三次後卡住(實測)。
+ * Where this leg is counted from. A retry of the same leg reuses the first attempt's starting point (half-finished work collected before being blocked must be verified together);
+ * v4: when the leg changed (sent back to the test leg, or the pipeline changed), count from now. v3 reused the previous leg's starting point,
+ * so the test leg was charged with the implementation files left by the previous integrate leg, was judged out of bounds three times, and got stuck (seen in a real run).
  */
 function legBaseFor(ctx, nodeId, leg, base) {
   const s = ctx.state.nodes.get(nodeId);
   if (!s.legBase) return base;
-  // 這個節點最近連續幾次都是同一棒:起點是那一串的第一次派工當下的分支頭
+  // This node's last several dispatches were all the same leg: the starting point is the branch head at the time of the first dispatch in that run
   const mine = [...ctx.state.dispatches.values()].filter((x) => x.node_id === nodeId);
   let first = null;
   for (let i = mine.length - 1; i >= 0 && mine[i].leg === leg; i--) first = mine[i];
@@ -1040,7 +1040,7 @@ export async function dispatchPhase(ctx) {
     if (started >= slots) break;
     const cand = byId.get(id);
     const node = getNode(ctx.dag, id);
-    // v4.6:這一棒用哪個帳號(pool 裡沒在冷卻、最近用得最少的)。全部都在冷卻就這輪不派
+    // v4.6: which account this leg uses (the one in the pool not in cooldown that was used least recently). If all are in cooldown, dispatch nothing this round
     let account = null;
     if (cfg.agents.worker.accounts?.length) {
       account = pickAccount(cfg.agents.worker.accounts, globalUsage());
@@ -1092,7 +1092,7 @@ export async function dispatchPhase(ctx) {
       atomicWrite(join(wt, '.dlm', 'prompt.md'), prompt);
       if (existsSync(join(wt, '.dlm', 'report.json'))) unlinkSync(join(wt, '.dlm', 'report.json'));
       const sbx = prepareSandbox(ctx, wt, dispatchId, envelope, prompt);
-      // worker 的時限:lease 與 agents.worker.timeout_minutes 取小的
+      // The worker's time limit: the smaller of the lease and agents.worker.timeout_minutes
       const leaseMin = Math.min(cfg.caps.lease_minutes, cfg.agents.worker.timeout_minutes ?? cfg.caps.lease_minutes);
       ctx.append('orchestrator', 'dispatch', {
         dispatch_id: dispatchId, node_id: id, leg: cand.leg, attempt: cand.attempt, branch, worktree: wt, base_sha: base,
@@ -1114,7 +1114,7 @@ export async function dispatchPhase(ctx) {
       ctx.log(`→ 派工 ${dispatchId} ${id} [${cand.leg}] 第 ${cand.attempt} 次${account ? `(帳號 ${account.name})` : ''}`);
       started++;
     } catch (e) {
-      // 還沒記 dispatch 就失敗的話,沙箱副本沒人會收,在這裡清掉
+      // If it failed before the dispatch was recorded, nobody would clean up the sandbox copy, so remove it here
       if (!ctx.state.dispatches.has(dispatchId)) removeTree(join(ctx.root, '.dlm', 'sandboxes', dispatchId));
       ctx.append('orchestrator', 'block', { node_id: id, reason: `派工失敗:${String(e.message).slice(0, 300)}` });
     }
@@ -1125,8 +1125,8 @@ export async function dispatchPhase(ctx) {
 // ---------------------------------------------------------------- tick
 
 /**
- * 整個 tick 在一把鎖裡:daemon 在跑時手動再 `dlm tick`,兩個 tick 會同時處理同一個交件(重複 merge、重複派工)。
- * 拿不到鎖就直接跳過(ok,不是錯誤)。
+ * The whole tick runs under one lock: if `dlm tick` is run by hand while the daemon is running, two ticks would handle the same hand-in at once (duplicate merge, duplicate dispatch).
+ * If the lock cannot be taken, skip right away (ok, not an error).
  */
 export async function tick(root, { log = () => {} } = {}) {
   const lockPath = join(root, '.dlm', 'tick.lock');
@@ -1139,7 +1139,7 @@ export async function tick(root, { log = () => {} } = {}) {
   }
 }
 
-/** git 設定指紋:第一次記基準;之後不一致就停機,等使用者檢查後 resume(resume 會重記基準)。 */
+/** git config fingerprint: record a baseline the first time; if it later differs, halt and wait for the user to check and resume (resume records the baseline again). */
 function checkGitConfig(ctx) {
   const known = readConfigBaseline(ctx.root);
   if (!known) {
@@ -1183,7 +1183,7 @@ async function tickLocked(root, log) {
     await harvest(ctx);
     await processDone(ctx);
     applyDecisions(ctx);
-    await processDone(ctx); // 決定剛解開的交件
+    await processDone(ctx); // hand-ins that the decisions just unblocked
     const r = await dispatchPhase(ctx);
     log(`dispatch: ${r}`);
   } else {

@@ -1,8 +1,8 @@
-// v4.7 操作層:CLI、HTTP API(dlm hub)、`dlm op` 共用的那一份邏輯。每個操作吃一個 JSON 物件、回一個 JSON 物件。
-// CLI 把結果印成給人看的字;API 原樣回 JSON。
+// v4.7 operations layer: the one piece of logic shared by the CLI, the HTTP API (dlm hub) and `dlm op`. Each operation takes one JSON object and returns one JSON object.
+// The CLI prints the result as text for people; the API returns the JSON as is.
 //
-// 一個專案的操作永遠由「那個專案自己的 tools/dlm.mjs」執行(dlm hub 透過 `dlm op` 呼叫),
-// 所以好幾個專案裝的 dlm 版本不一樣也不會互相讀錯格式。
+// A project's operations are always run by that project's own tools/dlm.mjs (dlm hub calls it through `dlm op`),
+// so projects with different installed dlm versions never misread each other's formats.
 import { spawn } from 'node:child_process';
 import { existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -26,14 +26,14 @@ import { replay } from './state.mjs';
 import { DlmError, ensureDir, lockHolder, pidAlive, readJson, tryLock } from './util.mjs';
 
 const DLM = fileURLToPath(new URL('../dlm.mjs', import.meta.url));
-/** 這一份 dlm 的版本:dev-loop-mcp repo 裡看 VERSION;裝進專案的看 .dlm-install.json。 */
+/** This dlm's version: in the dev-loop-mcp repo read VERSION; in an installed project read .dlm-install.json. */
 function readVersion() {
-  try { return readFileSync(new URL('../../VERSION', import.meta.url), 'utf8').trim(); } catch { /* 裝進專案的沒有 VERSION */ }
+  try { return readFileSync(new URL('../../VERSION', import.meta.url), 'utf8').trim(); } catch { /* an installed project has no VERSION */ }
   try { return JSON.parse(readFileSync(new URL('../../.dlm-install.json', import.meta.url), 'utf8')).version; } catch { return 'unknown'; }
 }
 export const VERSION = readVersion();
 
-/** 寫了事件就重新產生 STATUS / DECISIONS(commit 交給下一個 tick)。 */
+/** After writing an event, regenerate STATUS / DECISIONS (the commit is left to the next tick). */
 export function refreshRendered(root) {
   const dag = loadDag(root);
   const events = readEvents(root);
@@ -43,7 +43,7 @@ export function refreshRendered(root) {
 const text = (v) => (typeof v === 'string' ? v : '');
 const verbatimOf = (a) => (a.verbatim === true ? '' : text(a.verbatim));
 
-// ------------------------------------------------------------------ 背景迴圈
+// ------------------------------------------------------------------ background loop
 
 export const runLockPath = (root) => join(root, '.dlm', 'run.lock');
 export const runStopPath = (root) => join(root, '.dlm', 'run.stop');
@@ -62,7 +62,7 @@ export function loopStatus(root) {
   return { running: !!pid, pid: pid ?? null, stopping: !!pid && existsSync(runStopPath(root)) };
 }
 
-/** 在背景啟動 dlm run;等到它真的拿到鎖才回(最多 10 秒),所以緊接著再呼叫一次一定是「已經在跑」。 */
+/** Start dlm run in the background; return only once it really holds the lock (up to 10 seconds), so an immediate second call is always "already running". */
 export async function loopStart(root, { interval = 60, maxTicks = null } = {}) {
   const running = loopPid(root);
   if (running) throw new DlmError(`背景迴圈已經在跑(pid ${running});同一個 repo 只能有一個`, 2);
@@ -92,7 +92,7 @@ export async function loopStart(root, { interval = 60, maxTicks = null } = {}) {
   return { started: true, pid: child.pid, log: '.dlm/run.log', note: '已啟動,但 10 秒內還沒看到它拿到鎖;看 .dlm/run.log' };
 }
 
-/** 請背景迴圈在這一輪做完後結束(不會在合併到一半時被砍)。wait 秒內等它真的結束。 */
+/** Ask the background loop to stop after this round (it is not killed in the middle of a merge). Wait up to `wait` seconds for it to actually stop. */
 export async function loopStop(root, { wait = 0 } = {}) {
   const pid = loopPid(root);
   if (!pid) return { stopped: true, was_running: false };
@@ -104,7 +104,7 @@ export async function loopStop(root, { wait = 0 } = {}) {
   return { stopped: !still, was_running: true, pid, ...(still ? { note: '已要求結束;這一輪做完就會停' } : {}) };
 }
 
-// ------------------------------------------------------------------ 帳號與角色
+// ------------------------------------------------------------------ accounts and roles
 
 export function projectRoles(root) {
   const config = loadConfig(root);
@@ -114,7 +114,7 @@ export function projectRoles(root) {
   }));
 }
 
-/** 這台電腦的帳號 + 所有專案加起來的用量;root 有給就附上這個專案哪個角色在用。login = 順便問 CLI 登入狀態(慢)。 */
+/** This machine's accounts plus usage summed over all projects; if root is given, also show which role in this project uses each. login = also ask the CLI for its login state (slow). */
 export function accountRows(root = null, { login = false } = {}) {
   const accounts = loadAccounts();
   const usage = globalUsage();
@@ -135,7 +135,7 @@ export function accountRows(root = null, { login = false } = {}) {
   });
 }
 
-/** 設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)、模型(null / '' = 拿掉)。改 dlm.config.json 並 commit。 */
+/** Set which accounts a role rotates through (empty array = use no account) and the model (null / '' = remove it). Edits dlm.config.json and commits. */
 export function setRole(root, { role, accounts = [], model } = {}) {
   if (!ROLES.includes(role)) throw new DlmError(`角色是 ${ROLES.join(' / ')} 其中一個`);
   if (!Array.isArray(accounts)) throw new DlmError('accounts 要是陣列');
@@ -151,7 +151,7 @@ export function setRole(root, { role, accounts = [], model } = {}) {
   if (!pool.length) delete cur.accounts;
   if (model === null || model === '' || model === 'none') delete cur.model;
   else if (typeof model === 'string') cur.model = model;
-  // 原本是 dlm setup 寫的 Claude 預設指令 → 拿掉,改用帳號那個 CLI 的預設(才換得了 CLI、帶得進 model)
+  // This was the default Claude command written by dlm setup -> remove it and use the default of the account's CLI (so the CLI can be changed and model can be passed in)
   const defaults = { worker: CLAUDE_WORKER_CMD, critic: CLAUDE_CRITIC_CMD, verifier: CLAUDE_VERIFIER_CMD };
   if (pool.length && (cur.cmd === defaults[role] || cur.cmd === 'claude -p --output-format json')) cur.cmd = null;
   if (!pool.length && !cur.cmd) {
@@ -168,9 +168,9 @@ export function setRole(root, { role, accounts = [], model } = {}) {
 }
 
 /**
- * v4.7.3 改使用者親口決定的設定:自治等級、每日預算、同時幾個 worker。只改有給的欄位,改 dlm.config.json 並 commit(訊息帶原話)。
- * 以前只能重跑 dlm setup:MCP 那邊的 AI 寫不了檔,重跑 setup 又會順手改到別的設定(實測:為了把預算從 $3 改成 $8,
- * AI 先停背景迴圈、重跑 setup,worker 的帳號被換成固定指令,再用 setRole 改回來)。
+ * v4.7.3 change settings the user decides in person: autonomy level, daily budget, how many workers at once. Only edit the fields given; edit dlm.config.json and commit (the message carries the verbatim words).
+ * Before, the only way was to rerun dlm setup: the AI on the MCP side cannot write files, and rerunning setup also changes other settings (seen in a real run: to change the budget from $3 to $8,
+ * the AI stopped the background loop and reran setup, the worker's account was replaced by a fixed command, and then it had to use setRole to change it back).
  */
 export const SETTING_LIMITS = { autonomy_level: [0, 2], daily_usd: [0.01, 10000], parallel: [1, 20] };
 export function setSettings(root, { autonomy_level, daily_usd, parallel, verbatim } = {}) {
@@ -203,7 +203,7 @@ export function setSettings(root, { autonomy_level, daily_usd, parallel, verbati
   return { changed: Object.fromEntries(Object.keys(changes).map((k) => [k, { from: was[k], to: changes[k] }])), commit, ...(notes.length ? { notes } : {}) };
 }
 
-// ------------------------------------------------------------------ 專案的操作
+// ------------------------------------------------------------------ project operations
 
 export function status(root) {
   const ctx = new Ctx(root);
@@ -221,7 +221,7 @@ export function events(root, { after = 0, limit = 200, types = null } = {}) {
   const want = types ? new Set(Array.isArray(types) ? types : String(types).split(',')) : null;
   const list = all.filter((e) => e.seq > Number(after || 0) && (!want || want.has(e.type)));
   const n = Math.max(1, Math.min(Number(limit) || 200, 2000));
-  // mac / prev_hash 是帳本內部的簽章,API 不外流
+  // mac / prev_hash are the ledger's internal signature; the API does not expose them
   const clean = list.slice(0, n).map(({ mac: _m, prev_hash: _p, chain_start: _c, ...e }) => e);
   return { events: clean, last_seq: all.at(-1)?.seq ?? 0, more: list.length > n };
 }
@@ -244,7 +244,7 @@ export function haltOp(root, { reason, keep_workers = false } = {}) {
   const seq = append(root, 'dlm-cli', 'halt', { reason }).seq;
   let out = { seq, stopped: [], deferred: false, keep_workers: !!keep_workers };
   if (!keep_workers) {
-    // 背景迴圈正在 tick 的話,它下一輪看到停機會自己收掉 worker;這裡拿得到鎖就立刻收
+    // If the background loop is ticking, on its next round it sees the halt and cleans up workers itself; if we can get the lock here, clean up right away
     const release = tryLock(join(root, '.dlm', 'tick.lock'));
     if (!release) out = { ...out, deferred: true };
     else {
@@ -263,8 +263,8 @@ export function haltOp(root, { reason, keep_workers = false } = {}) {
 }
 
 /**
- * 不互動的 dlm setup。answers 的 key 就是問題的 id(mode、test_cmd、platform、worker_cmd、verifier、autonomy、critic、
- * budget、parallel、npm_install、commit),沒給的用預設值;npm_install 預設不裝(要下載,幾分鐘)。
+ * Non-interactive dlm setup. The keys of answers are the question ids (mode, test_cmd, platform, worker_cmd, verifier, autonomy, critic,
+ * budget, parallel, npm_install, commit); missing ones use defaults; npm_install defaults to not installing (it downloads, a few minutes).
  */
 export async function setupOp(root, { answers = {} } = {}) {
   const a = { npm_install: 'n', ...Object.fromEntries(Object.entries(answers ?? {}).map(([k, v]) => [k, typeof v === 'boolean' ? (v ? 'y' : 'n') : String(v)])) };
@@ -299,7 +299,7 @@ const readJsonSafe = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); 
 
 const done = (root, ev, extra = {}) => { refreshRendered(root); return { seq: ev.seq, ...extra }; };
 
-/** 每個操作:project = 要在專案裡執行;write = 會改東西(API 用 POST / PUT / DELETE)。 */
+/** Each operation: project = must run inside a project; write = changes things (the API uses POST / PUT / DELETE). */
 export const OPS = {
   status: { project: true, fn: (root) => status(root) },
   dashboard: { project: true, fn: (root) => dashboardData(root) },
@@ -356,7 +356,7 @@ export const OPS = {
   accounts: { project: false, fn: (root, a) => ({ accounts: accountRows(root, { login: !!a.login }) }) },
 };
 
-/** 執行一個操作。回 { ok: true, result } 或 { ok: false, error, status }(status 是給 HTTP 用的狀態碼)。 */
+/** Run one operation. Returns { ok: true, result } or { ok: false, error, status } (status is the HTTP status code). */
 export async function runOp(name, root, args = {}) {
   const op = OPS[name];
   if (!op) return { ok: false, error: `沒有這個操作:${name}`, status: 404 };

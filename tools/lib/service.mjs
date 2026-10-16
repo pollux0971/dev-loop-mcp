@@ -1,6 +1,6 @@
-// v4.7 執行 api.mjs 裡的一個操作,不管是從 HTTP(dlm hub)還是 MCP(dlm mcp)進來的。
-// - 專案的操作:交給「那個專案自己的 tools/dlm.mjs」執行(`dlm op <名稱>`,stdin JSON → stdout JSON),版本不同也不會讀錯格式。
-// - 這台電腦層級的(專案清單、帳號、建專案、升級):在這裡直接做。
+// v4.7 Run one operation from api.mjs, whether it came in over HTTP (dlm hub) or MCP (dlm mcp).
+// - Project operations: handed to "that project's own tools/dlm.mjs" (`dlm op <name>`, stdin JSON → stdout JSON), so differing versions do not misread the format.
+// - Machine-level things (project list, accounts, create project, upgrade): done right here.
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const DLM = JSON.stringify(fileURLToPath(new URL('../dlm.mjs', import.meta.url)));
 
-/** 名稱或路徑 → 專案。路徑是 dlm 專案但還沒登記 → 順手登記(用起來不用先 add)。 */
+/** Name or path → project. If the path is a dlm project but not registered yet, register it on the way (no need to add first). */
 export function findProject(nameOrPath) {
   if (!nameOrPath) throw new DlmError('要指定 project(名稱或路徑;dlm_list_projects 看有哪些)', 3);
   try {
@@ -28,7 +28,7 @@ export function findProject(nameOrPath) {
   }
 }
 
-/** 在專案裡跑 `dlm op <name>`。回 { ok, result } 或 { ok:false, error, status }。 */
+/** Run `dlm op <name>` inside the project. Returns { ok, result } or { ok:false, error, status }. */
 export function projectOp(path, name, args = {}, { timeoutMs = 120000 } = {}) {
   return new Promise((resolveP) => {
     if (!isDlmProject(path)) { resolveP({ ok: false, error: `${path} 不見了或不是 dlm 專案`, status: 404 }); return; }
@@ -56,7 +56,7 @@ export function projectOp(path, name, args = {}, { timeoutMs = 120000 } = {}) {
   });
 }
 
-/** 讀的操作做快取:帳本、設定、dag、提案、背景迴圈、跨專案帳號紀錄都沒變,就回上一次的結果(最多 20 秒)。 */
+/** Cache read operations: if the ledger, config, dag, proposals, background loop and cross-project account records are unchanged, return the last result (at most 20 seconds). */
 const READ_CACHE = new Map();
 const mtime = (p) => { try { return statSync(p).mtimeMs; } catch { return 0; } };
 function fingerprint(path) {
@@ -78,7 +78,7 @@ export async function cachedOp(path, name, args) {
 }
 export const clearCache = () => READ_CACHE.clear();
 
-// ------------------------------------------------------------------ 總覽
+// ------------------------------------------------------------------ overview
 
 function summarize(name, path, r) {
   const legacy = isLegacyProject(path);
@@ -111,7 +111,7 @@ export async function overview() {
   };
 }
 
-// ------------------------------------------------------------------ 這台電腦層級的操作
+// ------------------------------------------------------------------ machine-level operations
 
 export function flowDoc() {
   const byId = Object.fromEntries(ROUTES.map((r) => [r.id, r]));
@@ -154,17 +154,17 @@ const MACHINE = {
   removeAccount: (a, params) => removeAccount(params.account),
 };
 
-/** 活著嗎:版本與登記了幾個專案(hub 的 GET /api/v1/health 與 MCP 的 dlm_health 共用)。 */
+/** Alive? Version and how many projects are registered (shared by hub GET /api/v1/health and MCP dlm_health). */
 export const health = () => ({ ok: true, version: VERSION, projects: Object.keys(loadProjects()).length });
 
 /**
- * 執行一個路由(stream 與 openapi 由傳輸層自己處理)。args 已經檢查過(api.buildArgs)。
- * 回 { status, body };失敗時 body = { error: { message, status } }。
+ * Run one route (stream and openapi are handled by the transport layer itself). args were already checked (api.buildArgs).
+ * Returns { status, body }; on failure body = { error: { message, status } }.
  */
 export async function execRoute(route, params, args) {
   const err = (status, message) => ({ status, body: { error: { message, status } } });
   try {
-    // v4.7.3:health 在 MCP 也列成工具(dlm_health),以前只有 hub 會處理,從 MCP 呼叫一律失敗
+    // v4.7.3: health is also listed as a tool over MCP (dlm_health); before, only the hub handled it, so every call from MCP failed
     if (route.id === 'health') return { status: 200, body: health() };
     if (route.kind === 'machine') {
       const body = await MACHINE[route.id](args, params);

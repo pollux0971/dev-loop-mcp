@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { makeIsolatedTempDir } from '../../scripts/_root.js';
 
-/** repo 根目錄(features/steps/ 的上兩層) */
+/** Repo root (two levels above features/steps/) */
 export const ROOT = resolve(import.meta.dirname, '../..');
 
 type Manifest = Record<string, { cmd: string; interactive: boolean; expect?: string; expectExit?: number }>;
@@ -13,55 +13,55 @@ export interface RunResult {
   status: number | null;
   stdout: string;
   stderr: string;
-  /** stdout + stderr,方便「it prints …」類的斷言 */
+  /** stdout + stderr, handy for "it prints ..." style assertions */
   output: string;
 }
 
 /**
- * 所有步驟共用的狀態容器。
+ * State container shared by all steps.
  *
- * 三個原則:
- * 1. 每個 scenario 一個新的 World,不共用狀態
- * 2. 需要寫入的 fixture 一律複製到暫存目錄再動,絕不修改 contracts/fixtures/
- * 3. lastResult 存放 When 的產出,Then 從這裡斷言
+ * Three principles:
+ * 1. Each scenario gets a fresh World; no state is shared.
+ * 2. A fixture that needs writing is always copied to a temp dir first; never modify contracts/fixtures/.
+ * 3. lastResult holds the output of When; Then asserts against it.
  *
- * 通用步驟(features/steps/common.steps.ts)只讀寫這裡的欄位;各功能的步驟檔負責填值。
+ * Common steps (features/steps/common.steps.ts) only read and write the fields here; each feature's step file fills in the values.
  *
- * 下面列出的欄位是一組**通用起點**,依你的專案需要增減。
+ * The fields below are a **generic starting point**; add or remove them to fit your project.
  */
 export class ProjectWorld extends World {
-  /** 暫存的工作目錄,由 useFixture 建立 */
+  /** Temp working directory, created by useFixture */
   dir?: string | undefined;
   /**
-   * 測試裡的「今天」,依你的 fixture 設一個固定值,讓涉及日期的場景可預測。
-   * 預設是一個固定日期;改成跟你的 fixture 假設對齊的日期(不要用真實的今天,場景會變成不可重現)。
+   * "Today" inside tests. Set a fixed value that fits your fixtures so date-related scenarios are predictable.
+   * The default is a fixed date; change it to a date that matches your fixtures' assumptions (don't use the real today, or scenarios become unreproducible).
    */
   today = '2026-01-01';
-  /** 最近一次 When 的結果,型別由各步驟自己收斂 */
+  /** Result of the latest When; each step narrows the type itself */
   lastResult: unknown;
   /**
-   * 給通用步驟「the result is X」比對用的文字。
-   * 當 lastResult 不是原始值時,When 步驟可以直接設這個欄位,省得通用步驟猜。
+   * Text for the common step "the result is X" to compare against.
+   * When lastResult is not a primitive, the When step can set this field directly so the common step doesn't have to guess.
    */
   resultText?: string | undefined;
-  /** 最近一次拋出的錯誤,給「應該失敗」的場景用 */
+  /** Latest thrown error, for "should fail" scenarios */
   lastError?: Error | undefined;
   /**
-   * 對外部服務(例如 LLM / 第三方 API)的呼叫記錄,用來斷言「沒有呼叫外部服務」。
-   * 沒有這類依賴的專案可以整組刪掉。
+   * Record of calls to external services (e.g. LLM / third-party APIs), used to assert "no external service was called".
+   * A project without such dependencies can delete the whole group.
    */
   llmCalls: { task: string; prompt: string }[] = [];
-  /** 任何對外網路請求的記錄(fake adapter 推進來),用來斷言「沒有網路請求」 */
+  /** Record of any outbound network request (pushed in by a fake adapter), used to assert "no network request" */
   networkRequests: string[] = [];
-  /** 通用步驟「a fake router replaying the recorded fixtures」設 true;各功能的 When 自己建假實作 */
+  /** The common step "a fake router replaying the recorded fixtures" sets this to true; each feature's When builds its own fake */
   useFakeRouter = false;
-  /** 最近一次外部指令(standalone / dev server)的結果 */
+  /** Result of the latest external command (standalone / dev server) */
   lastRun?: RunResult;
-  /** 目前 scenario 所屬 feature 的 tags(Before hook 填) */
+  /** Tags of the feature the current scenario belongs to (filled by the Before hook) */
   tags: string[] = [];
-  /** 通用步驟載入的原始文字內容,依你的核心實體調整用途與命名 */
+  /** Raw text loaded by a common step; adjust its use and name to your core entity */
   fixtureText?: string;
-  /** 純函式檢查用:呼叫前的輸入物件參照與深拷貝,見 trackInput */
+  /** For pure-function checks: the input object reference and a deep copy taken before the call, see trackInput */
   inputRef?: unknown;
   inputSnapshot?: string;
 
@@ -69,7 +69,7 @@ export class ProjectWorld extends World {
     super(options);
   }
 
-  /** 把一份唯讀 fixture 複製到暫存目錄,回傳新路徑 */
+  /** Copy a read-only fixture into a temp dir and return the new path */
   useFixture(name: string): string {
     const src = join(ROOT, 'contracts/fixtures', name);
     const dst = makeIsolatedTempDir('proj-');
@@ -78,18 +78,18 @@ export class ProjectWorld extends World {
     return dst;
   }
 
-  /** 直接讀 fixture,不複製。只用於不會被修改的情況 */
+  /** Read a fixture directly without copying. Only for cases where it won't be modified */
   readFixture(relPath: string): string {
     return readFileSync(join(ROOT, 'contracts/fixtures', relPath), 'utf8');
   }
 
-  /** 讀暫存目錄裡的檔案 */
+  /** Read a file in the temp dir */
   read(relPath: string): string {
     if (!this.dir) throw new Error('尚未呼叫 useFixture');
     return readFileSync(join(this.dir, relPath), 'utf8');
   }
 
-  /** 純函式檢查:在呼叫被測函式之前記下輸入,之後用「the original object is unchanged」斷言 */
+  /** Pure-function check: record the input before calling the function under test, then assert with "the original object is unchanged" */
   trackInput<T>(input: T): T {
     this.inputRef = input;
     this.inputSnapshot = JSON.stringify(input);
@@ -97,8 +97,8 @@ export class ProjectWorld extends World {
   }
 
   /**
-   * 由 feature 檔的 tag 推出 standalone.json 的 key。v2 的 key 是能力名(dag 節點 id 的 `/v` 之前,例 `ingest`),
-   * 所以 `@ingest` 直接命中;也相容 v1 的 `NN-name` key(`@todo` → `01-todo`)。
+   * Derive the standalone.json key from the feature file's tag. In v2 the key is the capability name (the part of the dag node id before `/v`, e.g. `ingest`),
+   * so `@ingest` hits directly; v1 `NN-name` keys also work (`@todo` → `01-todo`).
    */
   standaloneKey(): string {
     const manifest = this.manifest();
@@ -115,9 +115,9 @@ export class ProjectWorld extends World {
   }
 
   /**
-   * 同步執行一個 shell 指令,結果放進 lastRun 並回傳。cwd 預設 repo 根;命令列的整合測試常要在暫存目錄跑(放測試用的檔),給 opts.cwd。
-   * 指令裡的 `--import tsx` 會換成 tsx 的絕對位置:在 repo 以外的目錄,node 解不到 tsx,子程序一啟動就失敗,
-   * 看起來像「還沒實作」的紅(假紅),之後實作棒怎麼改都綠不了(dlm v4.7.3 實測:步驟自己 spawn、cwd 設暫存目錄)。
+   * Run a shell command synchronously, store the result in lastRun and return it. cwd defaults to the repo root; CLI integration tests often need to run in a temp dir (holding test files), so pass opts.cwd.
+   * `--import tsx` in the command is replaced with tsx's absolute location: outside the repo, node can't resolve tsx and the child process fails at startup,
+   * which looks like a "not implemented yet" red (a fake red), and the dev leg can never turn it green however it edits (dlm v4.7.3 real run: the step spawns itself with cwd set to a temp dir).
    */
   runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): RunResult {
     const r = spawnSync(withTsxResolved(cmd), {
@@ -125,7 +125,7 @@ export class ProjectWorld extends World {
       shell: true,
       encoding: 'utf8',
       timeout: opts.timeoutMs ?? 120_000,
-      // 去掉 NODE_OPTIONS:cucumber 用 --import=tsx 啟動,子程序若在別的 cwd 會解不到 tsx 而假紅
+      // Drop NODE_OPTIONS: cucumber starts with --import=tsx, and a child process in another cwd can't resolve tsx, giving a fake red
       env: { ...withoutNodeOptions(process.env), ...opts.env },
     });
     const stdout = r.stdout ?? '';
@@ -134,7 +134,7 @@ export class ProjectWorld extends World {
     return this.lastRun;
   }
 
-  /** 跑 standalone.json 裡某個 key 的指令。不給 key 就由 tags 推 */
+  /** Run the command of a key in standalone.json. Without a key, derive it from the tags */
   runStandalone(key?: string, extraArgs = ''): RunResult {
     const k = key ?? this.standaloneKey();
     const entry = this.manifest()[k];
@@ -144,8 +144,8 @@ export class ProjectWorld extends World {
   }
 
   /**
-   * 啟動互動式指令(dev server),等到輸出出現 ready 字樣或逾時,然後關掉。
-   * 結果放進 lastRun:status 0 表示有看到 ready 字樣。
+   * Start an interactive command (dev server), wait until the output shows a ready marker or times out, then shut it down.
+   * The result goes into lastRun: status 0 means the ready marker was seen.
    */
   async startDevServer(key?: string, opts: { readyPattern?: RegExp; timeoutMs?: number } = {}): Promise<RunResult> {
     const k = key ?? this.standaloneKey();
@@ -163,7 +163,7 @@ export class ProjectWorld extends World {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        try { process.kill(-child.pid!, 'SIGTERM'); } catch { /* 已經結束 */ }
+        try { process.kill(-child.pid!, 'SIGTERM'); } catch { /* already exited */ }
         this.lastRun = { status, stdout, stderr, output: stdout + stderr };
         resolveRun(this.lastRun);
       };
@@ -181,8 +181,8 @@ export class ProjectWorld extends World {
   }
 }
 
-/** 複製環境變數但拿掉 NODE_OPTIONS(見 runCommand 的註解) */
-/** tsx 的絕對位置(從 repo 解析)。`node --import tsx` 只在 repo 裡解得到;換成這個,在任何 cwd 都載入得到。 */
+/** Copy the env vars but drop NODE_OPTIONS (see the comment in runCommand) */
+/** Absolute location of tsx (resolved from the repo). `node --import tsx` only resolves inside the repo; with this it loads from any cwd. */
 const TSX_URL = (() => { try { return import.meta.resolve('tsx'); } catch { return null; } })();
 function withTsxResolved(cmd: string): string {
   return TSX_URL ? cmd.replace(/--import(?:=|\s+)tsx(?![\w/.-])/g, `--import=${TSX_URL}`) : cmd;

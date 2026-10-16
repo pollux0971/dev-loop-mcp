@@ -1,4 +1,4 @@
-// 確定性檢查:同樣輸入永遠同樣結果。能用 script 判的絕不交給模型。
+// Deterministic checks: the same input always gives the same result. Anything a script can judge is never left to the model.
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { getNode } from '../dag.mjs';
@@ -8,11 +8,11 @@ import { listFiles, matchAny, run, runArgv, tail } from '../util.mjs';
 const r = (check, outcome, detail, evidence) => ({ check, outcome, detail, ...(evidence ? { evidence } : {}) });
 
 /**
- * 執行器:驗收、證據重跑、standalone 都經過它。
- * hostExecutor 直接在目錄裡跑(驗證用的副本、單元測試)。
+ * Executor: acceptance, evidence re-runs and standalone all go through it.
+ * hostExecutor runs directly in the directory (the verification copy, unit tests).
  */
 export function hostExecutor(cwd) {
-  // 驗收副本在 .dlm/ 底下、沒有 .git:不讓 git 往上找到外層主 repo(見 sandbox.mjs 的 sandboxCommand)
+  // The acceptance copy is under .dlm/ and has no .git: do not let git search upward and find the outer main repo (see sandboxCommand in sandbox.mjs)
   const env = { GIT_CEILING_DIRECTORIES: dirname(resolve(cwd)) };
   return {
     cwd,
@@ -24,12 +24,12 @@ export function hostExecutor(cwd) {
 const asExecutor = (x) => (typeof x === 'string' ? hostExecutor(x) : x);
 
 /**
- * 這一棒累積改了哪些檔:從棒的起點沿 first-parent 走、只算非 merge 的 commit。
- * 同步主線的 merge commit 不算(那是主線的東西);被 blocked 前先 commit 的半成品也算(必須一起驗)。
+ * Which files this leg changed in total: walk first-parent from the leg's start, counting only non-merge commits.
+ * Merge commits that sync main do not count (they belong to main); half-finished work committed before being blocked does count (it must be verified too).
  */
 export function legDiff(cwd, legBase, to, { onlyDlm = true } = {}) {
-  // v4:只算 dlm 替 worker 收件的 commit(作者 dlm@localhost;worker 在沒有 .git 的副本裡,自己 commit 不了)。
-  // 使用者 / Front 在分支上手動修的 commit 不算在 worker 頭上(v3 實測:Front 清掉前一棒留下的檔,下一棒反被判越界、永遠過不了)
+  // v4: count only the commits dlm made when collecting from the worker (author dlm@localhost; the worker is in a copy with no .git and cannot commit itself).
+  // Commits that the user / Front fixed by hand on the branch are not charged to the worker (v3 real run: Front removed files left by the previous leg, and the next leg was then judged out of bounds and could never pass)
   const author = onlyDlm ? ' --author=dlm@localhost' : '';
   const out = git(cwd, `log --no-merges --first-parent${author} --name-only --format= ${legBase}..${to}`).stdout;
   return [...new Set(out.split('\n').map((x) => x.trim()).filter(Boolean))].sort();
@@ -47,8 +47,8 @@ export function checkPaths(changed, envelope) {
   const outside = changed.filter((p) => !matchAny(p, envelope.allowed_paths));
   const forbidden = changed.filter((p) => matchAny(p, envelope.forbidden_paths));
   const bad = [...new Set([...outside, ...forbidden])];
-  // v4.7.3:整合棒可以沒有變動——組合層在能力節點合併時已經接通(驗收照樣要綠,後面的 acceptance 會檢查)。
-  // 實測:todo-cli 的 I1 跳過測試棒後,整合棒誠實地什麼都沒改,被這條退回;再派一次一樣,只能造假塞一個檔
+  // v4.7.3: an integrate leg may have no changes, because the composition layer was already wired up when the capability node merged (acceptance must still be green; the acceptance check later covers that).
+  // Seen in a real run: after todo-cli's I1 skipped the test leg, the integrate leg honestly changed nothing and was sent back by this rule; dispatching again gave the same result, and the only way out was to fake a file
   if (!changed.length) {
     return envelope.leg === 'integrate'
       ? r('paths', 'PASS', '整合棒沒有檔案變動:組合層已經接通(驗收照樣要綠)')
@@ -67,12 +67,12 @@ export function checkReportSanity(report) {
 }
 
 /**
- * 測試棒的「紅」要紅在對的地方:實作還不存在。語法錯誤、步驟沒綁定、pending 也會讓指令非 0,但那不是紅,是壞。
- * 回傳 null 代表看起來是正常的紅;否則回傳原因。
+ * The test leg's "red" must be red for the right reason: the implementation does not exist yet. Syntax errors, unbound steps and pending also make the command exit non-zero, but that is not red, it is broken.
+ * Returns null if it looks like a normal red; otherwise returns the reason.
  */
 export function badRedReason(output) {
   const text = String(output ?? '');
-  // 「The requested module does not provide an export」是實作還沒有那個函式,屬於正常的紅
+  // "The requested module does not provide an export" means the implementation does not have that function yet, which is a normal red
   if (/\bSyntaxError\b(?!: The requested module)/.test(text)) return '紅的原因是語法錯誤,不是實作不存在';
   const summary = text.match(/\d+ (?:scenarios?|steps?) \(([^)]*)\)/g) ?? [];
   if (summary.some((line) => /\b[1-9]\d* (?:undefined|pending|ambiguous)\b/.test(line))) return '有步驟沒綁定 / pending / ambiguous:紅的原因不是實作不存在';
@@ -95,7 +95,7 @@ export function checkAcceptance(ex, envelope, config) {
   return out;
 }
 
-/** 測試棒:gherkin 的每一步都要綁到步驟定義(cucumber dry-run 的摘要行乾淨)。 */
+/** Test leg: every gherkin step must bind to a step definition (the cucumber dry-run summary lines are clean). */
 export function checkDryRun(ex, node, config) {
   const tpl = config.verify.dry_run_cmd;
   if (!tpl || !node.gherkin) return [];
@@ -108,7 +108,7 @@ export function checkDryRun(ex, node, config) {
   return [r('dry-run', ok ? 'PASS' : 'FAIL', `${cmd} → exit ${res.code}${bad ? `;${bad}` : ''}`, tail(output, 1500))];
 }
 
-/** Stryker(mutation-testing-report-schema)報告的分數:偵測到的 / 有效的。 */
+/** Score from a Stryker (mutation-testing-report-schema) report: detected / valid. */
 export function mutationScore(report) {
   let detected = 0;
   let valid = 0;
@@ -122,10 +122,10 @@ export function mutationScore(report) {
 }
 
 /**
- * 最後一棒:只對這一棒改到的實作檔跑 mutation。分數低代表測試抓不到錯,
- * 常見原因是實作對測試值寫死。tier strict 判 FAIL,其他 ABSTAIN(交 Critic 或你)。
+ * Last leg: run mutation only on the implementation files this leg changed. A low score means the tests do not catch errors,
+ * most often because the implementation hardcodes the test values. tier strict gives FAIL, others ABSTAIN (hand to the Critic or you).
  */
-/** Stryker 找不到跟改到的檔有關的測試(vitest.related):沒有任何單元測試 import 這些檔。 */
+/** Stryker found no tests related to the changed files (vitest.related): no unit test imports these files. */
 const NO_RELATED_TESTS = /No tests were executed|failed to find test files related to mutated files/;
 
 export function checkMutation(ex, files, node, config, { leg } = {}) {
@@ -139,13 +139,13 @@ export function checkMutation(ex, files, node, config, { leg } = {}) {
   const reportPath = join(ex.cwd, m.report);
   let score = null;
   if (existsSync(reportPath)) {
-    try { score = mutationScore(JSON.parse(readFileSync(reportPath, 'utf8'))); } catch { /* 下面當成沒有報告 */ }
+    try { score = mutationScore(JSON.parse(readFileSync(reportPath, 'utf8'))); } catch { /* treat as no report below */ }
   }
   if (!score) {
     const out = res.stdout + res.stderr;
-    // v4.7.3:沒有單元測試 import 改到的檔。整合棒的組合層(命令列等)本來就是用子程序從外面測、靠整合驗收把關,mutation 量不到
-    // 不是問題 → SKIPPED;其他棒是真的警訊(測試沒碰到這些檔),照舊 ABSTAIN,但說清楚原因。
-    // 實測:minilang 的 I1(apps/cli)每次都因為「No tests were executed」ABSTAIN,整合棒每次都要問使用者
+    // v4.7.3: no unit test imports the changed files. The integrate leg's composition layer (command line etc.) is tested from outside through a subprocess and guarded by integration acceptance, so mutation not being able to measure it
+    // is not a problem -> SKIPPED; for other legs it is a real warning (the tests never touch these files), so ABSTAIN as before, but state the reason clearly.
+    // Seen in a real run: minilang's I1 (apps/cli) ABSTAINed every time because of "No tests were executed", so the integrate leg had to ask the user every time
     if (NO_RELATED_TESTS.test(out)) {
       return leg === 'integrate'
         ? [r('mutation', 'SKIPPED', `整合棒改到的檔(${targets.join(', ')})沒有單元測試直接 import(命令列多半用子程序測),mutation 量不到;這一層由整合驗收把關`)]
@@ -160,13 +160,13 @@ export function checkMutation(ex, files, node, config, { leg } = {}) {
   return [r('mutation', node.tier === 'strict' ? 'FAIL' : 'ABSTAIN', detail)];
 }
 
-// 重跑指令能用的字元。沒有換行、引號、$、`、;、|、&、<、>、~、*:不是跳脫,是根本不收。
+// Characters allowed in a re-run command. No newline, quote, $, `, ;, |, &, <, >, ~, *: they are not escaped, they are simply not accepted.
 const SAFE_CMD = /^[A-Za-z0-9 ._/:=@+-]+$/;
 
 /**
- * worker 宣稱的指令能不能重跑。能 → { argv };不能 → { why }(一律 ABSTAIN,完全不執行)。
- * 白名單是前綴比對,但前綴必須落在參數邊界上(`npm test` 不會放行 `npm testx`)。
- * 參數不能指向 worktree 以外:絕對路徑、`..`、`--x=/abs` 都拒絕。
+ * Whether a command the worker claimed can be re-run. If yes -> { argv }; if no -> { why } (always ABSTAIN, never executed).
+ * The allowlist is a prefix match, but the prefix must end on an argument boundary (`npm test` does not let `npm testx` through).
+ * Arguments must not point outside the worktree: absolute paths, `..` and `--x=/abs` are all rejected.
  */
 export function rerunArgv(cmd, allow) {
   if (typeof cmd !== 'string' || !SAFE_CMD.test(cmd)) {
@@ -179,8 +179,8 @@ export function rerunArgv(cmd, allow) {
   const listed = allow.some((p) => {
     const head = p.trimEnd();
     if (!head || !norm.startsWith(head)) return false;
-    if (p.endsWith(' ')) return norm.length > head.length && norm[head.length] === ' '; // 'npm run ' 後面要有東西
-    if (head.endsWith('/')) return true; // 'node packages/' 是路徑前綴
+    if (p.endsWith(' ')) return norm.length > head.length && norm[head.length] === ' '; // something must follow 'npm run '
+    if (head.endsWith('/')) return true; // 'node packages/' is a path prefix
     return norm.length === head.length || norm[head.length] === ' ';
   });
   if (!listed) return { why: '不在重跑白名單(verify.rerun_allow)' };
@@ -188,8 +188,8 @@ export function rerunArgv(cmd, allow) {
 }
 
 /**
- * 重跑 worker 宣稱的指令。只跑白名單內、字元安全的指令,以 argv 執行、不經 shell;其餘 ABSTAIN。
- * FAIL 時不附重跑輸出:指令是 worker 自選的,輸出會進帳本、再回灌到下一張工單,不能變成外洩通道。
+ * Re-run the commands the worker claimed. Only commands that are on the allowlist and character-safe are run, via argv and not through a shell; the rest ABSTAIN.
+ * On FAIL the re-run output is not attached: the command was chosen by the worker, and the output goes into the ledger and is fed back into the next work order, so it must not become a leak channel.
  */
 export function checkEvidence(ex, report, config) {
   ex = asExecutor(ex);
@@ -228,7 +228,7 @@ function transitiveDeps(dag, id, seen = new Set()) {
   return seen;
 }
 
-/** 整合棒:正式碼(非測試)不可再 import __stubs__。Wave 0 的暫時假實作要在整合點拆掉。 */
+/** Integrate leg: production code (non-test) must no longer import __stubs__. The temporary fake implementations from Wave 0 must be removed at the integration point. */
 export function checkStubs(worktree, dag, node, config) {
   const ids = [node.id, ...transitiveDeps(dag, node.id)];
   const owns = ids.flatMap((id) => getNode(dag, id)?.owns ?? []);

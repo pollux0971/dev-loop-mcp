@@ -1,5 +1,5 @@
-// 人看的文件全部由這裡產生。輸出只依賴 dag + ledger(不含現在時間),
-// 所以「重新產生 == 磁碟上的檔」可以當 gate:不一致代表有人手改了產生檔。
+// All human-readable documents are generated here. The output depends only on dag + ledger (not the current time),
+// so "regenerate == file on disk" can serve as a gate: a mismatch means someone hand-edited a generated file.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { capabilityOf, contractMajor } from './dag.mjs';

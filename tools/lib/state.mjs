@@ -1,9 +1,9 @@
-// 重播 ledger 得出現況。所有「現在是什麼狀態」的問題都從這裡回答,不讀任何 markdown。
+// Replay the ledger to get the current state. Every "what state are we in now" question is answered from here; no markdown is read.
 import { remapStatePath } from './legacy.mjs';
 
 export function pipelineFor(node, config) {
   const base = node.pipeline ?? config.pipeline[node.kind] ?? ['dev'];
-  // v4.5:要改到既有程式的節點,先釘住現有行為(characterize),再寫新功能的測試
+  // v4.5: a node that changes existing code first pins the current behavior (characterize), then writes tests for the new feature
   if (characterizes(node) && !base.includes('characterize')) return ['characterize', ...base];
   return base;
 }
@@ -43,7 +43,7 @@ export function replay(events, dag) {
   const costsByDay = new Map();
   let halted = null;
   let lastInboxSeq = 0;
-  let infraStreak = 0; // 全系統連續幾次基礎設施失敗(共用帳號被限流時會一起發生)
+  let infraStreak = 0; // Consecutive infrastructure failures across the whole system (they happen together when a shared account is rate-limited)
   const ensure = (id) => {
     if (!nodes.has(id)) nodes.set(id, { ...freshNode(id), orphan: true });
     return nodes.get(id);
@@ -94,7 +94,7 @@ export function replay(events, dag) {
       case 'worker_failed':
         if (d) { d.state = 'failed'; d.reason = ev.reason; d.failClass = ev.class ?? 'quality'; d.seqs.push(ev.seq); }
         if (ev.class === 'halted') {
-          // v4:使用者停機時 dlm 主動終止的 worker。不是 worker 的錯:不算嘗試、不動 findings、不退避、不算 infra 連續失敗
+          // v4: a worker that dlm itself terminated when the user halted. Not the worker's fault: no attempt counted, findings untouched, no backoff, not counted as a consecutive infra failure
           if (dn) {
             dn.status = 'todo';
             dn.openDispatch = null;
@@ -104,8 +104,8 @@ export function replay(events, dag) {
           break;
         }
         if (ev.class === 'infra') {
-          // 不是 worker 的錯:不加嘗試次數、不改 findings,退避到 retry_after 之後用同一個 attempt 重派
-          // v4.6:帳號額度用完、但還有別的帳號可換(switched)時不算連續失敗
+          // Not the worker's fault: no attempt added, findings unchanged; back off until retry_after, then redispatch with the same attempt
+          // v4.6: when an account's quota runs out but another account can take over (switched), it does not count as a consecutive failure
           if (!ev.switched) infraStreak++;
           if (dn) {
             dn.status = 'todo';
@@ -176,7 +176,7 @@ export function replay(events, dag) {
         touch(n);
         break;
       case 'leg_reopen':
-        // v4:實作棒判定是測試/步驟定義寫錯 → 插一棒 test-fix(同一分支),做完再回到原本卡住的那一棒
+        // v4: the dev leg decides the test / step definition was written wrong → insert a test-fix leg (same branch), and when done return to the leg that was stuck
         n.status = 'todo';
         n.reason = null;
         n.openDispatch = null;
@@ -196,7 +196,7 @@ export function replay(events, dag) {
         break;
       case 'decision_request':
         decisions.set(ev.ref, { request: ev, answer: decisions.get(ev.ref)?.answer ?? null });
-        // v4.7.3:新提案取代舊的(還沒決定的)→ 舊的關掉,不再待決
+        // v4.7.3: a new proposal replaces the old (undecided) one → the old one is closed and no longer pending
         for (const old of ev.supersedes ?? []) {
           const rec = decisions.get(old);
           if (rec?.request && !rec.answer) rec.superseded = ev.ref;

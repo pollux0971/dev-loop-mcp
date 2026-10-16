@@ -1,86 +1,93 @@
 /**
- * 場景重複檢查(見 docs/03-agile-workflow.md「契約先於平行、規格先於程式」)。
+ * Scenario duplicate check (see docs/03-agile-workflow.md "contract before parallel, spec before code").
  *
- * 抓的是「複製貼上一個場景到另一個檔案(或同一個檔案),名稱改了但步驟本體逐字相同」。
- * 這種重複通常代表:應該用 Scenario Outline 收斂、應該共用一個 Background,或是規格被
- * 不小心複製而不是重新設計。不管名稱有沒有改,步驟本體相同就算。
+ * It catches "a scenario copy-pasted into another file (or the same file) with the name changed
+ * but the step body word-for-word identical". Such a duplicate usually means: it should be merged
+ * with a Scenario Outline, it should share one Background, or the spec was copied by accident
+ * instead of being redesigned. It counts whenever the step bodies are the same, whether or not
+ * the name was changed.
  *
- * 規則:
- *   1. 掃 features/**\/*.feature 與 docs/integration/**\/*.feature(同一檔內、跨檔都算)
- *   2. 一個場景的「本體」= Scenario / Scenario Outline 名稱那一行之後,
- *      到下一個 Scenario / Scenario Outline / Examples 關鍵字之前的所有步驟行,
- *      每行去頭尾空白後,以換行接起來
- *   3. 本體逐字相同(不看場景名稱)的兩個以上場景 → 列出檔案:行號成對,退出 1
- *   4. **allowlist**(CHANGELOG 1.3.2 (2)):`gates.config.json` 的 `gherkinDup.allow` 可以
- *      列出刻意允許的重複組,格式 `{ scenario, onlyUnder?, reason }`。一個重複組要套用
- *      某條 allow 才不算紅,三個條件都要成立:(a) 組裡**每個**場景的名稱都等於 `scenario`
- *      (場景名不同就不算同一組刻意重複,即使步驟本體逐字相同);(b) 有給 `onlyUnder` 時,
- *      組裡每個場景所在的檔案路徑都要以它開頭(相對 ROOT,例如 `docs/integration/`);
- *      (c) `reason` 是非空字串。三個條件都成立 → 印 `○ 允許:<scenario>(<reason>)`,
- *      不計入失敗;`reason` 空或缺 → 這條 allow **無效**,命中時印警告、該組照常判紅
- *      (不能讓一條寫壞的 allow 悄悄放行一組真的重複)。範例:
+ * Rules:
+ *   1. Scan features/**\/*.feature and docs/integration/**\/*.feature (duplicates within one file and across files both count)
+ *   2. A scenario's "body" = all step lines after the Scenario / Scenario Outline name line,
+ *      up to the next Scenario / Scenario Outline / Examples keyword,
+ *      each line trimmed and joined with newlines
+ *   3. Two or more scenarios with word-for-word identical bodies (scenario names are ignored) -> list the file:line pairs, exit 1
+ *   4. **allowlist** (CHANGELOG 1.3.2 (2)): `gherkinDup.allow` in `gates.config.json` can
+ *      list duplicate groups that are allowed on purpose, in the form `{ scenario, onlyUnder?, reason }`.
+ *      A duplicate group is not red only if it matches an allow entry, and three conditions must all hold:
+ *      (a) the name of **every** scenario in the group equals `scenario`
+ *      (scenarios with different names are not one deliberate duplicate group, even if their step
+ *      bodies are word-for-word identical); (b) when `onlyUnder` is given, the file path of every
+ *      scenario in the group must start with it (relative to ROOT, e.g. `docs/integration/`);
+ *      (c) `reason` is a non-empty string. All three hold -> print a `○` line with the scenario and the reason (the "allowed" notice)
+ *      and do not count it as a failure; `reason` empty or missing -> that allow entry is **invalid**,
+ *      a warning is printed when it matches, and the group is still judged red as usual
+ *      (a badly written allow entry must not quietly let a real duplicate group through). Example:
  *      ```json
  *      { "gherkinDup": { "allow": [
  *        { "scenario": "Every standalone entry point still runs",
  *          "onlyUnder": "docs/integration/",
- *          "reason": "每個整合點各自重跑一次 standalone 回歸(ADR-024)" }
+ *          "reason": "Each integration point reruns the standalone regression on its own (ADR-024)" }
  *      ] } }
  *      ```
- *      找設定檔的順序見 `_root.ts` 的 `resolveConfig`:先找這支腳本自己所在的目錄,
- *      再找 `ROOT/scripts/`;這份檔不存在就沒有任何 allow 條目,所有重複都照常判紅。
+ *      The config lookup order is in `resolveConfig` in `_root.ts`: first the directory this script
+ *      lives in, then `ROOT/scripts/`; if that file does not exist there are no allow entries, and all duplicates are judged red as usual.
  *
- * 用法(repo 根從 `git rev-parse --show-toplevel` 解析,不在 git repo 裡則退回 cwd):
- *   npx tsx scripts/check-gherkin-dup.ts               # 複製進 repo 後執行
- *   npx tsx <template>/scripts/check-gherkin-dup.ts    # 從模板路徑直接執行,cwd 需在目標 repo
+ * Usage (the repo root is resolved from `git rev-parse --show-toplevel`, falling back to cwd outside a git repo):
+ *   npx tsx scripts/check-gherkin-dup.ts               # run after copying into the repo
+ *   npx tsx <template>/scripts/check-gherkin-dup.ts    # run straight from the template path; cwd must be in the target repo
  *
- * 退出碼:
- *   0  沒有本體逐字相同的場景(allowlist 允許的重複組不算)
- *   1  有(未被 allowlist 允許的)重複場景;或掃到 0 個 .feature 檔 / 0 個場景
- *      (這不是很乾淨,是掃描器壞了)
+ * Exit codes:
+ *   0  no scenarios with word-for-word identical bodies (duplicate groups allowed by the allowlist do not count)
+ *   1  there are duplicate scenarios (not allowed by the allowlist); or 0 .feature files / 0 scenarios were scanned
+ *      (this is not "clean", the scanner is broken)
  *
- * 反向驗證(改完要還原,不要留下改動):
- *   (a) 挑一個既有場景(例如某功能 phase-1.feature 裡「單獨跑起來會怎樣」那個場景),
- *       把它的步驟本體整段複製,貼到同一個檔案下面,取一個新的 Scenario 名稱。
- *       重跑這支腳本 → 應該紅,列出那兩個場景的檔案:行號。
- *   (b) 刪掉剛貼的複製場景,還原檔案 → 重跑 → 應該綠。
- *   (c) allowlist(在一個假 repo 裡做,不要動到這個 worktree 自己的資料):建兩個
- *       `docs/integration/*.feature`,各放一個 Scenario 名稱、步驟本體都逐字相同的場景
- *       (例如「Every standalone entry point still runs」)→ 重跑應該紅。在假 repo 的
- *       `scripts/gates.config.json` 加上面範例的 allow 條目 → 重跑應該綠,印
- *       `○ 允許:...`。把那條 allow 的 `reason` 清空(或整條刪掉再放回一條沒有 reason 的)
- *       → 重跑應該紅,且印「allow 條目無效」的警告。把其中一個 feature 檔搬到
- *       `features/` 底下(不再滿足 `onlyUnder: "docs/integration/"`)→ 重跑應該紅
- *       (onlyUnder 不符,allow 不套用)。
+ * Reverse check (restore after changing, leave no changes):
+ *   (a) Pick an existing scenario (e.g. the "what happens when it runs alone" scenario in some feature's phase-1.feature),
+ *       copy its whole step body, paste it below in the same file, and give it a new Scenario name.
+ *       Run this script again -> it should be red, listing the file:line of those two scenarios.
+ *   (b) Delete the copied scenario you just pasted and restore the file -> run again -> it should be green.
+ *   (c) allowlist (do this in a fake repo, do not touch this worktree's own data): create two
+ *       `docs/integration/*.feature` files, each with one scenario whose Scenario name and step body
+ *       are word-for-word identical (e.g. "Every standalone entry point still runs") -> run again, it should be red.
+ *       Add the example allow entry above to the fake repo's `scripts/gates.config.json` -> run again,
+ *       it should be green and print the `○` "allowed" notice. Clear that allow entry's `reason` (or delete the entry and
+ *       put back one without a reason) -> run again, it should be red and print the "allow entry invalid"
+ *       warning. Move one of the feature files under `features/` (it no longer satisfies
+ *       `onlyUnder: "docs/integration/"`) -> run again, it should be red
+ *       (onlyUnder does not match, so the allow does not apply).
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { ROOT, loadGatesConfig, requireConfigType, resolveConfig, resolveSkipDirs } from './_root.js';
 
-/** 這支腳本在 gate 機器可讀標記(見 CHANGELOG 1.3.2 (C))裡的名字。 */
+/** This script's name in the gate's machine-readable marker (see CHANGELOG 1.3.2 (C)). */
 const GATE_NAME = 'gherkin-dup';
 
 function toPosix(p: string): string {
   return p.split('\\').join('/');
 }
 
-// ---- allowlist(CHANGELOG 1.3.2 (2)) ----
+// ---- allowlist (CHANGELOG 1.3.2 (2)) ----
 //
-// 有些重複是刻意的:每個整合點各自重跑一次同一份 standalone 回歸(ADR-024),場景名跟步驟
-// 本體本來就該逐字相同,不是複製貼上的失誤。這些例外寫在 `gates.config.json` 的
-// `gherkinDup.allow`,不是改這支腳本——程式(規則)跟設定(哪些重複被允許)分開,升級
-// 這支腳本不會把專案填好的例外清單洗掉。
+// Some duplicates are deliberate: each integration point reruns the same standalone regression
+// on its own (ADR-024), so the scenario name and step body are meant to be word-for-word
+// identical, not a copy-paste mistake. These exceptions are written in `gherkinDup.allow` of
+// `gates.config.json`, not by editing this script. Code (the rules) and config (which duplicates
+// are allowed) are kept apart, so upgrading this script does not wipe the exception list a project filled in.
 
 interface AllowEntry { scenario: string; onlyUnder?: string; reason: string }
 interface InvalidAllowEntry { scenario: string; onlyUnder?: string }
 
-/** 讀 `gherkinDup.allow`,分成「有效」(reason 非空)與「無效」(reason 空或缺)兩批——
- *  無效的條目不生效(該組照常判紅),但要在命中時印警告,不能悄悄忽略。
- *  找不到 `scenario` 欄位的條目整條忽略(連比對的依據都沒有,不算「無效」,只是壞掉的資料)。 */
+/** Read `gherkinDup.allow` and split it into two batches: "valid" (reason non-empty) and "invalid" (reason empty or missing).
+ *  An invalid entry does not take effect (its group is still judged red), but a warning must be printed when it matches; it must not be ignored quietly.
+ *  An entry with no `scenario` field is ignored entirely (there is no basis to compare, so it is not "invalid", just broken data). */
 function loadAllowEntries(): { valid: AllowEntry[]; invalid: InvalidAllowEntry[] } {
   const p = resolveConfig(import.meta.dirname, 'gates.config.json');
-  // 解析錯誤、不認識的頂層鍵在這裡大聲失敗(S9)——舊版 `try { JSON.parse(...) } catch
-  // { return { valid: [], invalid: [] } }` 會讓壞掉的 gates.config.json 悄悄變成
-  // 「沒有任何 allow 條目」,gate 照樣能印 PASS 或 FAIL,但完全沒套用設定。
+  // Parse errors and unknown top-level keys fail loudly here (S9). The old `try { JSON.parse(...) } catch
+  // { return { valid: [], invalid: [] } }` quietly turned a broken gates.config.json into
+  // "no allow entries at all"; the gate could still print PASS or FAIL, but the config was not applied at all.
   const raw = loadGatesConfig(p, GATE_NAME);
   if (!raw) return { valid: [], invalid: [] };
   if (raw.gherkinDup !== undefined) requireConfigType(raw.gherkinDup, 'gherkinDup', 'object', GATE_NAME);
@@ -102,9 +109,9 @@ function loadAllowEntries(): { valid: AllowEntry[]; invalid: InvalidAllowEntry[]
   return { valid, invalid };
 }
 
-/** 一個重複組要不要套用某條 allow 條目:組裡**每個**場景的名稱都要等於 `entry.scenario`
- *  (不是「至少一個」——場景名不同,即使步驟本體逐字相同,也不算「同一個刻意重複的場景」);
- *  有給 `onlyUnder` 時,組裡每個場景所在的檔案路徑都要以它開頭。 */
+/** Whether a duplicate group should use a given allow entry: the name of **every** scenario in the group must equal `entry.scenario`
+ *  (not "at least one": scenarios with different names are not "the same deliberately duplicated scenario", even if their step bodies are word-for-word identical);
+ *  when `onlyUnder` is given, the file path of every scenario in the group must start with it. */
 function groupMatchesAllow(group: Scenario[], scenario: string, onlyUnder: string | undefined): boolean {
   if (!group.every((s) => s.name === scenario)) return false;
   if (onlyUnder) {
@@ -113,14 +120,17 @@ function groupMatchesAllow(group: Scenario[], scenario: string, onlyUnder: strin
   return true;
 }
 
-/** S10:跟其餘會走目錄樹的 gate 共用同一份略過清單(`_root.ts` 的 `DEFAULT_SKIP_DIRS`
- *  + `gates.config.json` 的 `skipDirs` 追加),不在這支腳本裡另外寫一份。 */
+/** S10: share the same skip list with the other gates that walk the directory tree (`DEFAULT_SKIP_DIRS` in `_root.ts`
+ *  plus the `skipDirs` additions in `gates.config.json`); do not write a separate copy in this script. */
 function resolveSkipDirsForGherkinDup(): Set<string> {
-  // 1.7.0(#13 名冊抓到的,P-91 第五/六個實例):原本這裡自己重寫了「型別檢查 + 合併 DEFAULT_SKIP_DIRS」,
-  // 於是 1.6.3 加在共用層的 glob 硬錯對這支不生效。**上面那段註解一直寫著「不在這支腳本裡另外寫一份」,
-  // 而下一行就寫了一份**——註解描述的是意圖,不是實作,沒有東西檢查兩者一致。
-  // 1.6.3~1.6.10 的逐支盤點都沒抓到它,原因是盤點用 `grep resolveSkipDirs`,而這個函式名
-  // `resolveSkipDirsFor…` 剛好以那個字串開頭——字面掃描讀不到脈絡(P-89)。名冊用 `\bresolveSkipDirs\s*\(` 才分得出來。
+  // 1.7.0 (caught by roster #13, the fifth/sixth instance of P-91): this used to rewrite "type check + merge
+  // DEFAULT_SKIP_DIRS" by itself, so the glob hard error added to the shared layer in 1.6.3 did not apply here.
+  // **The comment above kept saying "do not write a separate copy in this script",
+  // and the very next line wrote one**. A comment describes intent, not the implementation,
+  // and nothing checks that the two agree.
+  // The per-script audits in 1.6.3~1.6.10 never caught it, because the audit used `grep resolveSkipDirs`,
+  // and this function's name `resolveSkipDirsFor...` happens to start with that string, so a literal
+  // scan cannot read the context (P-89). The roster uses `\bresolveSkipDirs\s*\(` to tell them apart.
   const p = resolveConfig(import.meta.dirname, 'gates.config.json');
   return resolveSkipDirs(loadGatesConfig(p, GATE_NAME), GATE_NAME);
 }
@@ -169,7 +179,7 @@ function extractScenarios(file: string): Scenario[] {
     if (current) {
       const isBreak = SECTION_BREAK_RE.test(line);
       if (isBreak) {
-        // 下一個 Scenario 已經在上面的分支處理;這裡只需要在遇到 Examples 時收尾。
+        // The next Scenario is already handled by the branch above; here we only need to finish up when we meet Examples.
         flush();
         continue;
       }
@@ -200,7 +210,7 @@ function main(): void {
 
   const byBody = new Map<string, Scenario[]>();
   for (const s of scenarios) {
-    if (!s.body) continue; // 空本體(例如純 Background 或格式異常)不比對,避免誤報
+    if (!s.body) continue; // Do not compare empty bodies (e.g. a pure Background or a malformed one), to avoid false alarms
     const list = byBody.get(s.body) ?? [];
     list.push(s);
     byBody.set(s.body, list);

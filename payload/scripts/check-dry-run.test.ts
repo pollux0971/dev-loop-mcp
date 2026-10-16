@@ -1,15 +1,15 @@
 /**
- * scripts/check-dry-run.ts 的測試(模板 1.6.0,P-86)。
+ * Tests for scripts/check-dry-run.ts (template 1.6.0, P-86).
  *
- * 跟其餘掃描器的測試同一個形狀:造一次性的暫存目錄當假 consumer 根,`--root` 明講,
- * 不碰真的 repo。**這裡跑的是真的 cucumber**(fixture 的 `node_modules` 是指向模板自己
- * `node_modules` 的符號連結,`npx cucumber-js` 在 fixture 裡就找得到執行檔跟 tsx)——
- * 因為這支守門的全部價值就在「cucumber 對 dry-run 的 ambiguous/undefined 退出碼是 0」
- * 這個實測事實,用假的 cucumber 輸出去測等於在測自己的想像。
+ * Same shape as the other scanner tests: build a throwaway temp directory as a fake consumer root, give `--root` explicitly,
+ * and do not touch the real repo. **Real cucumber is run here** (the fixture's `node_modules` is a symlink to the template's own
+ * `node_modules`, so `npx cucumber-js` finds the executable and tsx inside the fixture) —
+ * because the whole value of this guard lies in the fact that "cucumber exits 0 for dry-run ambiguous/undefined",
+ * a fact seen in a real run; testing with fake cucumber output would only test our own imagination.
  *
- * 坑 23(來源 AI_KM):守門提案接進 CI 前要先讓它紅一次——下面「ambiguous」那條測試就是
- * 那個「紅一次」,而且同一份 fixture 先直接對 `cucumber-js --dry-run --strict` 斷言 exit 0,
- * 證明「不信退出碼」不是多此一舉。
+ * Pitfall 23 (source AI_KM): a guard proposal must be made to go red once before it is wired into CI — the "ambiguous" test below is
+ * that "go red once", and on the same fixture it first asserts exit 0 directly against `cucumber-js --dry-run --strict`,
+ * proving that "not trusting the exit code" is not redundant.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -36,9 +36,9 @@ function writeRaw(root: string, relPath: string, content: string): void {
   writeFileSync(p, content, 'utf8');
 }
 
-/** 一個能跑真 cucumber 的最小 consumer:cucumber.json + 兩個資料夾各一個 phase 檔 +
- *  兩個 steps 檔(CJS,fixture 沒有 package.json 所以 .js 就是 CJS)。預設狀態是乾淨的:
- *  每句恰好一個定義。 */
+/** A minimal consumer that can run real cucumber: cucumber.json + one phase file in each of two folders +
+ *  two steps files (CJS; the fixture has no package.json so .js is CJS). The default state is clean:
+ *  exactly one definition per sentence. */
 function makeCleanRoot(parentDir = tmpdir()): string {
   const root = makeIsolatedTempDir('lc-dry-run-', parentDir);
   tmpDirs.push(root);
@@ -77,7 +77,7 @@ function makeCleanRoot(parentDir = tmpdir()): string {
   return root;
 }
 
-/** 反向驗證 (a):把 alpha 的第一句原樣複製貼進 beta → 兩個定義 → ambiguous。 */
+/** Reverse verification (a): paste alpha's first sentence verbatim into beta → two definitions → ambiguous. */
 function injectAmbiguous(root: string): void {
   writeRaw(
     root,
@@ -92,12 +92,12 @@ function injectAmbiguous(root: string): void {
 }
 
 /**
- * 反向驗證 (a2):**參數化定義蓋住字面定義**——兩個定義的字串**不相同**,但都匹配同一句。
- * 這是本 gate 存在的主要理由:`check-step-dup.ts` 比的是正規化後的字面形狀,
- * `{word}` 與 `rich` 是不同形狀,它看不出這兩個定義會撞在一起;cucumber 看得出來
- * (印 ambiguous)但不用退出碼講。只測 (a) 逐字相同的話,`check-step-dup.ts` 本來就
- * 接得住,等於沒驗到這支新 gate 真正要補的那一塊。
- * 來源:專案 A 技術顧問 2026-09-12 實測回報(參數化重疊時 accept:dry 與 check-step-dup 兩道全綠)。
+ * Reverse verification (a2): **a parameterized definition covers a literal definition** — the two definition strings are **different**, but both match the same sentence.
+ * This is the main reason this gate exists: `check-step-dup.ts` compares normalized literal shapes,
+ * `{word}` and `rich` are different shapes, so it cannot see that the two definitions collide; cucumber can see it
+ * (it prints ambiguous) but does not say so through the exit code. If only (a), verbatim identical, were tested, `check-step-dup.ts` would already
+ * catch it, which means the piece this new gate really has to fill would not be verified.
+ * Source: project A technical advisor, real-run report 2026-09-12 (with overlapping parameterization, both accept:dry and check-step-dup were all green).
  */
 function injectParamOverlap(root: string): void {
   writeRaw(
@@ -134,7 +134,7 @@ function injectParamOverlap(root: string): void {
   );
 }
 
-/** 反向驗證 (c):feature 檔多一句沒有任何定義的步驟 → undefined。 */
+/** Reverse verification (c): the feature file gets one more step that has no definition → undefined. */
 function injectUndefined(root: string): void {
   writeRaw(
     root,
@@ -161,7 +161,7 @@ function run(root: string, ...extra: string[]): { code: number; output: string }
   return { code: r.status ?? -1, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
-/** 直接對 fixture 跑 cucumber 本人(不經這支守門),拿它的退出碼跟摘要行。 */
+/** Run cucumber itself directly against the fixture (bypassing this guard), and get its exit code and summary line. */
 function runRawCucumber(root: string, ...extra: string[]): { code: number; output: string } {
   const env = { ...process.env };
   delete env.NODE_OPTIONS;
@@ -196,8 +196,8 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
   }, SPAWN_TIMEOUT_MS);
 
   it('前提(cucumber 本人):同一份 ambiguous fixture,--dry-run 與 --dry-run --strict 都 exit 0', () => {
-    // 這條測的是「為什麼需要這支守門」的事實本身。哪天 cucumber 升版後這條開始紅,
-    // 代表 cucumber 自己會擋了——那時候這支守門可以退休,但要先看到這條紅才算數。
+    // This test is the fact itself behind "why this guard is needed". If it ever goes red after a cucumber upgrade,
+    // it means cucumber now blocks this itself — then this guard can retire, but only after seeing this go red.
     const root = makeCleanRoot();
     injectAmbiguous(root);
     const plain = runRawCucumber(root);
@@ -218,7 +218,7 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
     expect(output).toContain('beta.steps.js');
     expect(output).toContain('gate=dry-run result=FAIL scanned=2');
     expect(output).toContain('check:steps');
-    expect(output).not.toContain('段 B'); // 沒帶 tag,段 B 略過
+    expect(output).not.toContain('段 B'); // no tag given, section B is skipped
   }, SPAWN_TIMEOUT_MS);
 
   it('反向驗證 (a2):參數化定義蓋住字面定義(兩個字串不同)→ exit 1、摘要行 ambiguous', () => {
@@ -236,7 +236,7 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
     const root = makeCleanRoot();
     injectAmbiguous(root);
     expect(run(root).code).toBe(1);
-    // 還原成乾淨的 beta.steps.js
+    // Restore the clean beta.steps.js
     writeRaw(
       root,
       'features/steps/beta.steps.js',
@@ -289,9 +289,9 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
     expect(output).toContain('gate=dry-run result=FAIL');
   }, SPAWN_TIMEOUT_MS);
 
-  // ---- 兩段(AI_KM 第二輪):undefined 只在驗收集合裡算,ambiguous 對全集算 ----
+  // ---- Two sections (AI_KM second round): undefined counts only in the acceptance set, ambiguous counts in the full set ----
 
-  /** 一個 @todo 場景(驗收 job 用 `not @todo` 排除),裡面放一句沒定義的步驟——設計上的 todo。 */
+  /** A @todo scenario (the acceptance job excludes it with `not @todo`) containing one undefined step — a by-design todo. */
   function addTodoScenario(root: string, extraStep: string): void {
     writeRaw(
       root,
@@ -311,8 +311,8 @@ describe.skipIf(!haveCucumber)('check-dry-run:讀摘要行,不信退出碼(P-86)
 
   it('反向驗證 (e2):撞名的句子只出現在 @todo 場景、--tags "not @todo" → 紅(段 B 抓到,tag 排除不了 ambiguous)', () => {
     const root = makeCleanRoot();
-    injectAmbiguous(root); // the store has {int} items 兩份
-    // 驗收集合裡不用那句:把 alpha 的 Given 換掉,只有 @todo 場景還在用
+    injectAmbiguous(root); // the store has {int} items, two copies
+    // The acceptance set must not use that sentence: replace alpha's Given, so only the @todo scenario still uses it
     writeRaw(
       root,
       'features/01-alpha/phase-1.feature',

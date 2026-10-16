@@ -1,11 +1,11 @@
-// v4.7 dlm 的 HTTP API 定義(唯一的一份)。dlm hub 照這張表路由,/api/v1/openapi.json 也是從這張表產生的,
-// 所以文件跟實作不會對不上。
+// v4.7 dlm HTTP API definition (the only copy). dlm hub routes by this table, and /api/v1/openapi.json is generated from it too,
+// so the docs and the implementation cannot drift apart.
 //
 // kind:
-//   op       專案的操作:由那個專案自己的 tools/dlm.mjs 執行(`dlm op <op>`),參數 = query + body + 路徑參數
-//   machine  這台電腦層級的(專案清單、帳號):dlm hub 自己執行
+//   op       project operations: run by that project's own tools/dlm.mjs (`dlm op <op>`); args = query + body + path params
+//   machine  machine-level things (project list, accounts): run by dlm hub itself
 //   stream   Server-Sent Events(text/event-stream)
-//   meta     health、openapi
+//   meta     health, openapi
 import { validate } from './schema.mjs';
 import { nodeSchema } from './schemas.mjs';
 
@@ -14,8 +14,8 @@ const bool = (description) => ({ type: 'boolean', description });
 const int = (description, extra = {}) => ({ type: 'integer', description, ...extra });
 const obj = (properties, required = [], description) => ({ type: 'object', properties, required, additionalProperties: false, ...(description ? { description } : {}) });
 
-// v4.7.3 提案的欄位:型別直接取 schemas.mjs 的 nodeSchema(格式只定義在那一處),這裡只補說明。
-// 只看得到 MCP 的 AI 讀不到 docs/dlm/INTAKE.md;以前 spec / bundle 只寫 type: object,它猜不出格式,第一次呼叫就被擋。
+// v4.7.3 proposal fields: the types come straight from nodeSchema in schemas.mjs (the format is defined in one place only); here we only add descriptions.
+// An AI that only sees MCP cannot read docs/dlm/INTAKE.md; before, spec / bundle were just `type: object`, so it could not guess the format and was blocked on the first call.
 const NODE_DOCS = {
   id: '節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps)',
   kind: 'phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔)',
@@ -37,7 +37,7 @@ const NODE_DOCS = {
   characterize: '既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算',
 };
 
-/** 型別照抄 schema,補上說明;只有 enum 沒有 type 的補 type: string(有些工具呼叫格式要求每個欄位都有 type)。 */
+/** Copy the type from the schema and add a description; if there is only an enum and no type, add type: string (some tool-call formats require a type on every field). */
 function described(schema, docs = {}) {
   const typed = (s) => {
     if (!s || typeof s !== 'object') return s;
@@ -50,10 +50,10 @@ function described(schema, docs = {}) {
 }
 
 const NODE_FIELDS = described(nodeSchema, NODE_DOCS);
-// owns 在 nodeSchema 不是必填,但 validateDag 要求每個節點都有(沒有寫入範圍就驗不了越界);提案一定會進 DAG,所以這裡就標必填、至少一個。
-// 實測:只看得到 MCP 的 AI 第一次提案時整合點沒寫 owns,到 intake 才被擋
+// owns is not required in nodeSchema, but validateDag requires it on every node (without a write scope, out-of-scope writes cannot be checked); a proposal always goes into the DAG, so it is marked required here, at least one.
+// Seen in a real run: an AI that only sees MCP left owns off the integration point in its first proposal, and was blocked only at intake
 NODE_FIELDS.owns = { ...NODE_FIELDS.owns, minItems: 1 };
-// kind 不用填(預設 phase);其他必填照 nodeSchema,加上 owns
+// kind need not be given (defaults to phase); other required fields follow nodeSchema, plus owns
 const SPEC_REQUIRED = [...nodeSchema.required.filter((k) => k !== 'kind'), 'owns'];
 const FEATURE_SPEC = {
   type: 'object', required: SPEC_REQUIRED, additionalProperties: false, properties: NODE_FIELDS,
@@ -103,7 +103,7 @@ export const ROUTES = [
     description: '第一次用、或不確定下一步時先看這個。stages[].steps[].call 是 operationId(MCP 工具名 = dlm_ + snake_case)。',
   },
 
-  // ---------------------------------------------------------------- 多專案
+  // ---------------------------------------------------------------- multiple projects
   {
     method: 'GET', path: '/api/v1/overview', id: 'overview', tag: 'monitor', kind: 'machine',
     summary: '總覽:每個專案的進度、背景迴圈、在跑的 worker、等你決定的事、今天花費;帳號用量;總計',
@@ -130,7 +130,7 @@ export const ROUTES = [
   },
   { method: 'DELETE', path: '/api/v1/projects/{project}', id: 'removeProject', tag: 'projects', kind: 'machine', write: true, summary: '從清單拿掉(不刪任何檔案)' },
 
-  // ---------------------------------------------------------------- 帳號(這台電腦)
+  // ---------------------------------------------------------------- accounts (this machine)
   {
     method: 'GET', path: '/api/v1/accounts', id: 'listAccounts', tag: 'accounts', kind: 'machine',
     summary: '訂閱帳號:CLI、方案、同時上限,所有專案加起來的派工次數、正在跑幾個、花費、冷卻到幾點',
@@ -151,7 +151,7 @@ export const ROUTES = [
   },
   { method: 'DELETE', path: '/api/v1/accounts/{account}', id: 'removeAccount', tag: 'accounts', kind: 'machine', write: true, summary: '移除帳號(dlm 建的登入目錄一起刪)' },
 
-  // ---------------------------------------------------------------- 監控串流
+  // ---------------------------------------------------------------- monitoring stream
   {
     method: 'GET', path: '/api/v1/events/stream', id: 'streamAll', tag: 'monitor', kind: 'stream',
     summary: '所有專案的帳本事件,即時推送(SSE)',
@@ -160,7 +160,7 @@ export const ROUTES = [
     query: { projects: str('只看這些專案(逗號分隔;不填 = 全部)'), recent: int('連上時先補最近幾筆(所有專案依時間排,data 帶 recent:true;預設 0,上限 200)', { minimum: 0, maximum: 200 }), token: str('API token(只給 EventSource 用)') },
   },
 
-  // ---------------------------------------------------------------- 一個專案:看
+  // ---------------------------------------------------------------- one project: read
   { method: 'GET', path: '/api/v1/projects/{project}', id: 'getProject', tag: 'project', kind: 'op', op: 'status', summary: '專案現況:完成數、進行中、審核中、卡住、可派、預算、背景迴圈、等你的事' },
   { method: 'GET', path: '/api/v1/projects/{project}/dashboard', id: 'getDashboard', tag: 'project', kind: 'op', op: 'dashboard', summary: '主控台的全部資料(節點、時間軸、派工、花費、規劃、帳號)' },
   {
@@ -183,7 +183,7 @@ export const ROUTES = [
   { method: 'GET', path: '/api/v1/projects/{project}/roles', id: 'getRoles', tag: 'accounts', kind: 'op', op: 'roles', summary: 'worker、Critic、Verifier 各用哪些帳號、什麼模型' },
   { method: 'GET', path: '/api/v1/projects/{project}/loop', id: 'getLoop', tag: 'loop', kind: 'op', op: 'loop', summary: '背景迴圈在不在跑' },
 
-  // ---------------------------------------------------------------- 一個專案:設定
+  // ---------------------------------------------------------------- one project: configure
   {
     method: 'POST', path: '/api/v1/projects/{project}/setup', id: 'setupProject', tag: 'projects', kind: 'op', op: 'setup', write: true,
     summary: '不互動的 dlm setup:寫 dlm.config.json、裝 hooks、commit,回傳健康檢查',
@@ -222,7 +222,7 @@ export const ROUTES = [
     body: obj({ commit: bool('false = 不 commit(預設 true)') }),
   },
 
-  // ---------------------------------------------------------------- 一個專案:做
+  // ---------------------------------------------------------------- one project: act
   {
     method: 'POST', path: '/api/v1/projects/{project}/decisions', id: 'decide', tag: 'decisions', kind: 'op', op: 'decide', write: true,
     summary: '記下使用者對待決事項的決定',
@@ -272,14 +272,14 @@ export const ROUTES = [
 
 const PARAM_SCHEMAS = { project: NAME, account: ACCOUNT_NAME, role: { type: 'string', enum: ['worker', 'critic', 'verifier'] } };
 
-/** 把路徑樣板編成 regex:/api/v1/projects/{project} → 具名參數。 */
+/** Compile a path template into a regex: /api/v1/projects/{project} → named params. */
 const compiled = ROUTES.map((r) => ({
   route: r,
   keys: [...r.path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]),
   re: new RegExp(`^${r.path.replace(/\{(\w+)\}/g, '([^/]+)')}$`),
 }));
 
-/** 找路由。回 { route, params } 、{ methodNotAllowed: [...] } 或 null。 */
+/** Find the route. Returns { route, params }, { methodNotAllowed: [...] }, or null. */
 export function matchRoute(method, path) {
   const allowed = [];
   for (const c of compiled) {
@@ -293,13 +293,13 @@ export function matchRoute(method, path) {
 }
 
 const coerce = (schema, v) => {
-  if (v === undefined || typeof v !== 'string') return v; // MCP 傳來的已經是正確型別;HTTP query 才是字串
+  if (v === undefined || typeof v !== 'string') return v; // Args from MCP already have the right types; HTTP query values are strings
   if (schema.type === 'boolean') return v === 'true' || v === '1' || v === '';
   if (schema.type === 'integer') return Number(v);
   return v;
 };
 
-/** 檢查路徑參數、query、body;回 { args } 或 { error }。args 就是要交給操作的參數。 */
+/** Check path params, query and body; returns { args } or { error }. args are the arguments handed to the operation. */
 export function buildArgs(route, params, query, body) {
   const errors = [];
   for (const [k, v] of Object.entries(params)) errors.push(...validate(PARAM_SCHEMAS[k] ?? { type: 'string' }, v, undefined, k));
@@ -319,7 +319,7 @@ export function buildArgs(route, params, query, body) {
   return { args: { ...q, ...(body ?? {}), ...rest } };
 }
 
-/** 從路由表產生 OpenAPI 3.1。 */
+/** Generate OpenAPI 3.1 from the route table. */
 export function openapi(version) {
   const paths = {};
   const errorRes = { description: '錯誤', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } };

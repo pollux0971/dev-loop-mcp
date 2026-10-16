@@ -1,4 +1,4 @@
-// v4.7:API 定義、流程、專案清單、dlm op、跨專案帳號、dlm hub(HTTP + SSE)、dlm mcp(stdio)。
+// v4.7: API definition, flows, project list, dlm op, cross-project accounts, dlm hub (HTTP + SSE), dlm mcp (stdio).
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -34,7 +34,7 @@ describe('API 定義與流程', () => {
     const n = Object.values(spec.paths).reduce((k, v) => k + Object.keys(v).length, 0);
     assert.equal(n, ROUTES.length);
     for (const r of ROUTES) assert.ok(spec.paths[r.path][r.method.toLowerCase()].operationId === r.id);
-    // MCP 沒有串流與 openapi;其他每一條路由都有工具
+    // MCP has no streaming or openapi; every other route has a tool
     assert.equal(names.length, ROUTES.filter((r) => r.kind !== 'stream' && r.id !== 'openapi').length);
     assert.ok(names.includes(toolName('decide')) && toolName('setRole') === 'dlm_set_role');
   });
@@ -165,7 +165,7 @@ describe('帳號跨專案共用', () => {
   });
 });
 
-/** 開一個 hub(port 0),回 { base, token, get, send, close }。 */
+/** Start a hub (port 0), returns { base, token, get, send, close }. */
 async function startHub() {
   const server = await serveHub({ port: 0, intervalMs: 60000, log: () => {} });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -210,7 +210,7 @@ describe('dlm hub(HTTP API)', () => {
       assert.ok(flow.body.stages.find((s) => s.id === 'plan').steps.some((x) => x.tool === 'dlm_propose_bundle'));
       const page = await fetch(`${h.base}/`).then((r) => r.text());
       assert.ok(page.includes(h.token), '首頁內嵌 token');
-      // fetch 不讓改 Host,用 http.request
+      // fetch does not let you change Host, so use http.request
       const badHost = await new Promise((ok, no) => request(`${h.base}/`, { headers: { host: 'evil.example' } }, (r) => { r.resume(); ok(r.statusCode); }).on('error', no).end());
       assert.equal(badHost, 403, 'DNS rebinding:Host 不是 127.0.0.1 / localhost 就拒絕');
       const dash = await fetch(`${h.base}/p/${name}/`).then((r) => r.text());
@@ -230,7 +230,7 @@ describe('dlm hub(HTTP API)', () => {
       const setup = await h.send('POST', `/api/v1/projects/${name}/setup`, { answers: { platform: 'custom', worker_cmd: `FAKE_MODE=good node ${FAKE}`, verifier: 'none', autonomy: '1' } });
       assert.equal(setup.status, 200, JSON.stringify(setup.body));
       assert.equal(readJson(join(dir, 'dlm.config.json')).agents.worker.cmd, `FAKE_MODE=good node ${FAKE}`);
-      // SSE:先連上,再寫一筆事件
+      // SSE: connect first, then write an event
       const ctrl = new AbortController();
       const res = await fetch(`${h.base}/api/v1/projects/${name}/events/stream?token=${h.token}`, { signal: ctrl.signal });
       assert.equal(res.headers.get('content-type').split(';')[0], 'text/event-stream');
@@ -244,7 +244,7 @@ describe('dlm hub(HTTP API)', () => {
       ctrl.abort();
       assert.match(got, /"type":"halt"/);
       assert.match(got, new RegExp(`"project":"${name}"`));
-      // recent:連上時先補最近的(帶 recent:true)
+      // recent: on connect, backfill the latest events first (with recent:true)
       const ctrl2 = new AbortController();
       const res2 = await fetch(`${h.base}/api/v1/events/stream?recent=3&token=${h.token}`, { signal: ctrl2.signal });
       const first = new TextDecoder().decode((await res2.body.getReader().read()).value);
@@ -321,7 +321,7 @@ describe('dlm mcp', () => {
     const tools = Object.fromEntries(toolList().map((t) => [t.name, t]));
     const spec = tools.dlm_propose_feature.inputSchema.properties.spec;
     for (const k of ['id', 'kind', 'title', 'intent', 'owns', 'depends_on', 'accept']) assert.ok(spec.properties[k]?.description || spec.properties[k], k);
-    // 4.7.3:owns 也是必填(validateDag 本來就要求每個節點都有)
+    // 4.7.3: owns is required too (validateDag already requires it on every node)
     assert.deepEqual(spec.required, ['id', 'title', 'intent', 'owns']);
     const node = tools.dlm_propose_bundle.inputSchema.properties.bundle.properties.nodes.items;
     assert.ok(node.properties.gherkin_text && node.properties.kind);

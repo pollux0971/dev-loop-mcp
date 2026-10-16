@@ -1,13 +1,16 @@
 /**
- * scripts/check-step-dup.ts 的測試(模板 1.6.0,P-87)。
+ * Tests for scripts/check-step-dup.ts (template 1.6.0, P-87).
  *
- * 這支守門沒有 `--root` 旗標(見 zero-input.gates.test.ts 的 NO_ROOT_FLAG),repo 根一律
- * 用 `git rev-parse --show-toplevel` 從 cwd 推定——所以 fixture 自己要是一個 git repo
- * (`git init`),子行程的 cwd 指到 fixture。gates.config.json 用 GATES_CONFIG_DIR 指到
- * fixture 自己的 scripts/,不讓它撿到模板自己的那份。
+ * This gate has no `--root` flag (see NO_ROOT_FLAG in zero-input.gates.test.ts). The repo root is
+ * always inferred from cwd with `git rev-parse --show-toplevel`. So the fixture must itself be a
+ * git repo (`git init`), and the child process's cwd points at the fixture. gates.config.json
+ * is pointed at the fixture's own scripts/ with GATES_CONFIG_DIR, so it does not pick up the
+ * template's own copy.
  *
- * 四條反向驗證對應檔頭的 (a)–(d);(d) 是 1.6.0 補的角落:**跨檔逐字相同、但 feature 還沒
- * 用到**的定義也要紅——1.5.x 只比對 feature 已經用到的句子,這種重複完全看不見。
+ * The four reverse checks match (a)-(d) in the file header. (d) is the corner added in 1.6.0:
+ * a definition that is **word-for-word identical across files but not yet used by any feature**
+ * must also be red. 1.5.x only compared the sentences a feature already used, so this kind of
+ * duplicate was completely invisible.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -50,8 +53,8 @@ const BETA_STEPS = [
   '',
 ].join('\n');
 
-/** 乾淨的 fixture:兩個能力資料夾 + 一個整合場景,每句恰好一個定義,`it exits with status`
- *  跨三個資料夾但只定義在 common(反向驗證 (c) 的情境)。 */
+/** Clean fixture: two capability folders + one integration scenario, exactly one definition per sentence, and `it exits with status`
+ *  spans three folders but is defined only in common (the situation of reverse check (c)). */
 function makeCleanRoot(): string {
   const root = makeIsolatedTempDir('lc-step-dup-');
   tmpDirs.push(root);
@@ -122,7 +125,7 @@ describe('check-step-dup:每種步驟形狀恰好一個定義', () => {
 
   it('反向驗證 (d,P-87):跨檔逐字相同、但沒有任何 feature 用到的定義 → exit 1、明說沒有 feature 用到', () => {
     const root = makeCleanRoot();
-    // alpha 的 optional-text 句子(feature 裡沒人用)被 beta 逐字照抄
+    // alpha's optional-text sentence (no feature uses it) is copied word for word by beta
     writeRaw(root, 'features/steps/beta.steps.ts', BETA_STEPS + "Then('the log line(s) contain(s) {string}', function () {});\n");
     const { code, output } = run(root);
     expect(code).toBe(1);

@@ -1,13 +1,13 @@
-// 所有 LLM 都是 headless:一個 prompt 檔進去、一個 JSON 檔或 stdout 出來、跑完就結束。
-// 沒有終端機、沒有常駐 session,所以不存在「送出去了但對方沒收到」這種狀態。
-// worker 在沒有 .git 的沙箱副本裡跑、critic 在交件分支的 worktree 裡跑(見 sandbox.mjs)。
+// Every LLM is headless: one prompt file in, one JSON file or stdout out, then it exits.
+// There is no terminal and no resident session, so the state "sent but the other side never received it" cannot exist.
+// The worker runs in a sandbox copy with no .git; the critic runs in the worktree of the handed-in branch (see sandbox.mjs).
 import { accountEnv, roleCmd } from './accounts.mjs';
 import { validate } from './schema.mjs';
 import { sandboxExec, sandboxSpawn } from './sandbox.mjs';
 import { DlmError } from './util.mjs';
 import { extractJson } from './verify/backend.mjs';
 
-/** v4.6:worker 能不能開——有 cmd,或有帳號(用帳號那個 CLI 的預設指令)。 */
+/** v4.6: whether a worker can be started: it has a cmd, or it has accounts (use that account's CLI default command). */
 export const workerConfigured = (config) => !!(config.agents.worker.cmd || config.agents.worker.accounts?.length);
 export const criticConfigured = (config) => !!(config.agents.critic.cmd || config.agents.critic.accounts?.length);
 
@@ -20,7 +20,7 @@ export function launchWorker(config, { cwd, promptPath, reportPath, logPath, dis
   });
 }
 
-/** 同步呼叫 critic。輸出不合 schema 就回 { error },呼叫端決定怎麼降級(一律往保守方向)。 */
+/** Call the critic synchronously. If the output does not match the schema, return { error } and let the caller decide how to degrade (always toward the conservative side). */
 export function callAgent(agentCfg, prompt, schema, { cwd, config, role = 'critic', account = null } = {}) {
   const cmd = roleCmd(agentCfg, role, account);
   if (!cmd) return { error: 'not-configured' };
@@ -30,7 +30,7 @@ export function callAgent(agentCfg, prompt, schema, { cwd, config, role = 'criti
   });
   if (r.code !== 0) return { error: `exit ${r.code}: ${(r.stderr || r.stdout).slice(0, 400)}` };
   let json = extractJson(r.stdout);
-  // claude -p --output-format json 會包一層 { result: "..." }
+  // claude -p --output-format json wraps the output in { result: "..." }
   if (json && typeof json.result === 'string' && !('verdict' in json)) json = extractJson(json.result);
   if (!json) return { error: '輸出不是 JSON' };
   const errors = validate(schema, json);
@@ -39,8 +39,8 @@ export function callAgent(agentCfg, prompt, schema, { cwd, config, role = 'criti
 }
 
 /**
- * 從 agent 輸出找花費。Claude Code(--output-format json)印 total_cost_usd;其他 CLI 若印 cost_usd 也收。
- * 取最後一個出現的值(串流輸出時最後一筆才是總額)。
+ * Find the cost in agent output. Claude Code (--output-format json) prints total_cost_usd; also accept cost_usd if another CLI prints it.
+ * Take the last value seen (with streamed output, the last entry is the total).
  */
 export function parseCost(text) {
   const all = [...String(text ?? '').matchAll(/"(?:total_cost_usd|cost_usd)"\s*:\s*([0-9.]+)/g)];

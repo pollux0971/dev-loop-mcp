@@ -1,7 +1,7 @@
-// brownfield 測試用的假 worker:Python 既有專案(budget/core.py,unittest)。
-//   good     characterize 釘住 total();測試棒寫 to_csv 的測試(紅);實作棒加 to_csv
-//   breaker  實作棒順手把 total() 改壞(characterize 釘住的行為)
-//   regress  實作棒把 tests 以外另一個既有函式 label() 改壞(基線以外新紅一個測試)
+// Fake worker for brownfield tests: a Python existing project (budget/core.py, unittest).
+//   good     characterize pins total(); the test leg writes a to_csv test (red); the dev leg adds to_csv
+//   breaker  the dev leg breaks total() on the side (the behavior characterize pinned)
+//   regress  the dev leg breaks another existing function, label(), outside tests (one new red test beyond the baseline)
 import { execSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';

@@ -1,14 +1,14 @@
-// Claude Code hooks(payload/.claude/settings.json 會呼叫 `node tools/dlm.mjs hook <名字>`)。
+// Claude Code hooks (payload/.claude/settings.json calls `node tools/dlm.mjs hook <name>`).
 //
-//   user-prompt  UserPromptSubmit:把你這一輪真正送出的文字簽章存進 .dlm/utterances.jsonl,
-//                decide / confirm / resume / unblock 的 --verbatim 對得上其中某句時,事件記下那句話的 hash。
-//                有事等你時順便附一行「有幾件事等你」。
-//   pre-tool     PreToolUse:Front 可以讀、改檔、跑指令;只擋用檔案工具直接寫 ledger / dag.json / .dlm 狀態 / 原話紀錄,
-//                以及讀寫 repo 外的金鑰目錄。這些只該由 dlm 寫,手改會弄壞簽章鏈或狀態。
-//                (v4.0 的 strict 唯讀模式實跑沒用到,已移除)
+//   user-prompt  UserPromptSubmit: sign the text you actually sent this turn and store it in .dlm/utterances.jsonl;
+//                when the --verbatim of decide / confirm / resume / unblock matches one of them, the event records the hash of that sentence.
+//                When something is waiting for you, it also adds one line saying how many things are waiting.
+//   pre-tool     PreToolUse: Front may read, edit files and run commands; it only blocks using file tools to write the ledger / dag.json / .dlm state / verbatim-words record directly,
+//                and reading or writing the key directory outside the repo. Only dlm should write these; editing them by hand would break the signature chain or the state.
+//                (v4.0's strict read-only mode was never used in real runs and was removed)
 //
-// dlm 自己開的 headless agent(worker / critic)帶 DLM_ROLE,兩個 hook 都直接放行:
-// 它們的 prompt 不是你說的話,不能被簽成「使用者原話」。
+// The headless agents dlm starts itself (worker / critic) carry DLM_ROLE, and both hooks let them straight through:
+// their prompt is not something you said and must not be signed as the user's verbatim words.
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { keyPath, recordUtterance, UTTERANCES_REL } from './auth.mjs';
 import { existsSync } from 'node:fs';
@@ -16,7 +16,7 @@ import { loadDag } from './dag.mjs';
 import { readEvents } from './ledger.mjs';
 import { openDecisions, pendingE2e, replay } from './state.mjs';
 
-/** dlm 的 hooks 設定(跟 payload/.claude/settings.json 一致;裝好的專案裡沒有 payload/,所以 setup 從這裡拿)。 */
+/** dlm's hooks config (same as payload/.claude/settings.json; an installed project has no payload/, so setup takes it from here). */
 export const DLM_CLAUDE_HOOKS = {
   UserPromptSubmit: [
     { hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/tools/dlm.mjs" hook user-prompt' }] },
@@ -55,7 +55,7 @@ export function checkFileTool(tool, input, root) {
   return null;
 }
 
-/** 一行「有幾件事等你」;沒有、或讀不到帳本就回空字串(hook 永遠不能因此失敗)。 */
+/** One line saying how many things are waiting; return an empty string if there are none or the ledger can't be read (a hook must never fail because of this). */
 export function awaitingLine(root) {
   try {
     if (!existsSync(join(root, 'ledger', 'events.jsonl'))) return '';
@@ -75,14 +75,14 @@ export function awaitingLine(root) {
   }
 }
 
-/** 執行一個 hook。回傳 { code, stderr }:code 2 = 擋下(Claude Code 會把 stderr 交給模型)。 */
+/** Run one hook. Returns { code, stderr }: code 2 = block (Claude Code gives stderr to the model). */
 export function runHook(name, input, { env = process.env, cwd = process.cwd() } = {}) {
   if (env.DLM_HOOKS === 'off' || isDlmAgent(env)) return { code: 0 };
   const root = env.CLAUDE_PROJECT_DIR || input?.cwd || cwd;
   if (name === 'user-prompt') {
     if (typeof input?.prompt === 'string' && input.prompt.trim()) recordUtterance(root, input.prompt, { session: input.session_id });
-    // v4:有事等使用者時,在這一輪的對話裡附一行提醒(Claude Code 會把 UserPromptSubmit 的 stdout 當成額外脈絡)。
-    // v3 實測:背景卡在等合併好幾輪,Front 不主動看收件匣就沒人知道。
+    // v4: when something is waiting for the user, add one reminder line in this turn's conversation (Claude Code takes the stdout of UserPromptSubmit as extra context).
+    // v3 real run: the background was stuck waiting for a merge for several turns, and nobody knew unless Front looked at the inbox on its own.
     return { code: 0, stdout: awaitingLine(root) };
   }
   if (name === 'pre-tool') {

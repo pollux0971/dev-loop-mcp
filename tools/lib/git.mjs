@@ -5,8 +5,8 @@ import { DlmError, atomicWrite, ensureDir, removePath, run, sha256 } from './uti
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /**
- * dlm 跑的每一條 git 都停用 hooks。worktree 跟根目錄共用 .git/hooks:worker 在那裡放一個 post-merge,
- * 下一次 dlm 在根目錄 merge 就會在主機上執行它。dlm 自己的 commit / merge 不需要任何 hook。
+ *  * Every git command dlm runs has hooks disabled. A worktree shares .git/hooks with the root: a worker could put a post-merge there,
+ *  * and the next time dlm merges in the root it would run it on the host. dlm's own commit / merge needs no hook at all.
  */
 export const NO_HOOKS = '-c core.hooksPath=/dev/null';
 
@@ -17,8 +17,8 @@ export function git(cwd, args, { allowFail = false } = {}) {
 }
 
 /**
- * 共用 git 設定的指紋(.git/config 與 config.worktree)。filter、diff driver、core.fsmonitor 之類都在這裡,
- * worker 改了它就能讓 dlm 的 git 指令執行任意程式;所以每個 tick 開頭比對,不一致就停機等使用者看。
+ *  * Fingerprint of the shared git config (.git/config and config.worktree). Filters, diff drivers, core.fsmonitor and the like live here,
+ *  * and a worker that changes it could make dlm's git commands run arbitrary programs; so each tick compares at the start, and on a mismatch it halts and waits for the user to look.
  */
 export function gitConfigFingerprint(root) {
   const dirOut = git(root, 'rev-parse --git-common-dir').stdout.trim();
@@ -37,7 +37,7 @@ export function readConfigBaseline(root) {
   return existsSync(p) ? readFileSync(p, 'utf8').trim() : null;
 }
 
-/** 使用者確認過現在的 git 設定(第一次 tick、或因設定變更停機後使用者說繼續)。 */
+/** The user has confirmed the current git config (the first tick, or the user says continue after a halt caused by a config change). */
 export function writeConfigBaseline(root) {
   const fp = gitConfigFingerprint(root);
   atomicWrite(baselinePath(root), `${fp}\n`);
@@ -58,9 +58,9 @@ export function branchExists(root, branch) {
   return git(root, `rev-parse --verify --quiet ${q(`refs/heads/${branch}`)}`, { allowFail: true }).code === 0;
 }
 
-/** 追蹤中的檔案有沒有未 commit 的變更(可排除 dlm 自己管理的路徑)。 */
+/** Whether tracked files have uncommitted changes (can exclude paths dlm manages itself). */
 export function dirtyTracked(root, ignorePrefixes = []) {
-  // 不能 trim:porcelain 每行開頭的狀態欄可能是空白(" M path")
+  // Must not trim: the status column at the start of each porcelain line may be a space (" M path")
   const lines = git(root, 'status --porcelain --untracked-files=no').stdout.split('\n').filter((l) => l.trim());
   return lines
     .map((l) => l.slice(3))
@@ -86,7 +86,7 @@ export function diffNames(root, base, branch) {
   return r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
-/** 兩個 commit 之間(不是 merge-base)改了哪些檔。 */
+/** Which files changed between two commits (not merge-base). */
 export function changedBetween(root, a, b) {
   const r = git(root, `diff --name-only ${q(a)} ${q(b)}`);
   return r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -124,8 +124,8 @@ export function mergeNoFf(root, branch, message) {
 }
 
 /**
- * 在 worktree 裡同步主線:用 merge,不 rebase(保留每一棒的軌跡);一律 --no-ff,
- * 否則分支落後時會快轉,主線的 commit 會混進這一棒的 first-parent 鏈,被當成 worker 改的。衝突就放棄並回報。
+ *  * Sync main inside the worktree: use merge, not rebase (keeps each leg's trail); always --no-ff,
+ *  * otherwise when the branch is behind it would fast-forward, main's commits would mix into this leg's first-parent chain, and be counted as the worker's changes. On a conflict, give up and report.
  */
 export function syncWithMain(worktree, main) {
   const r = git(worktree, `-c user.name=dlm -c user.email=dlm@localhost merge --no-ff --no-edit ${q(main)}`, { allowFail: true });
@@ -136,7 +136,7 @@ export function syncWithMain(worktree, main) {
   return { ok: true };
 }
 
-/** 臨時合併樹:main + 候選分支,在這棵樹上跑全 gate(分支全綠 ≠ 合併後全綠)。 */
+/** Temp merge tree: main + candidate branch; run the full gate on this tree (branch all green != all green after merge). */
 export function withMergeTree(root, dir, main, branch, fn) {
   removeWorktree(root, dir);
   git(root, `worktree add --detach ${q(dir)} ${q(main)}`);

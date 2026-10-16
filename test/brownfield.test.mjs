@@ -1,5 +1,5 @@
-// v4.5 既有專案(brownfield):模式開關、gate 跑專案自己的測試、測試基線、characterize 棒、onboard。
-// 用一個沒有 package.json 的 Python 專案(標準庫 unittest,不用裝任何東西)。
+// v4.5 existing project (brownfield): mode switch, the gate runs the project's own tests, test baseline, characterize leg, onboard.
+// Uses a Python project with no package.json (stdlib unittest, nothing to install).
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -30,7 +30,7 @@ const FILES = {
     'def average(entries):', "    return round(sum(e['amount'] for e in entries) / len(entries), 2)", '',
   ].join('\n'),
   'tests/__init__.py': '',
-  // test_rounding 在主線上本來就紅(1.5 != 1):基線要記下它,之後合併不算到 worker 頭上
+  // test_rounding is already red on main (1.5 != 1): the baseline must record it, so later merges are not blamed on the worker
   'tests/test_core.py': [
     'import unittest', 'from budget.core import total, label, average', '',
     'class CoreTest(unittest.TestCase):',
@@ -41,19 +41,19 @@ const FILES = {
   'README.md': '# budget\n',
 };
 
-/** 既有的 Python 專案(有 git 歷史),裝上 dlm,setup 選 brownfield。 */
+/** An existing Python project (with git history): install dlm, and pick brownfield in setup. */
 async function existingPython(mode = 'good') {
   const proj = join(tempDir('dlm-bf-'), 'budget');
   for (const [f, t] of Object.entries(FILES)) { mkdirSync(dirname(join(proj, f)), { recursive: true }); writeFileSync(join(proj, f), t); }
   sh(proj, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm "existing project"');
   const r = init(proj, { name: 'budget', existing: true });
-  // v4.7.3:已經有 git 的專案,init 自己把 dlm 的檔 commit(以前這裡要手動 commit,真的使用者不會知道要這樣做)
+  // v4.7.3: for a project that already has git, init commits dlm's files itself (before, this had to be committed by hand, and a real user would not know to do that)
   assert.ok(r.committed, 'init 把 dlm 的檔 commit 了');
   assert.equal(sh(proj, 'git status --porcelain --untracked-files=no'), '');
   const asked = [];
   const answers = { platform: '2', worker_cmd: `FAKE_MODE=${mode} node ${FAKE_BF}` };
   await setup(proj, { ask: async (q) => { asked.push(q.id); return answers[q.id] ?? ''; }, detect: { claude: false }, log: quiet });
-  // 測試用:假的小模型、不簽章
+  // For tests: a fake small model, no signing
   const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.verifier = { ...cfg.agents.verifier, backend: 'cmd', cmd: `FV=ok node ${FAKE_VERIFIER}` };
   writeJson(join(proj, 'dlm.config.json'), cfg);
@@ -117,7 +117,7 @@ test('既有 Python 專案:init 不裝 TS 工具鏈、setup 預設 brownfield、
   assert.equal(cfg.verify.mutation.cmd, null);
   assert.ok(cfg.verify.rerun_allow.includes('python3 -m unittest'));
   assert.ok(cfg.paths.tests.includes('**/test_*.py'));
-  // upgrade 也記得這是既有專案:不會補裝 package.json
+  // upgrade also remembers this is an existing project: it will not install package.json
   assert.ok(!run('node tools/dlm.mjs upgrade --dry-run', { cwd: proj }).stdout.includes('create package.json'));
 });
 
@@ -138,7 +138,7 @@ test('onboard:基線記下本來就紅的測試,AS-IS 與 ROADMAP v0;doctor 看�
   const doc = run('node tools/dlm.mjs doctor', { cwd: proj }).stdout;
   assert.match(doc, /測試基線.*test 有 1 個本來就紅/);
   assert.match(doc, /合併 gate.*test\(python3 -m unittest discover -s tests -t \.\)/);
-  // 主控台:模式與基線
+  // Console: mode and baseline
   const d = dashboardData(proj);
   assert.equal(d.mode.mode, 'brownfield');
   assert.equal(d.mode.asis, true);
@@ -179,15 +179,15 @@ test('brownfield 從提案到合併:characterize(綠)→ test(紅)→ dev(綠),�
   const ds = [...s.dispatches.values()].filter((d) => d.node_id === 'budget/v1');
   assert.deepEqual(ds.map((d) => d.leg), ['characterize', 'test', 'dev']);
   const envs = ds.map((d) => readJson(join(proj, 'ledger/dispatch', d.dispatch_id, 'envelope.json')));
-  // characterize:只能寫釘住的測試,原始碼與節點自己的測試都不准碰;必須綠
+  // characterize: may only write the pinning tests; the source code and the node's own tests are off limits; must be green
   assert.deepEqual(envs[0].allowed_paths, ['tests/test_core_characterize.py']);
   assert.ok(envs[0].forbidden_paths.includes('budget/core.py'));
   assert.deepEqual(envs[0].acceptance, [{ cmd: 'python3 -m unittest tests/test_core_characterize.py', expect_exit: 0 }]);
-  // test:寫節點自己的測試(紅),不准改 characterize 測試
+  // test: write the node's own tests (red); must not change the characterize tests
   assert.deepEqual(envs[1].allowed_paths.filter((p) => p.startsWith('tests/')), ['tests/test_export.py']);
   assert.ok(envs[1].forbidden_paths.includes('tests/test_core_characterize.py'));
   assert.deepEqual(envs[1].acceptance, [{ cmd: SPEC.accept, expect_exit: -1 }]);
-  // dev:自己的驗收綠 + characterize 也要維持綠
+  // dev: its own acceptance green + characterize must stay green too
   assert.deepEqual(envs[2].acceptance, [{ cmd: SPEC.accept, expect_exit: 0 }, { cmd: 'python3 -m unittest tests/test_core_characterize.py', expect_exit: 0 }]);
   const gates = readEvents(proj).filter((e) => e.type === 'gates').at(-1);
   assert.equal(gates.ok, true);

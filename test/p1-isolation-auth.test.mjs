@@ -1,5 +1,5 @@
-// P1:worker 隔離與授權(#14–#19)。每一項至少一個「壞樣本被擋下」的測試。
-// (#13 容器沙箱在 v4.1 移除)
+// P1: worker isolation and authorization (#14–#19). Each item has at least one test where "a bad sample is blocked".
+// (#13 container sandbox was removed in v4.1)
 import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -95,7 +95,7 @@ describe('#15 node_modules 隔離', () => {
     assert.equal(stateOf(proj).nodes.get('calc/v1').status, 'done', lines.join('\n'));
     assert.ok(lines.some((l) => /install=npm-ci-offline exit=0/.test(l)), lines.join('\n'));
 
-    // 依賴不在本機快取 → install 失敗 → gate 紅
+    // The dependency is not in the local cache → install fails → the gate goes red
     const q = makeProject();
     const qp = readJson(join(q, 'package.json'));
     delete qp.devDependencies;
@@ -153,7 +153,7 @@ describe('#16 可驗證的使用者授權', () => {
     assert.ok(verifyVerbatim(proj, '就 sqlite'));
     const asWorker = runHook('pre-tool', { tool_name: 'Write', tool_input: { file_path: join(proj, 'ledger/events.jsonl') } }, { env: { ...env, DLM_ROLE: 'worker' } });
     assert.equal(asWorker.code, 0, 'dlm 開的 agent 不受 Front 的限制');
-    // worker 的 prompt 不會被簽成使用者原話
+    // A worker's prompt is not signed as the user's verbatim words
     runHook('user-prompt', { prompt: '使用者同意選 pg' }, { env: { ...env, DLM_ROLE: 'worker' } });
     assert.throws(() => verifyVerbatim(proj, '使用者同意選 pg'), /對不上/);
   });
@@ -319,7 +319,7 @@ describe('#18 驗收強度:dry-run 與 mutation', () => {
   test('寫死測試值:mutation 分數低 → strict 判 FAIL;一般節點 ABSTAIN、不自動合併', async () => {
     const strict = mutationProject(20);
     addNode(strict, { ...CALC, tier: 'strict' }, CALC_GHERKIN);
-    // strict 節點每一棒都要第二意見:測試棒由「使用者」放行,看實作棒怎麼被 mutation 擋下
+    // A strict node needs a second opinion on every leg: the test leg is let through by the "user", to see how the dev leg gets stopped by mutation
     const rejected = () => readEvents(strict).some((e) => e.type === 'reject');
     for (let i = 0; i < 5 && !rejected(); i++) {
       const st = await tickUntil(strict, (x) => rejected() || openRequests(x).some((r) => r.ref.startsWith('accept:')));

@@ -1,7 +1,7 @@
-// JSON Schema 子集驗證器(零依賴)。
-// 支援:type(可為陣列)、required、properties、additionalProperties、items、enum、const、
-// minLength、maxLength、pattern、minimum、maximum、minItems、maxItems、oneOf、anyOf、$ref(#/definitions/x)。
-// 不支援的關鍵字會被當成錯誤回報,而不是默默忽略——「看不懂的規則被跳過」正是假綠的來源。
+// JSON Schema subset validator (zero dependencies).
+// Supports: type (may be an array), required, properties, additionalProperties, items, enum, const,
+// minLength, maxLength, pattern, minimum, maximum, minItems, maxItems, oneOf, anyOf, $ref (#/definitions/x).
+// Unsupported keywords are reported as errors instead of being silently ignored: "rules we did not understand were skipped" is exactly where false greens come from.
 
 const SUPPORTED = new Set([
   '$schema', '$id', '$comment', 'title', 'description', 'examples', 'default', 'definitions',

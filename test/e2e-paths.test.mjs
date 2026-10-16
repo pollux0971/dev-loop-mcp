@@ -27,7 +27,7 @@ test('越界:實作棒偷改測試 → 每次被退回,第 3 次後封鎖並問�
   assert.ok(stuck, '封鎖後有待決事項');
   assert.ok(!existsSync(join(proj, 'packages/calc/src/calc.mjs')), '沒有東西進主線');
 
-  // 使用者說重試,並換成守規矩的 worker
+  // The user says retry, and swaps in a well-behaved worker
   decide(proj, stuck.ref, 'retry', '再試一次,不要碰測試檔');
   setWorkerMode(proj, 'good');
   s = await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
@@ -93,7 +93,7 @@ test('冪等:合併後、記帳前當機 → 下一次 tick 偵測到分支已�
   addNode(proj, CALC, CALC_GHERKIN);
   await tickUntil(proj, (st) => st.nodes.get('calc/v1').legsDone.includes('test') && st.nodes.get('calc/v1').openDispatch);
   await waitWorkers(proj);
-  // 收件,但在驗證前「當機」;然後模擬「已經合併了」
+  // Collected, but "crashes" before verification; then simulate "already merged"
   const ctx = new Ctx(proj);
   await harvest(ctx);
   const d = [...ctx.state.dispatches.values()].find((x) => x.state === 'done');
@@ -117,7 +117,7 @@ test('L0:每次合併都要使用者點頭;說 no 時原話成為退回原因', 
   s = await tickUntil(proj, (st) => readEvents(proj).some((e) => e.type === 'reject' && e.reason.includes('決定退回')));
   const reject = readEvents(proj).find((e) => e.type === 'reject');
   assert.match(reject.findings[0].detail, /負數/);
-  // 之後每一棒都說 yes
+  // After this, say yes to every leg
   for (let i = 0; i < 6 && stateOf(proj).nodes.get('calc/v1').status !== 'done'; i++) {
     s = await tickUntil(proj, (st) => openRequests(st).some((r) => r.ref.startsWith('accept:')) || st.nodes.get('calc/v1').status === 'done');
     for (const r of openRequests(s).filter((x) => x.ref.startsWith('accept:'))) decide(proj, r.ref, 'yes', '可以');
@@ -146,7 +146,7 @@ test('預算:今天花費到頂就不派工', async () => {
 });
 
 test('Critic(L2):strict 節點交 Critic;Critic 看不到 worker 敘述;PASS 就合併', async () => {
-  // v4:證據指令不在白名單、但 dlm 自己重跑的驗收通過時,只記錄不升級(不再觸發 Critic);改用 strict 節點觸發
+  // v4: when the evidence command is not on the allowlist but dlm's own rerun of the acceptance passes, only record it and do not escalate (the Critic is no longer triggered); trigger with a strict node instead
   const log = join(tempDir(), 'critic.log');
   const proj = makeProject({
     level: 2,

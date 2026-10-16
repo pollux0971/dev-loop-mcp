@@ -1,6 +1,6 @@
-// Verifier:script 檢查 + 小模型窄題檢查。
-// 小模型只有否決權:輸出 FAIL / ABSTAIN / NO_OBJECTION,從來沒有 PASS。
-// 它看的是 dlm 自己重跑的輸出與 diff,不看 worker 的敘述(避免被大模型的說法錨定)。
+// Verifier: script checks + narrow-question checks by the small model.
+// The small model only has a veto: it outputs FAIL / ABSTAIN / NO_OBJECTION, never PASS.
+// It looks at the output and diff that dlm re-ran itself, not at the worker's narrative (to avoid being anchored by the big model's wording).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from '../git.mjs';
@@ -19,7 +19,7 @@ function template(root, name, variant) {
   return existsSync(p) ? readFileSync(p, 'utf8') : null;
 }
 
-/** 同一題兩種問法各問一次;不一致就 ABSTAIN。輸入太大直接 ABSTAIN,不讓小模型讀長 context。 */
+/** Ask the same question two ways, once each; ABSTAIN if they disagree. If the input is too large, ABSTAIN right away; the small model never reads a long context. */
 export async function modelCheck(root, config, name, vars, label) {
   const v = config.agents.verifier;
   if (v.backend === 'none') return { check: name, outcome: 'SKIPPED', detail: `${label}:verifier 模型未設定` };
@@ -34,7 +34,7 @@ export async function modelCheck(root, config, name, vars, label) {
     try {
       prompt = fillTemplate(tpl, vars);
     } catch (e) {
-      // 模板是舊版(例:v3 的 scenario-honesty 用 <<SCENARIO>>/<<DIFF>>):不讓整個 tick 當掉,棄權並提示升級
+      // The template is an old version (e.g. v3's scenario-honesty uses <<SCENARIO>>/<<DIFF>>): do not crash the whole tick; abstain and suggest an upgrade
       return { check: name, outcome: 'ABSTAIN', detail: `${label}:prompts/verifier/${name}.${variant}.md 是舊版模板(${e.message}),請跑 dlm upgrade` };
     }
     answers.push(await askVerifier(config, prompt));
@@ -59,24 +59,24 @@ export async function runVerify(ctx) {
   const changed = legDiff(wt, legBase, commit);
   const paths = checkPaths(changed, envelope);
   results.push(paths);
-  // 沙箱副本裡碰了 .git / .dlm / node_modules / symlink 的,dlm 沒有同步回來,但這一棒一樣不算數
+  // Anything touched in the sandbox copy under .git / .dlm / node_modules / symlink was not synced back by dlm, but this leg still does not count
   const violations = dispatch.violations_path ? readJson(join(root, dispatch.violations_path), []) : [];
   if (violations.length) results.push({ check: 'sandbox-escape', outcome: 'FAIL', detail: `在沙箱副本裡碰了不該碰的地方:${violations.slice(0, 10).join(', ')}` });
   results.push(checkReportSanity(report));
-  // 越界的樹(例如改了 package.json 的 test script)不執行任何指令:這一棒反正會被退回,
-  // 在它上面跑驗收或重跑證據,等於替 worker 執行它改過的東西。
+  // Do not run any command on an out-of-bounds tree (e.g. one that changed the test script in package.json): this leg will be sent back anyway,
+  // and running acceptance or re-running evidence on it would mean executing what the worker changed.
   if (results.some((x) => x.outcome === 'FAIL' && ['paths', 'worktree-clean', 'sandbox-escape'].includes(x.check))) {
     results.push({ check: 'execution', outcome: 'SKIPPED', detail: '路徑 / worktree / 沙箱檢查沒過,不在這棵樹上執行任何指令' });
     return { results, commit, changed };
   }
-  // 會執行程式的檢查都在一份用完即丟的副本上、verify profile 的沙箱裡跑:worker 寫的測試動不到 worktree 與主機
+  // Checks that execute code all run on a throwaway copy, inside the verify profile sandbox: tests written by the worker cannot touch the worktree or the host
   const scratch = scratchCopy(root, wt, dispatch.dispatch_id);
   linkDeps(root, scratch);
   const ex = hostExecutor(scratch);
   const leg = dispatch.leg;
   const isLast = leg === pipelineFor(node, config).at(-1);
   let reruns = [];
-  // 驗收指令 → dlm 自己重跑的結果(PASS = 照規定紅 / 綠,紅的原因也對)
+  // acceptance command -> result of dlm's own re-run (PASS = red / green as required, and the reason for red is right too)
   const accepted = new Map();
   try {
     const evidence = checkEvidence(ex, report, config);
@@ -101,11 +101,11 @@ export async function runVerify(ctx) {
   }
   if (leg === 'integrate') results.push(...checkStubs(wt, dag, node, config));
 
-  // ---- 模型窄題 ----
+  // ---- narrow questions for the model ----
   for (const rr of reruns) {
-    // v4.7.3:證據指令就是這一棒的驗收指令,而且 dlm 剛用它重跑確認過(紅 / 綠照規定、紅的原因也對,退出碼也跟宣稱一樣):
-    // 再問小模型「輸出有沒有推翻這個宣稱」是多餘的;兩種問法答得不一樣就變成 ABSTAIN、升級問使用者。
-    // 實跑:todo-cli、wordfreq、minilang 好幾次要使用者決定合併,原因都是「驗收是紅的 / 全綠」這種宣稱兩種問法不一致
+    // v4.7.3: the evidence command is this leg's acceptance command, and dlm just re-ran it to confirm (red / green as required, the reason for red is right, and the exit code matches the claim):
+    // asking the small model "does the output refute this claim" is redundant; if the two phrasings answer differently it becomes ABSTAIN and escalates to the user.
+    // Seen in a real run: todo-cli, wordfreq and minilang several times needed the user to decide a merge, always because the two phrasings disagreed on a claim like "acceptance is red / all green"
     if (accepted.get(normCmd(rr.cmd)) === 'PASS') {
       results.push({ check: 'claim-supported', outcome: 'SKIPPED', detail: `宣稱「${rr.claim.slice(0, 40)}」:證據就是驗收指令,dlm 已經重跑確認,不再問小模型` });
       continue;
@@ -113,8 +113,8 @@ export async function runVerify(ctx) {
     results.push(await modelCheck(root, config, 'claim-supported', { CLAIM: rr.claim, CMD: rr.cmd, EXIT: String(rr.exit), OUTPUT: rr.output }, `宣稱「${rr.claim.slice(0, 40)}」`));
   }
   if (['dev', 'integrate'].includes(leg) && node.gherkin) {
-    // v4:不再「每個場景 × 截斷的 diff」(v3 實測 90 題 71 題棄權、一次驗證 17 分鐘:關鍵函式常被截掉)。
-    // 改成「gherkin 裡出現的值」對「改到的實作檔全文」逐段問一次:小模型看得到完整函式,呼叫次數跟檔案大小走,不跟場景數走。
+    // v4: no longer "every scenario x a truncated diff" (v3 real run: 71 of 90 questions abstained, one verification took 17 minutes: key functions were often cut off).
+    // Instead, ask once per chunk: "the values that appear in the gherkin" against "the full text of the changed implementation file". The small model sees the whole function, and the number of calls follows file size, not scenario count.
     const impl = changed.filter((p) => !matchAny(p, config.paths.tests) && existsSync(join(wt, p)));
     const literals = gherkinLiterals(wt, node.gherkin);
     const budget = Math.floor(config.agents.verifier.max_input_chars * 0.85) - literals.length;
@@ -126,7 +126,7 @@ export async function runVerify(ctx) {
       }
     }
   }
-  // v4:不在重跑白名單的證據,如果這一棒的驗收已經由 dlm 自己跑過並通過,只是「多說的話沒驗」,不再升級成問使用者
+  // v4: evidence not on the re-run allowlist: if dlm already ran this leg's acceptance itself and it passed, it is only "extra words not verified" and no longer escalates to asking the user
   const acceptanceRan = results.some((x) => x.check === 'acceptance' && x.outcome === 'PASS');
   if (acceptanceRan) {
     for (const x of results) {
@@ -139,7 +139,7 @@ export async function runVerify(ctx) {
   return { results, commit, changed };
 }
 
-/** gherkin 裡出現的具體值(數字、日期、引號字串、表格格子),給小模型對照「有沒有對這些值寫死」。 */
+/** Concrete values in the gherkin (numbers, dates, quoted strings, table cells), so the small model can check whether the code hardcodes them. */
 export function gherkinLiterals(root, rel, max = 1500) {
   const p = join(root, rel);
   if (!existsSync(p)) return '';
@@ -157,7 +157,7 @@ export function gherkinLiterals(root, rel, max = 1500) {
   return out;
 }
 
-/** 依行切段,每段不超過 maxChars;單行太長就硬切。回傳 [{ from, to, text }](行號從 1 起算)。 */
+/** Split by line into chunks of at most maxChars; a single line that is too long is cut hard. Returns [{ from, to, text }] (line numbers start at 1). */
 export function codeChunks(text, maxChars) {
   const lines = text.split('\n');
   const chunks = [];
@@ -180,18 +180,18 @@ export function codeChunks(text, maxChars) {
 }
 
 /**
- * 沒有 Verifier 模型時,「寫死測試值」這類作弊只剩場景誠實度這一題在抓,而它 SKIPPED 了。
- * 這種 SKIPPED 視同 ABSTAIN:交給 Critic 或使用者,不自動合併。帳本裡照實記 SKIPPED,只有路由這樣算。
+ * With no Verifier model, cheating such as "hardcoding test values" is caught only by the scenario-honesty question, and that was SKIPPED.
+ * This kind of SKIPPED counts as ABSTAIN: hand it to the Critic or the user, no automatic merge. The ledger still records SKIPPED as is; only routing counts it this way.
  */
 export const ESCALATE_WHEN_NO_VERIFIER = ['scenario-honesty'];
 
-/** 比對指令用:去頭尾空白、連續空白當一個。 */
+/** For comparing commands: trim both ends and treat runs of whitespace as one. */
 const normCmd = (cmd) => String(cmd ?? '').trim().replace(/\s+/g, ' ');
 
 export function summarize(results, { verifierBackend } = {}) {
   const fails = results.filter((x) => x.outcome === 'FAIL');
   const abstains = results.filter((x) => x.outcome === 'ABSTAIN');
-  // mutation 達標 = 測試真的抓得到改壞的實作,「寫死測試值」已經被機器排除,不必再升級
+  // mutation target met = the tests really catch a broken implementation; "hardcoded test values" is already ruled out by machine, so no need to escalate
   const mutationOk = results.some((x) => x.check === 'mutation' && x.outcome === 'PASS');
   if (verifierBackend === 'none' && !mutationOk) {
     for (const x of results) {

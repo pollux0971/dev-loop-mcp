@@ -1,15 +1,15 @@
-// v4.6 多帳號(訂閱方案)。做法跟 Orca 的帳號切換一樣:每個帳號一個獨立的設定目錄,
-// Claude Code 用 CLAUDE_CONFIG_DIR、Codex 用 CODEX_HOME;在那個目錄登入一次,之後派工時帶上環境變數就是用那個帳號。
+// v4.6 Multiple accounts (subscription plans). Works like Orca's account switching: one separate config directory per account,
+// Claude Code uses CLAUDE_CONFIG_DIR and Codex uses CODEX_HOME; log in once in that directory, and later dispatches that set the env var use that account.
 //
-// 帳號清單是這台電腦的(~/.config/dlm/accounts.json,DLM_ACCOUNTS_FILE 可改),不進 repo:登入目錄的路徑跟憑證都是你個人的。
-// 專案的 dlm.config.json 只寫「哪個角色用哪幾個帳號」(agents.worker.accounts = ["max-a", "max-b"])。
-// 一個角色有好幾個帳號時,dlm 輪流用(最近用得最少的先),被限流的帳號冷卻到重置時間,期間跳過、改派下一個。
+// The account list belongs to this machine (~/.config/dlm/accounts.json, override with DLM_ACCOUNTS_FILE) and does not go into the repo: the login directory paths and credentials are personal.
+// A project's dlm.config.json only says which role uses which accounts (agents.worker.accounts = ["max-a", "max-b"]).
+// When a role has several accounts, dlm rotates through them (least recently used first); a rate-limited account cools down until its reset time, is skipped meanwhile, and the next one is used.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { machineDir } from './legacy.mjs';
 import { DlmError, readJson, run, writeJson } from './util.mjs';
 
-/** 這台電腦的 dlm 設定目錄(帳號、專案清單、跨專案的帳號用量、hub token)。DLM_CONFIG_DIR 可改。 */
+/** The dlm config directory on this machine (accounts, project list, cross-project account usage, hub token). Override with DLM_CONFIG_DIR. */
 export function configDir() {
   if (process.env.DLM_CONFIG_DIR) return process.env.DLM_CONFIG_DIR;
   if (process.env.DLM_ACCOUNTS_FILE) return dirname(process.env.DLM_ACCOUNTS_FILE);
@@ -22,10 +22,10 @@ export function accountsFile() {
 const accountsDir = () => join(configDir(), 'accounts');
 
 /**
- * 支援的 CLI。homeEnv = 帳號目錄用哪個環境變數指定;clearEnv = 會蓋過帳號目錄的環境變數(派工時清掉,
- * 否則你 shell 裡的 ANTHROPIC_API_KEY 會讓每個帳號都變成同一把金鑰)。
- * worker / critic / verifier 是沒有自己填 cmd 時用的預設指令;{model} 換成角色設定的 model(沒設就拿掉)。
- * claude 的指令實跑驗過;codex 的照它的文件寫,還沒實跑(見 README 的「狀態」)。
+ * Supported CLIs. homeEnv = the env var that points to the account directory; clearEnv = env vars that would override the account directory (cleared on dispatch,
+ * otherwise the ANTHROPIC_API_KEY in your shell would make every account use the same key).
+ * worker / critic / verifier are the default commands used when a role has no cmd of its own; {model} is replaced with the role's model (removed if unset).
+ * The claude command has been verified in real runs; the codex one is written from its docs and has not been run yet (see "Status" in the README).
  */
 export const CLIS = {
   claude: {
@@ -47,7 +47,7 @@ export const CLIS = {
     login: 'codex login',
     status: 'codex login status',
     model: (m) => `-m ${m}`,
-    // worker 的副本沒有 .git:要 --skip-git-repo-check;`-` = prompt 從 stdin 讀
+    // The worker's copy has no .git: --skip-git-repo-check is needed; `-` = read the prompt from stdin
     worker: 'codex exec --skip-git-repo-check --sandbox workspace-write {model} - < "$DLM_PROMPT"',
     critic: 'codex exec --skip-git-repo-check --sandbox read-only {model} -',
     verifier: 'codex exec --skip-git-repo-check --sandbox read-only {model} -',
@@ -94,7 +94,7 @@ export function addAccount(name, { cli, plan = null, home = null, maxParallel = 
   return { name, ...accounts[name] };
 }
 
-/** 改方案名稱或同時上限(null = 拿掉)。 */
+/** Change the plan name or the parallel limit (null = remove it). */
 export function updateAccount(name, { plan, maxParallel } = {}) {
   const accounts = loadAccounts();
   const a = accounts[name];
@@ -105,7 +105,7 @@ export function updateAccount(name, { plan, maxParallel } = {}) {
   return { name, ...a };
 }
 
-/** 只刪清單;dlm 自己建的登入目錄一起刪(裡面是那個帳號的憑證),你指定的目錄不動。 */
+/** Only deletes the list entry; a login directory that dlm created itself is deleted too (it holds that account's credentials), a directory you specified is left alone. */
 export function removeAccount(name) {
   const accounts = loadAccounts();
   const a = accounts[name];
@@ -117,7 +117,7 @@ export function removeAccount(name) {
   return { removed: name, home_deleted: owned };
 }
 
-/** 派工時加的環境變數:指到帳號目錄,並清掉會蓋過它的金鑰(值設成空字串,childEnv 之後刪掉)。 */
+/** Env vars added on dispatch: point to the account directory and clear keys that would override it (value set to an empty string, removed later by childEnv). */
 export function accountEnv(account) {
   const c = cliOf(account.cli);
   const env = { [c.homeEnv]: account.home, DLM_ACCOUNT: account.name };
@@ -125,7 +125,7 @@ export function accountEnv(account) {
   return env;
 }
 
-/** 登入狀態(呼叫 CLI 自己的 status 指令,不讀憑證檔)。 */
+/** Login status (calls the CLI's own status command, does not read credential files). */
 export function loginStatus(account) {
   const c = cliOf(account.cli);
   const r = run(c.status, { env: accountEnv(account), timeoutMs: 20000 });
@@ -135,16 +135,16 @@ export function loginStatus(account) {
     try {
       const j = JSON.parse(r.stdout);
       return j.loggedIn ? { ok: true, detail: [j.email ?? j.account?.email, j.subscriptionType ?? j.authMethod].filter(Boolean).join(' · ') || '已登入' } : { ok: false, detail: '沒登入' };
-    } catch { /* 往下 */ }
+    } catch { /* continue below */ }
   }
   return r.code === 0 && !/not logged in/i.test(out) ? { ok: true, detail: out.trim().split('\n')[0]?.slice(0, 80) || '已登入' } : { ok: false, detail: '沒登入' };
 }
 
-// ------------------------------------------------------------------ 角色 → 指令與帳號
+// ------------------------------------------------------------------ role -> command and account
 
 export const ROLES = ['worker', 'critic', 'verifier'];
 
-/** 角色要跑的指令:自己寫了 cmd 就用它;沒寫但有帳號,就用帳號那個 CLI 的預設指令。 */
+/** The command a role runs: use its own cmd if it has one; if not but it has accounts, use the default command of the account's CLI. */
 export function roleCmd(roleCfg, role, account) {
   if (roleCfg?.cmd) return roleCfg.cmd;
   if (!account) return null;
@@ -153,13 +153,13 @@ export function roleCmd(roleCfg, role, account) {
   return c[role].replace('{model}', model ? c.model(model) : '').replace(/\s{2,}/g, ' ');
 }
 
-/** 帳號被限流到什麼時候。從 worker log 抓重置時間;抓不到就冷卻 cooldown_minutes。 */
+/** Until when an account is rate limited. Reads the reset time from the worker log; if it cannot, cool down for cooldown_minutes. */
 export function limitedUntil(logText, now = Date.now(), cooldownMinutes = 30) {
   const t = String(logText ?? '');
-  // Claude Code:「Claude AI usage limit reached|1760000000」
+  // Claude Code: "Claude AI usage limit reached|1760000000"
   const unix = t.match(/limit reached\|(\d{10})/i);
   if (unix) return new Date(Number(unix[1]) * 1000).toISOString();
-  // 「resets 3pm」「resets at 15:00」「resets 3:30pm」
+  // "resets 3pm", "resets at 15:00", "resets 3:30pm"
   const m = t.match(/resets?(?: at)? (\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
   if (m) {
     let h = Number(m[1]) % 24;
@@ -173,14 +173,14 @@ export function limitedUntil(logText, now = Date.now(), cooldownMinutes = 30) {
   return new Date(now + cooldownMinutes * 60000).toISOString();
 }
 
-/** 這段 log 是「帳號額度用完 / 被限流」(換個帳號就能繼續),不是服務端或網路的問題。 */
+/** This log means "the account quota is used up / rate limited" (switching to another account would work), not a server or network problem. */
 export function isAccountLimit(logText) {
   return /usage limit|limit reached|rate[ _-]?limit|\b429\b|too many requests|insufficient_quota|quota exceeded|weekly limit|5-hour limit/i.test(String(logText ?? ''));
 }
 
 /**
- * 這次用哪個帳號:pool 裡沒在冷卻的,最近 5 小時派得最少的先(一樣多就照 pool 的順序)。
- * 全部都在冷卻 → 回 { wait: 最早可用的時間 }。pool 是空的 → null(照舊用 cmd,不帶帳號)。
+ * Which account to use this time: among those in the pool not in cooldown, the one dispatched least in the last 5 hours goes first (ties follow the pool order).
+ * All in cooldown -> returns { wait: earliest available time }. Empty pool -> null (use cmd as before, with no account).
  */
 export function pickAccount(pool, usage, now = Date.now(), { ignoreParallel = false } = {}) {
   if (!pool?.length) return null;
@@ -188,7 +188,7 @@ export function pickAccount(pool, usage, now = Date.now(), { ignoreParallel = fa
   const missing = pool.filter((n) => !accounts[n]);
   if (missing.length) throw new DlmError(`dlm.config.json 用到這台電腦沒有的帳號:${missing.join(', ')}(dlm account list 看有哪些;dlm account add 新增)`);
   const cooling = (n) => usage[n]?.limited_until && Date.parse(usage[n].limited_until) > now;
-  // v4.7:帳號可以設同時上限(所有專案加起來);滿了這輪先不用它
+  // v4.7: an account can have a parallel limit (across all projects combined); when it is full, skip it this round
   const full = (n) => !ignoreParallel && accounts[n].max_parallel && (usage[n]?.open ?? 0) >= accounts[n].max_parallel;
   const ready = pool.filter((n) => !cooling(n) && !full(n));
   if (!ready.length) {
@@ -201,8 +201,8 @@ export function pickAccount(pool, usage, now = Date.now(), { ignoreParallel = fa
 }
 
 /**
- * 從事件算每個帳號的用量與冷卻狀態。events 可以是一個專案的帳本,也可以是這台電腦跨專案的帳號紀錄(globalAccountEvents)。
- * open = 派出去還沒結束的(超過 OPEN_MAX_HOURS 當作已經結束,避免當掉的紀錄一直佔著名額)。
+ * Compute each account's usage and cooldown state from events. events can be one project's ledger, or this machine's cross-project account record (globalAccountEvents).
+ * open = dispatched but not finished (past OPEN_MAX_HOURS counts as finished, so a crashed record does not hold a slot forever).
  */
 const OPEN_MAX_HOURS = 6;
 export function accountUsage(events, now = Date.now()) {
@@ -233,7 +233,7 @@ export function accountUsage(events, now = Date.now()) {
     if (e.type === 'worker_failed' && e.limited_account) {
       get(e.limited_account).limited_until = e.limited_until ?? null;
     } else if (e.type === 'worker_done' || e.type === 'worker_blocked') {
-      // 交件成功 = 那個帳號又能用了(提早解除冷卻)
+      // hand-in succeeded = that account is usable again (cooldown lifted early)
       const acct = byDispatch.get(e.dispatch_id);
       if (acct && out[acct]?.limited_until && Date.parse(out[acct].limited_until) > Date.parse(e.ts)) out[acct].limited_until = null;
     }
@@ -243,21 +243,21 @@ export function accountUsage(events, now = Date.now()) {
   return out;
 }
 
-// ------------------------------------------------------------------ v4.7 跨專案的帳號紀錄
-// 同一個訂閱帳號可能同時給好幾個專案用:額度、冷卻、同時上限都是整個帳號的事,所以派工、結束、限流、花費
-// 另外記一份在這台電腦(~/.config/dlm/account-log.jsonl,只記帳號相關的欄位,不記程式內容)。選號看這一份。
+// ------------------------------------------------------------------ v4.7 cross-project account record
+// The same subscription account may be used by several projects at once: quota, cooldown and parallel limit are all per account, so dispatch, finish, rate limit and cost events
+// are also recorded separately on this machine (~/.config/dlm/account-log.jsonl, only account-related fields, no code content). Account picking reads this one.
 
 export const accountLogFile = () => join(configDir(), 'account-log.jsonl');
 const LOG_KEEP_DAYS = 7;
 
-/** 記一筆。寫不進去(權限、磁碟)不影響派工,只是選號少了別的專案的資訊。 */
+/** Append one record. If it cannot be written (permissions, disk) dispatch is not affected; account picking just lacks the other projects' info. */
 export function logAccountEvent(project, ev) {
   try {
     mkdirSync(configDir(), { recursive: true });
     const line = { ts: new Date().toISOString(), project, ...ev, ...(ev.dispatch_id ? { dispatch_id: `${project}#${ev.dispatch_id}` } : {}) };
     appendFileSync(accountLogFile(), `${JSON.stringify(line)}\n`);
     if (statSync(accountLogFile()).size > 2 * 1024 * 1024) pruneAccountLog();
-  } catch { /* 見上 */ }
+  } catch { /* see above */ }
 }
 
 function pruneAccountLog(now = Date.now()) {
@@ -273,11 +273,11 @@ export function globalAccountEvents(now = Date.now()) {
     try {
       const e = JSON.parse(line);
       if (now - Date.parse(e.ts) <= LOG_KEEP_DAYS * 86400e3) out.push(e);
-    } catch { /* 寫到一半的行 */ }
+    } catch { /* a half-written line */ }
   }
   return out;
 }
 
-/** 所有專案加起來的帳號用量(選號、主控台、API 用)。 */
+/** Account usage summed across all projects (for account picking, the console and the API). */
 export const globalUsage = (now = Date.now()) => accountUsage(globalAccountEvents(now), now);
 

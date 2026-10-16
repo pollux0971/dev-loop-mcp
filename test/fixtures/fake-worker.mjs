@@ -1,21 +1,21 @@
-// 測試用的假 worker:讀 .dlm/envelope.json,依 FAKE_MODE 與棒別做事,最後寫 .dlm/report.json。
-//   good       正常施工
-//   forbidden  實作棒順手改了測試檔(越界)
-//   lie        實作寫錯,卻宣稱驗收 exit 0
-//   spawn      父節點實作棒第一次先提 prereq 子節點
-//   noreport   什麼都不做就結束
-//   429        模擬被限流:log 印 429 就結束,不交 report
-//   nologin    模擬沙箱裡的 claude 沒登入(真實的 claude -p 輸出)
-//   breaker    calc 以外的節點,實作棒順手把 calc 改壞(自己的驗收仍是綠的)
-//   pkg        實作棒順手把根目錄 package.json 的 test 改成 exit 0
-//   syntax     測試棒交出有語法錯誤的測試(紅,但紅錯原因)
-//   git-hook   實作棒在副本裡建 .git/hooks/post-merge
-//   ignored    實作棒寫到被 .gitignore 的 reports/ 底下
-//   nm         實作棒透過 node_modules 改測試框架(沒有容器時 node_modules 是 symlink)
-//   hardcode   實作棒對測試值寫死(run 永遠回 5)
-//   badtest    測試棒把期望值寫錯(2+3=6);實作棒發現後回報 fix_leg=test;test-fix 棒改對(v4)
-//   hang       睡 30 秒(測停機會不會終止 worker)
-//   already-green 整合點的測試棒:驗收在動手前就是綠的,誠實回報卡住(不造假紅燈);整合棒什麼都不改照實交件;其他棒照 good(v4.7.3)
+// Fake worker for tests: reads .dlm/envelope.json, acts by FAKE_MODE and leg, and finally writes .dlm/report.json.
+//   good       normal work
+//   forbidden  the dev leg also edits the test file (out of bounds)
+//   lie        the implementation is wrong, but it claims acceptance exit 0
+//   spawn      the parent node's dev leg first proposes a prereq child node
+//   noreport   does nothing and exits
+//   429        simulates rate limiting: prints 429 in the log and exits, no report handed in
+//   nologin    simulates claude in the sandbox not logged in (real claude -p output)
+//   breaker    for nodes other than calc, the dev leg breaks calc on the side (its own acceptance stays green)
+//   pkg        the dev leg changes test in the root package.json to exit 0
+//   syntax     the test leg hands in a test with a syntax error (red, but for the wrong reason)
+//   git-hook   the dev leg creates .git/hooks/post-merge in the copy
+//   ignored    the dev leg writes under reports/, which is in .gitignore
+//   nm         the dev leg edits the test framework through node_modules (without a container, node_modules is a symlink)
+//   hardcode   the dev leg hardcodes the test value (run always returns 5)
+//   badtest    the test leg writes the wrong expected value (2+3=6); the dev leg notices and reports fix_leg=test; the test-fix leg corrects it (v4)
+//   hang       sleeps 30 seconds (tests whether halt terminates the worker)
+//   already-green integration point's test leg: acceptance is already green before any work, so it honestly reports stuck (no faked red); the integrate leg changes nothing and hands in as is; other legs act like good (v4.7.3)
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -40,14 +40,14 @@ const write = (p, text) => {
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, text);
 };
-// 新流程 worker 在沒有 .git 的沙箱副本裡,不 commit(dlm 會收);舊流程(直接在 worktree)才 commit。
-// 看 .git/HEAD 而不是 .git:git-hook 模式自己建了 .git/hooks,那不是 repo;dlm 設了 GIT_CEILING_DIRECTORIES,git 也不會往上找到專案的 repo
+// In the new flow the worker runs in a sandbox copy without .git and does not commit (dlm collects); the old flow (directly in the worktree) commits.
+// Check .git/HEAD, not .git: git-hook mode creates .git/hooks itself, which is not a repo; dlm sets GIT_CEILING_DIRECTORIES, so git won't walk up to the project's repo either
 const commit = (msg) => {
   if (existsSync('.git/HEAD')) execSync(`git add -A && (git diff --cached --quiet || git -c user.name=w -c user.email=w@w commit -qm "${msg}")`);
 };
 const report = (r) => writeFileSync('.dlm/report.json', JSON.stringify({ dispatch_id: env.dispatch_id, ...r }, null, 2));
 
-// v4.6:FAKE_ENV_LOG = 每次啟動記下拿到的帳號環境變數;LIMIT_ACCOUNT = 用這個帳號時模擬額度用完
+// v4.6: FAKE_ENV_LOG = record the account env vars received on each launch; LIMIT_ACCOUNT = simulate quota exhausted when this account is used
 if (process.env.FAKE_ENV_LOG) appendFileSync(process.env.FAKE_ENV_LOG, `${JSON.stringify({ account: process.env.DLM_ACCOUNT ?? null, home: process.env.CLAUDE_CONFIG_DIR ?? null, api_key: 'ANTHROPIC_API_KEY' in process.env })}\n`);
 if (process.env.LIMIT_ACCOUNT && process.env.DLM_ACCOUNT === process.env.LIMIT_ACCOUNT) {
   console.log(`Claude AI usage limit reached|${Math.floor(Date.now() / 1000) + 3 * 3600}`);
@@ -75,7 +75,7 @@ if (mode === 'escalate') {
   const cmd = env.acceptance[0].cmd;
   report({ kind: 'blocked', summary: `驗收在動手前就是綠的(${cmd} → exit ${sh(cmd)}),要紅只能造假`, claims: [] });
 } else if (env.leg === 'test' && /^I\d+$/.test(env.node_id)) {
-  // 整合點的測試棒(v4):寫一個會紅的測試,等 integrate 棒接通
+  // Integration point's test leg (v4): write a test that is red, until the integrate leg wires things up
   write('packages/app/app.test.mjs', `import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { execFileSync } from 'node:child_process';\ntest('app prints ok', () => assert.match(execFileSync('node', ['packages/app/main.mjs'], { encoding: 'utf8' }), /ok/));\n`);
   commit('i-tests');
   const cmd = 'node --test packages/app/app.test.mjs';
@@ -121,7 +121,7 @@ if (mode === 'escalate') {
   const code = sh(cmd);
   report({ kind: 'done', summary: '實作完成', claims: [{ text: '驗收通過', evidence: { cmd, exit: mode === 'lie' ? 0 : code } }] });
 } else if (env.leg === 'integrate' && mode === 'already-green') {
-  // 組合層早就接通了:什麼都不改,照實交 done 附驗收證據(v4.7.3)
+  // The composition layer is already wired: change nothing, hand in done with acceptance evidence as is (v4.7.3)
   const cmd = env.acceptance[0].cmd;
   report({ kind: 'done', summary: '組合層已經接通,沒有要改的', claims: [{ text: '整合驗收通過', evidence: { cmd, exit: sh(cmd) } }] });
 } else if (env.leg === 'integrate') {

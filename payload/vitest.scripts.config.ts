@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
-// 守門腳本(`scripts/check-*.ts`)自己的測試,跟 `vitest.config.ts`(測 packages/apps)
-// 分開一份設定:守門腳本的測試會起子行程跑 `npx tsx`,單一案例動輒一到三秒,
-// 混進主測試套件的預設 include 會拖慢每次 `npm test`,而且守門腳本本來就不屬於
-// packages/**、apps/** 底下——`npm run test:scripts` 才會用到這份設定。
+// Tests of the gate scripts (`scripts/check-*.ts`) themselves. They get a separate config from
+// `vitest.config.ts` (which tests packages/apps): the gate script tests spawn a child process
+// that runs `npx tsx`, and a single case easily takes one to three seconds. Mixing them into the
+// default include of the main test suite would slow down every `npm test`, and the gate scripts
+// do not belong under packages/** or apps/** anyway. Only `npm run test:scripts` uses this config.
 export default defineConfig({
   test: {
     globals: true,

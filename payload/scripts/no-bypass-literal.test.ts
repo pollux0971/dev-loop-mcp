@@ -1,51 +1,51 @@
 /**
- * P-83 守門(來源 專案 A,2026-09-05,採用模板 1.4.1 之後發現):`template/scripts/**`
- * 底下不准含任何「可照抄的 Stryker CLI 繞過指令」字面值——1.4.1 的
- * `check-doc-rot.test.ts` 測試資料跟出貨的 `doc-rot.blacklist.json` 各自帶一份逐字寫死的
- * Stryker `run` 子指令(三個詞:`npx` + `stryker` + `run`,這裡刻意不連著打,理由見下),
- * 被消費者自己的「不准繞過鎖」掃描器(掃全部文字檔找可照抄的 Stryker CLI 指令,那把鎖是
- * 消費者的變異測試審核上限唯一有意義的入口)當成真的違規命中——對那支掃描器來說,
- * fixture 裡的字面值跟真的貼在文件裡的字面值長得一模一樣。
+ * P-83 guard (source: project A, 2026-09-05, found after adopting template 1.4.1): `template/scripts/**`
+ * must not contain any literal of a "copy-pasteable Stryker CLI bypass command". In 1.4.1,
+ * the test data in `check-doc-rot.test.ts` and the shipped `doc-rot.blacklist.json` each carried a verbatim hardcoded
+ * Stryker `run` subcommand (three words: `npx` + `stryker` + `run`, deliberately not typed together here, see below),
+ * and the consumer's own "no bypassing the lock" scanner (it scans all text files for copy-pasteable Stryker CLI commands; that lock is
+ * the only meaningful entry point for the consumer's mutation-testing review cap) counted it as a real violation. To that scanner,
+ * a literal in a fixture looks exactly the same as a literal really pasted into a document.
  *
- * B2(no exemptions anywhere,見 PITFALLS.md P-83):不用 SOURCE 標頭幫「模板同步進來
- * 的檔案」開放白名單——「來源可查」不等於「內容可信」,而且這個豁免會蓋住
- * `template/scripts/` 底下 30 多個檔案,形同幫整個目錄開後門。所以這支守門**連自己
- * (這份測試檔)都不排除**:它自己需要用到的違規字串,一律用陣列 `.join(' ')` 串接
- * 組出來,不留一段連續的字面值——不然這份守門自己就會變成下一個 P-83。
+ * B2 (no exemptions anywhere, see PITFALLS.md P-83): do not use the SOURCE header to open an allowlist for "files
+ * synced in from the template". "Traceable source" does not mean "trusted content", and that exemption would cover
+ * the 30+ files under `template/scripts/`, which amounts to opening a back door for the whole directory. So this guard **does not exclude itself either**
+ * (this test file): any violating string it needs is always built by joining an array with `.join(' ')`,
+ * leaving no contiguous literal, or this guard itself would become the next P-83.
  *
- * 掃描範圍:`template/scripts/**` 底下所有讀得出文字內容的檔案(用「讀不出 utf8 文字」
- * 當二進位檔的判準,例如 `scripts/py/__pycache__/*.pyc`,不特別枚舉副檔名清單——這支
- * 掃描器求的是「掃到即算」,不是「只掃白名單副檔名」),排除 `node_modules`。
+ * Scan scope: every file under `template/scripts/**` whose text content can be read (the "cannot be read as utf8 text" test
+ * is the binary-file criterion, e.g. `scripts/py/__pycache__/*.pyc`; there is no list of extensions. This
+ * scanner wants "count it if scanned", not "scan only allowlisted extensions"), excluding `node_modules`.
  *
- * 命中判準(兩個,任一命中都算):
- *   1. regex `/npx\s+stryker\s+(run|init)/`——`\s+` 允許一個或多個空白字元,涵蓋
- *      單一空格的原始指令,也涵蓋刻意多打幾個空格想閃掉字面比對的變體。
- *   2. 字面 `stryker` + 空格 + `run`(不管前面有沒有 `npx`——直接呼叫本機裝的
- *      `stryker` 執行檔一樣繞得過鎖)。
+ * Hit criteria (two; either one counts):
+ *   1. regex `/npx\s+stryker\s+(run|init)/`. `\s+` allows one or more whitespace characters, covering
+ *      the original command with a single space and also variants that deliberately add extra spaces to dodge a literal match.
+ *   2. The literal `stryker` + space + `run` (whether or not `npx` precedes it: calling the locally installed
+ *      `stryker` executable directly bypasses the lock just the same).
  *
- * 反向驗證:對一個臨時目錄(放一個用串接組出來的違規字串的檔案)跑同一個掃描函式,
- * 應該要抓到——確認掃描器本身真的會動,不是因為「掃到 0 個檔案」才 0 命中。
+ * Reverse check: run the same scan function on a temp dir (holding a file with a violating string built by concatenation);
+ * it must catch it. This confirms the scanner really works and doesn't show 0 hits just because "0 files were scanned".
  */
 import { describe, it, expect } from 'vitest';
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { makeIsolatedTempDir } from './_root.js';
 
-/** 這份測試檔自己所在的目錄,就是 `template/scripts/`——掃描的目標根目錄。 */
+/** The directory this test file lives in is `template/scripts/`, the root directory to scan. */
 const SCRIPTS_ROOT = resolve(import.meta.dirname);
 
-/** regex 判準:`npx <空白+> stryker <空白+> (run|init)`。 */
+/** Regex criterion: `npx <whitespace+> stryker <whitespace+> (run|init)`. */
 const NPX_STRYKER_REGEX = /npx\s+stryker\s+(run|init)/;
 
-/** 字面判準:串接組出來,這個常數本身的原始碼裡不存在一段連續的 `stryker` + 空格 + `run`。 */
+/** Literal criterion: built by concatenation, so the source of this constant itself has no contiguous `stryker` + space + `run`. */
 const STRYKER_RUN_LITERAL = ['stryker', 'run'].join(' ');
 
 export interface BypassHit {
-  /** 相對於掃描根目錄的路徑(posix 分隔)。 */
+  /** Path relative to the scan root (posix separators). */
   file: string;
-  /** 1-based 行號。 */
+  /** 1-based line number. */
   line: number;
-  /** 命中的那一行(trim 過,方便印出來看)。 */
+  /** The matching line (trimmed, easier to print). */
   matched: string;
 }
 
@@ -54,9 +54,9 @@ function toPosix(p: string): string {
 }
 
 /**
- * 掃 `dir` 底下所有檔案(排除 `node_modules`),對每一行套用上面兩個判準。
- * 讀檔失敗(權限、或內容本來就不是合法 utf8——二進位檔常見的症狀)一律當成
- * 「這不是文字檔,跳過」,不讓掃描器自己因為一個 .pyc 檔而炸掉。
+ * Scan all files under `dir` (excluding `node_modules`) and apply the two criteria above to each line.
+ * A read failure (permissions, or content that is not valid utf8, a common symptom of binary files) is always treated as
+ * "not a text file, skip", so the scanner itself doesn't blow up on a .pyc file.
  */
 export function scanForBypassLiterals(dir: string): BypassHit[] {
   const hits: BypassHit[] = [];
@@ -84,8 +84,8 @@ export function scanForBypassLiterals(dir: string): BypassHit[] {
       if (!st.isFile()) continue;
 
       const buf = readFileSync(full);
-      // 二進位檔的判準:內容含 NUL byte,或整體讀不出合法 utf8(readFileSync('utf8')
-      // 對非法位元組會塞入替代字元 U+FFFD,拿這個當「不是文字檔」的訊號)。
+      // Binary-file criterion: the content has a NUL byte, or cannot be read as valid utf8 as a whole (readFileSync('utf8')
+      // puts the replacement character U+FFFD in place of illegal bytes; use that as the "not a text file" signal).
       if (buf.includes(0)) continue;
       const content = buf.toString('utf8');
       if (content.includes('\uFFFD')) continue;

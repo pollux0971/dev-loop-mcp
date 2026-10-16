@@ -1,9 +1,9 @@
-# dlm init 只建立一次、dlm upgrade 永遠不覆蓋的檔(這些是你的專案內容,不是 dlm 的)
+# Files that dlm init creates only once and dlm upgrade never overwrites (these are your project content, not dlm's)
 AGENTS.md
 AUTONOMY.md
 CLAUDE.md
 dlm.config.json
-# 你可能已經有自己的 Claude Code 設定;dlm 的 hooks 只在第一次安裝時寫入,之後請自己合併(見 docs/dlm/SECURITY.md)
+# You may already have your own Claude Code settings; the dlm hooks are written only on first install, so merge them yourself afterwards (see docs/dlm/SECURITY.md)
 .claude/settings.json
 dag.json
 package.json

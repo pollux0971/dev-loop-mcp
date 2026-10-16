@@ -1,4 +1,4 @@
-// 假的 stryker:依 FAKE_SCORE(百分比)寫一份 mutation-testing-report-schema 格式的報告。argv[2] 是 {files}。
+// Fake stryker: writes a report in mutation-testing-report-schema format based on FAKE_SCORE (a percentage). argv[2] is {files}.
 import { mkdirSync, writeFileSync } from 'node:fs';
 const score = Number(process.env.FAKE_SCORE ?? 100);
 const files = (process.argv[2] ?? '').split(',').filter(Boolean);

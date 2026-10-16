@@ -1,4 +1,4 @@
-// `dlm check`:dlm 自己的守門。每一支都有陽性對照(controls),守門守守門。
+// `dlm check`: dlm's own guards. Each one has a positive control (controls), guarding the guards.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { DEFAULTS, loadConfig } from './config.mjs';
@@ -34,7 +34,7 @@ export function checkGenerated(root) {
   return res('generated', drift.length ? 'FAIL' : 'PASS', drift.length ? [`產生檔跟 dag+ledger 不一致(被手改或沒 render):${drift.join(', ')}。修法:\`dlm render\``] : ['產生檔與來源一致']);
 }
 
-/** 契約:valid/ 全部要過、invalid/ 全部要被擋而且擋的原因對(EXPECTED.json)。0 份 schema = FAIL。 */
+/** Contracts: everything in valid/ must pass, everything in invalid/ must be blocked and for the right reason (EXPECTED.json). 0 schemas = FAIL. */
 export function checkContracts(root) {
   const dir = join(root, 'contracts', 'schema');
   if (!existsSync(dir)) return res('contracts', 'FAIL', ['沒有 contracts/schema/:契約沒有可執行版本']);
@@ -70,7 +70,7 @@ export function checkContracts(root) {
   return res('contracts', fail ? 'FAIL' : 'PASS', lines);
 }
 
-/** 未填的 placeholder。`checks.placeholders.exclude` 可以列出「本來就該有 placeholder」的模板目錄(例:dev-loop-mcp repo 的 payload/**)。 */
+/** Unfilled placeholders. `checks.placeholders.exclude` can list template directories that are "meant to have placeholders" (example: payload/** in the dev-loop-mcp repo). */
 export function checkPlaceholders(root, config = DEFAULTS) {
   const exclude = config.checks?.placeholders?.exclude ?? [];
   const files = listFiles(root, { skip: ['.git', 'node_modules', '.dlm', 'ledger', 'features', 'docs'] })
@@ -83,7 +83,7 @@ export function checkPlaceholders(root, config = DEFAULTS) {
   return res('placeholders', hits.length ? 'FAIL' : 'PASS', hits.length ? [...hits, '沒填的 placeholder 會被模型自己「補一個合理的值」;先填完'] : ['沒有未填的 placeholder']);
 }
 
-/** 規則檔體量上限:規則愈長,每個 agent 付的 context 稅愈重、互相矛盾的機會愈大。 */
+/** Size cap for rule files: the longer the rules, the heavier the context tax each agent pays and the greater the chance of contradictions. */
 export function checkRuleSize(root, config) {
   const files = listFiles(root, { skip: ['.git', 'node_modules', '.dlm', 'ledger'] }).filter((f) => matchAny(f, config.paths.rules));
   const over = [];
@@ -98,7 +98,7 @@ const NEG = /(不准|不得|禁止|不要|不可|不能|絕不|never|must not|do
 const POS = /(必須|一律|務必|永遠|always|must)/i;
 const KEYWORDS = ['rebase', 'merge', 'push', 'commit', '測試', 'test', '契約', 'contract', 'ledger', 'dag.json', '@e2e', 'worktree', 'gherkin'];
 
-/** 規則矛盾候選:同一個關鍵字,一句「必須」一句「禁止」。只報告不擋——字面相近不等於矛盾。 */
+/** Rule contradiction candidates: the same keyword with one sentence saying "must" and another "forbidden". Report only, do not block -- similar wording is not a contradiction. */
 export function checkRuleConflicts(root, config) {
   const files = listFiles(root, { skip: ['.git', 'node_modules', '.dlm', 'ledger'] }).filter((f) => matchAny(f, config.paths.rules));
   const sentences = [];
@@ -120,7 +120,7 @@ export function checkRuleConflicts(root, config) {
   return res('rule-conflicts', 'REPORT', pairs.length ? pairs.slice(0, 12) : ['沒有候選']);
 }
 
-/** 陽性對照:每支檢查拿一個已知壞樣本,必須抓得到。抓不到 = 這支檢查已經失效。 */
+/** Positive controls: each check takes a known bad sample and must catch it. If it can't, that check has stopped working. */
 export function checkControls(config = DEFAULTS, root = null) {
   const failures = [];
   const cyclic = { version: 1, nodes: [
@@ -136,7 +136,7 @@ export function checkControls(config = DEFAULTS, root = null) {
   try {
     assemblePrompt({ role: 'x', rules: 'hi {{PROJECT_NAME}}', reminder: '' });
     failures.push('prompt 組裝放行了未填 placeholder');
-  } catch { /* 預期 */ }
+  } catch { /* expected */ }
   const unordered = { version: 1, nodes: [
     { id: 'a/v1', kind: 'phase', title: 'a', intent: 'a', gherkin: 'x', accept: 'true', owns: ['src/**'] },
     { id: 'b/v1', kind: 'phase', title: 'b', intent: 'b', gherkin: 'x', accept: 'true', owns: ['src/shared/**'] },

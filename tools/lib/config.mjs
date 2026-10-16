@@ -5,8 +5,8 @@ import { configSchema } from './schemas.mjs';
 import { DlmError, readJson } from './util.mjs';
 
 /**
- * gate 定義檔與 agent 設定。worker 改得到它們,就能把 `test` 改成 `exit 0`、或換掉測試框架,
- * 讓最後一道 gate 失效。預設禁止;確實要改時走使用者批准、owns 明列該路徑的 shared/* 節點。
+ * gate definition files and agent settings. If a worker could change them, it could turn `test` into `exit 0` or swap the test framework,
+ * defeating the last gate. Forbidden by default; when a change is really needed, go through user approval and a shared/* node whose owns lists that path explicitly.
  */
 export const BUILD_CONFIG_PATHS = [
   'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'tsconfig.json',
@@ -18,41 +18,41 @@ export const DEFAULTS = {
   main_branch: 'main',
   worktree_dir: '.dlm/worktrees',
   platform: 'generic',
-  // v4.5:greenfield / brownfield(dlm setup 會問)。language 決定 characterize 與測試檔的預設路徑
+  // v4.5: greenfield / brownfield (dlm setup asks). language decides the default paths for characterize and test files
   project: { mode: 'greenfield', language: 'node' },
   caps: {
     parallel: 3, unmerged: 3, drift: 20, attempts: 3, lease_minutes: 90,
-    // 429 / 5xx / 連線逾時這類基礎設施失敗不算 worker 的嘗試次數;改成退避重派,連續太多次就停機
+    // Infrastructure failures such as 429 / 5xx / connection timeout do not count as a worker attempt; they are re-dispatched with backoff, and the loop halts after too many in a row
     infra_halt_after: 5, infra_backoff_seconds: 60, infra_backoff_max_minutes: 30,
-    // v4:同一個節點最多自動退回測試棒幾次;超過就問使用者(規格本身可能有問題)
+    // v4: how many times one node may be sent back to the test leg automatically; beyond that, ask the user (the spec itself may be wrong)
     test_reopens: 2,
-    // v4.6:帳號被限流、log 裡又看不出重置時間時,冷卻幾分鐘
+    // v4.6: how many minutes to cool down when an account is rate limited and the reset time cannot be found in the log
     account_cooldown_minutes: 30,
   },
   pipeline: {
     phase: ['test', 'dev'],
-    // v4:整合點也先有測試棒。v3 只有 integrate 一棒,整合 gherkin 的步驟定義在 features/steps(測試路徑),
-    // integrate 棒不准寫,沒有任何一棒會寫它,整合點永遠 undefined(實測)
+    // v4: integration points get a test leg first too. In v3 there was only the integrate leg, and the step definitions of the integration gherkin live in features/steps (a test path),
+    // which the integrate leg may not write, and no leg would write it, so the integration point was always undefined (seen in a real run)
     integration: ['test', 'integrate'],
     shared: ['dev'],
   },
-  // 合併前在 main+分支 的臨時樹跑的 npm scripts。必須含專案測試:只跑 check:dlm 等於只驗元資料,
-  // 節點 B 弄壞節點 A 的測試不會被擋。
-  // install:merge-tree 的依賴怎麼來。auto = 有 package-lock.json 就用本機快取 `npm ci --offline --ignore-scripts`
-  // 裝一份乾淨的(不受根目錄 node_modules 被改的影響),沒有 lockfile 才 symlink 根目錄。
-  // commands(v4.5):chain 名字對應的指令,給不是用 npm script 跑測試的既有專案(例 { test: 'python3 -m pytest -q' })。
+  // npm scripts run in the temp tree of main + branch before merging. Must include the project's tests: running only check:dlm validates only metadata,
+  // so node B breaking node A's tests would not be blocked.
+  // How install:merge-tree gets its dependencies. auto = if there is a package-lock.json, install a clean copy with the local cache `npm ci --offline --ignore-scripts`
+  // (unaffected by changes to the root node_modules); only without a lockfile, symlink the root.
+  // commands (v4.5): the command each chain name maps to, for existing projects that do not run tests through npm scripts (e.g. { test: 'python3 -m pytest -q' }).
   gates: { chain: ['check:dlm', 'typecheck', 'test', 'accept'], timeout_minutes: 30, install: 'auto', commands: {} },
   autonomy: { level: 1 },
-  // 使用者授權(decide / confirm / resume / unblock):信任 Front 轉達;--verbatim 可省略。
-  // 有給且對得上 hook 簽章過的原話(最近 window_minutes 分鐘內)時,事件記下那句話的 hash
+  // User authorization (decide / confirm / resume / unblock): trust what Front relays; --verbatim may be omitted.
+  // When verbatim words signed by the hook and matching are given (within the last window_minutes minutes), the event records the hash of that sentence
   auth: { window_minutes: 30 },
   budget: { daily_usd: 5 },
-  // v4:版本整合關卡(見 AUTONOMY.md、WORKFLOW.md)。每個版本最後一個整合點 I<n>;下一版的節點依賴它,
-  // gate_next_version = true 時,要等整合點合併而且你試用確認(dlm confirm)過,下一版才開工。
-  // v4.7.3 precheck_green:整合點的測試棒派出去之前先在那棵樹上跑一次驗收;已經是綠的(能力節點已經做到)就不派,
-  // 測試棒記為完成、接著派整合棒(省一棒和一次「卡住」的詢問)。false = 照舊派,卡住時再讓使用者選 skip
+  // v4: version gate (see AUTONOMY.md, WORKFLOW.md). The last integration point I<n> of each version; the next version's nodes depend on it,
+  // and with gate_next_version = true, the next version does not start until the integration point is merged and you have confirmed it by hand trial (dlm confirm).
+  // v4.7.3 precheck_green: before dispatching an integration point's test leg, run acceptance once on that tree; if it is already green (the capability nodes already did it), do not dispatch,
+  // mark the test leg done and dispatch the integrate leg (saves one leg and one "stuck" question). false = dispatch as before, and let the user choose skip when stuck
   integration: { gate_next_version: true, precheck_green: true },
-  // v4:有新的待決事項時執行(環境變數 DLM_NOTIFY_TEXT)。例:macOS `osascript -e "display notification \"$DLM_NOTIFY_TEXT\" with title \"dlm\""`
+  // v4: runs when there is a new pending decision (env var DLM_NOTIFY_TEXT). Example: macOS `osascript -e "display notification \"$DLM_NOTIFY_TEXT\" with title \"dlm\""`
   notify: { cmd: null },
   agents: {
     worker: { cmd: null, timeout_minutes: 90 },
@@ -64,7 +64,7 @@ export const DEFAULTS = {
       'ledger/**', 'dag.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json',
       'AGENTS.md', 'CLAUDE.md', 'AUTONOMY.md', 'dlm.config.json',
       '.claude/**', 'prompts/**', 'tools/**', 'contracts/**', '.dlm-install.json',
-      // v4.5:既有專案的測試基線(哪些測試在主線上本來就紅)。worker 改得到它,就能把自己弄壞的測試寫成「本來就壞」
+      // v4.5: the test baseline of an existing project (which tests were already red on main). If a worker could change it, it could write the tests it broke as "already broken"
       'docs/dlm-baseline.json',
       ...BUILD_CONFIG_PATHS,
     ],
@@ -72,16 +72,16 @@ export const DEFAULTS = {
     rules: ['AGENTS.md', 'AUTONOMY.md', 'prompts/*.md', '.claude/skills/*/SKILL.md'],
   },
   verify: {
-    // 前綴比對;指令本身只能含英數與 ._/:=@+- 和空白,以 argv 執行、不經 shell。
-    // 不放 cat / ls:worker 可以宣稱「cat ~/.aws/credentials 的 exit 是 1」,讓 dlm 在主機上替它讀檔。
-    // v4:加入 `node tools/dlm.mjs check`(契約節點唯一能拿來當證據的指令;v3 實測沒放行,整筆變成問使用者)
+    // Prefix match; the command itself may only contain alphanumerics, ._/:=@+- and spaces, run as argv without a shell.
+    // No cat / ls: a worker could claim "the exit of cat ~/.aws/credentials is 1" and make dlm read the file on the host for it.
+    // v4: added `node tools/dlm.mjs check` (the only command a contract node can use as evidence; in the v3 real run it was not allowed, so the whole thing became a question to the user)
     rerun_allow: ['npm run ', 'npm test', 'npx cucumber-js', 'npx vitest', 'node --test', 'node tools/dlm.mjs check', 'git diff', 'git log', 'git status'],
     rerun_timeout_seconds: 600,
-    // 測試棒:所有步驟都要綁定({gherkin} 換成節點的 gherkin 路徑)。null = 不跑
+    // Test leg: every step must be bound ({gherkin} is replaced with the node's gherkin path). null = do not run
     dry_run_cmd: null,
-    // 最後一棒:對這一棒改到的實作檔跑增量 mutation({files} 換成逗號分隔的檔案清單)。cmd null = 不跑
+    // Last leg: run incremental mutation on the implementation files this leg changed ({files} is replaced with a comma-separated file list). cmd null = do not run
     mutation: {
-      // v4:一般節點 50、tier strict 70(v3 實測 CLI 專案 52%、54%,60 的門檻讓每次都變成「沒把握」)
+      // v4: 50 for normal nodes, 70 for tier strict (v3 real run: CLI projects scored 52%, 54%, and a threshold of 60 made every run "unsure")
       cmd: null, report: 'reports/mutation/mutation.json', min: 50, min_strict: 70, timeout_minutes: 30,
       include: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs'],
     },
@@ -99,8 +99,8 @@ function merge(base, over) {
 }
 
 /**
- * v4.1 拿掉的設定(實跑沒用到;要用時再加回來,程式在 git 歷史 v4.0.0)。
- * 舊設定檔裡有這些不報錯:讀的時候拿掉,`dlm doctor` 會逐條提醒。回傳 [{ key, note }]。
+ * Settings removed in v4.1 (unused in real runs; add them back when needed, the code is in git history v4.0.0).
+ * Old config files containing these do not error: they are dropped on read, and `dlm doctor` reminds you of each one. Returns [{ key, note }].
  */
 const REMOVED = [
   ['agents.manager', 'Manager 已移除,改用預設優先序(解鎖下游數)', (v) => !v?.cmd],
@@ -108,7 +108,7 @@ const REMOVED = [
   ['front', 'Front 的 strict 唯讀模式已移除(只剩防寫帳本的 light)', (v) => (v?.guard ?? 'light') === 'light'],
   ['auth.mode', 'signed / off 模式已移除:一律信任 Front 轉達,對得上簽章原話時另外記 hash', (v) => v === 'trust'],
   ['agents.verifier.url', 'Verifier 的 http(Ollama)模式已移除,改用 cmd', (v) => !v],
-  // agents.verifier.model 不在這裡:v4.6 起它是帳號模式下 CLI 用的模型(dlm account use verifier … --model),見 stripRemovedSettings
+  // agents.verifier.model is not here: since v4.6 it is the model the CLI uses in account mode (dlm account use verifier ... --model), see stripRemovedSettings
   ['verify.clean_room_max_overlap', '外部程式匯入(intake import)已移除', () => true],
   ['pipeline.backfill', '既有專案補 gherkin(brownfield)已移除', (v) => String(v) === 'backfill'],
   ['pipeline.import-hard', '外部程式匯入(intake import)已移除', (v) => String(v) === 'test,port'],
@@ -118,16 +118,16 @@ const REMOVED = [
 export function stripRemovedSettings(raw) {
   const out = structuredClone(raw ?? {});
   const removed = [];
-  // v4.1 拿掉 http(Ollama)模式時,agents.verifier.model 是 Ollama 的模型名,一律拿掉;但 v4.6 起同一個欄位是帳號模式下
-  // Verifier 用的模型(例 haiku、sonnet)。只有舊的 http 設定(backend http 或有 url)才當成已移除的設定。
-  // v4.7.3 實測:dlm account use verifier <帳號> --model haiku 之後 doctor 警告「http 模式已移除」,而且模型被丟掉、永遠用預設
+  // When v4.1 removed the http (Ollama) mode, agents.verifier.model was an Ollama model name and was always dropped; but since v4.6 the same field is the model the Verifier uses in account mode
+  // (e.g. haiku, sonnet). Only an old http setting (backend http or a url) counts as a removed setting.
+  // v4.7.3 real run: after dlm account use verifier <account> --model haiku, doctor warned "http mode removed", and the model was dropped so the default was always used
   const v0 = out.agents?.verifier;
   if (v0 && typeof v0 === 'object' && 'model' in v0 && (v0.backend === 'http' || 'url' in v0)) {
     const silent = !v0.model;
     delete v0.model;
     if (!silent) removed.push({ key: 'agents.verifier.model', note: 'Verifier 的 http(Ollama)模式已移除,改用 cmd' });
   }
-  // silent(v) 為真 = 舊設定只是預設值,拿掉不用提醒
+  // silent(v) truthy = the old setting was just the default; drop it without a reminder
   for (const [key, note, silent] of REMOVED) {
     const parts = key.split('.');
     const parent = parts.slice(0, -1).reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), out);
@@ -154,8 +154,8 @@ export function loadConfig(root) {
     throw new DlmError(e.message);
   }
   const config = merge(DEFAULTS, raw);
-  // v4.5:gate 對應的指令(例 python3 -m pytest -q)也是 worker 拿來當證據的指令,自動放進重跑白名單。
-  // 放的是測試框架那一段(python3 -m pytest、go test、cargo test):worker 只跑自己的測試檔時參數不同
+  // v4.5: the command for a gate (e.g. python3 -m pytest -q) is also a command the worker uses as evidence, so it is added to the rerun allowlist automatically.
+  // What goes in is the test framework part (python3 -m pytest, go test, cargo test): the arguments differ when a worker runs only its own test files
   const runner = (c) => { const w = c.split(' ').filter(Boolean); return w.slice(0, w[1] === '-m' ? 3 : 2).join(' '); };
   const extra = Object.values(config.gates.commands ?? {}).filter((c) => /^[A-Za-z0-9 ._/:=@+-]+$/.test(c)).map(runner);
   if (extra.length) config.verify = { ...config.verify, rerun_allow: [...new Set([...config.verify.rerun_allow, ...extra])] };

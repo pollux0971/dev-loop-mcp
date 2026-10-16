@@ -1,10 +1,10 @@
 /**
- * scripts/check-boundaries.ts 的單元測試(模板 1.4.0 S4:空落點表要 FAIL + glue 角色)。
+ * Unit tests for scripts/check-boundaries.ts (template 1.4.0 S4: an empty landing-zone table must FAIL + glue role).
  *
- * `GATES_CONFIG_DIR` 一定要設成 `<fixture>/scripts`:check-boundaries.ts 找設定檔的
- * 順位 1 是「腳本自己所在的目錄」,對這裡的測試來說那是模板自己的 `scripts/`(裡面那份
- * `boundaries.owners.json` 是真的落點表,不是空的),不設 env 的話測試永遠讀到模板的
- * 設定,讀不到 fixture——這是 check-boundaries.ts 檔頭自己文件化過的坑。
+ * `GATES_CONFIG_DIR` must be set to `<fixture>/scripts`: the first place check-boundaries.ts looks for config
+ * is "the directory the script itself lives in", which for these tests is the template's own `scripts/` (the
+ * `boundaries.owners.json` there is a real landing-zone table, not empty). Without the env var the tests would always read the template's
+ * config and never see the fixture — this is a trap documented in the header of check-boundaries.ts itself.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -69,16 +69,16 @@ const BASE_OWNERS = {
 describe('check-boundaries:空/缺 owners 表一律 FAIL(消費者回報)', () => {
   it('boundaries.owners.json 完全不存在,不帶 --root(一般已裝好之後正常執行的情境)→ exit 1,訊息是可執行的「尚未設定」', () => {
     const dir = makeFixture();
-    // 「完全不存在」要真的模擬 sync 之後的安裝目錄(script 自己所在的目錄 = fixture 的
-    // scripts/,裡面沒有 owners.json),不能只靠 --root 指開一個空目錄——那樣「腳本自己
-    // 所在的目錄」(找設定檔的順位 1)仍然是模板真正的 scripts/,那裡永遠有一份真的
-    // owners.json,會蓋掉這個測試想模擬的情境。所以這裡把 check-boundaries.ts 跟它依賴
-    // 的 _root.ts 複製進 fixture 的 scripts/,對這份複製本身執行——不設 GATES_CONFIG_DIR、
-    // 也不帶 --root(S14 之後,--root 明講時這個情境會改印新的硬錯誤訊息,見下面
-    // 「S14」那個 describe 區塊;這裡要驗的是最常見的「consumer 裝好之後直接
-    // `npx tsx scripts/check-boundaries.ts` 正常執行,還沒填落點表」)。cwd 設在 fixture
-    // 目錄底下、fixture 不是 git repo,_root.ts 的 `resolveRoot()` 會退回 `process.cwd()`
-    // 本身,ROOT 因此就是 fixture 目錄,順位 1、2 都指到同一個沒有 owners.json 的目錄。
+    // "Not exist at all" must really simulate the install directory after a sync (the directory the script lives in = the fixture's
+    // scripts/, with no owners.json inside). Pointing --root at an empty directory is not enough — then "the directory the script
+    // lives in" (config lookup priority 1) is still the template's real scripts/, which always has a real
+    // owners.json that would override the scenario this test wants to simulate. So here check-boundaries.ts and the _root.ts it depends on
+    // are copied into the fixture's scripts/ and the copy itself is run — without GATES_CONFIG_DIR and
+    // without --root (after S14, with an explicit --root this scenario prints a new hard error message instead, see the
+    // "S14" describe block below; what is verified here is the most common case: "after installing, the consumer runs
+    // `npx tsx scripts/check-boundaries.ts` normally and has not filled in the landing-zone table yet"). cwd is set under the fixture
+    // directory and the fixture is not a git repo, so `resolveRoot()` in _root.ts falls back to `process.cwd()`
+    // itself, ROOT is therefore the fixture directory, and priorities 1 and 2 both point to the same directory with no owners.json.
     copyFileSync(CHECK_BOUNDARIES_TS, join(dir, 'scripts', 'check-boundaries.ts'));
     copyFileSync(ROOT_TS, join(dir, 'scripts', '_root.ts'));
 
@@ -109,7 +109,7 @@ describe('check-boundaries:空/缺 owners 表一律 FAIL(消費者回報)', () =
     expect(output).toContain('✗ 尚未設定:找不到');
     expect(output).toContain('或落點表是空的');
     expect(output).toContain('gate=boundaries result=FAIL scanned=0');
-    // 舊版這裡是未捕捉的 throw,印一段 stack trace、沒有 gate= 標記行——這條斷言鎖住修好之後的行為。
+    // The old version threw uncaught here, printing a stack trace with no gate= marker line — this assertion locks in the fixed behavior.
     expect(output).not.toContain('at loadOwnersConfig');
     expect(output).not.toContain('Error: scripts/boundaries.owners.json');
   }, SPAWN_TIMEOUT_MS);
@@ -144,7 +144,7 @@ describe('check-boundaries:glue 角色(role: glue)', () => {
     });
     writeAllow(dir, []);
     writeSrc(dir, 'packages/gen/base.ts', 'export const base = 1;\n');
-    // generated 擁有者自己 import 任何東西都不檢查(不當來源),即使目標是別的擁有者也一樣。
+    // The generated owner's own imports are not checked (not a source), even if the target is another owner.
     writeSrc(dir, 'packages/gen/derived.ts', "import { x } from '../a/index';\nexport const d = x;\n");
     writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
 
@@ -165,12 +165,12 @@ describe('check-boundaries:既有規則不受影響(回歸)', () => {
       scanDirs: ['packages', 'scripts'],
     });
     writeAllow(dir, []);
-    // infra 自己的 import(來源檢查)完全不看,即使目標是別的擁有者也不檢查、不報錯。
+    // infra's own imports (source check) are not looked at at all; even if the target is another owner, nothing is checked and nothing is reported.
     writeSrc(dir, 'scripts/tool.ts', "import { x } from '../packages/a/index';\nexport const y = x;\n");
     writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
-    // 別人 import 到 infra(舊格式字串 glue,沒有 role:glue):跟一般跨擁有者 import 同一套規則
-    // ——沒有 allow.json 例外就照樣算 cross 違規,但原因是「owner-b → infra」,不是「glue 不准被 import」
-    // (那句新訊息只留給明講 role:glue 的項目)。
+    // Others importing into infra (old-format string glue, no role:glue): the same rules as a normal cross-owner import
+    // — with no allow.json exception it still counts as a cross violation, but the reason is "owner-b → infra", not "glue must not be imported"
+    // (that new message is reserved for items that explicitly say role:glue).
     writeSrc(dir, 'packages/b/index.ts', "import { y } from '../../scripts/tool';\nexport const z = y;\n");
 
     const { code, output } = run(dir);
@@ -208,7 +208,7 @@ describe('check-boundaries:既有規則不受影響(回歸)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S9:設定檔壞掉要大聲失敗(不是未捕捉的堆疊,也不是悄悄套用預設值)。
+// S9: broken config must fail loudly (not an uncaught stack trace, and not quietly applying defaults).
 // ---------------------------------------------------------------------------
 
 describe('check-boundaries:S9 設定檔壞掉', () => {
@@ -293,7 +293,7 @@ describe('check-boundaries:S9 設定檔壞掉', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S10:所有走目錄樹的 gate 共用同一份略過清單(_root.ts 的 DEFAULT_SKIP_DIRS)。
+// S10: every gate that walks the directory tree shares the same skip list (DEFAULT_SKIP_DIRS in _root.ts).
 // ---------------------------------------------------------------------------
 
 describe('check-boundaries:S10 共用略過清單', () => {
@@ -310,7 +310,7 @@ describe('check-boundaries:S10 共用略過清單', () => {
       contractsOwner: 'contracts',
     });
     writeAllow(dir, []);
-    // .next 底下放一個明顯會違規的 import(絕對路徑),如果沒被排除,掃描器一定會報。
+    // Put an import that obviously violates (an absolute path) under .next; if it is not excluded, the scanner will certainly report it.
     writeSrc(dir, 'apps/x/.next/foo.ts', "import x from '/etc/passwd';\nexport default x;\n");
     writeSrc(dir, 'apps/x/index.ts', 'export const ok = 1;\n');
 
@@ -335,9 +335,9 @@ describe('check-boundaries:S10 共用略過清單', () => {
     });
     writeAllow(dir, []);
     writeFileSync(join(dir, 'scripts', 'gates.config.json'), JSON.stringify({ skipDirs: ['vendor-custom'] }), 'utf8');
-    // 自訂略過目錄裡放一個違規 import → 應該被排除,不報。
+    // Put a violating import in the custom skip directory → it should be excluded, not reported.
     writeSrc(dir, 'apps/x/vendor-custom/bad.ts', "import x from '/etc/passwd';\nexport default x;\n");
-    // 一般目錄裡放同樣的違規 import → 應該照樣被抓到(追加,不是取代內建清單也不是取代掃描本身)。
+    // Put the same violating import in a normal directory → it should still be caught (additive: it neither replaces the built-in list nor replaces the scan itself).
     writeSrc(dir, 'apps/x/bad.ts', "import x from '/etc/passwd';\nexport default x;\n");
 
     const { code, output } = run(dir);
@@ -349,8 +349,8 @@ describe('check-boundaries:S10 共用略過清單', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S10:每一支會走目錄樹的 check-*.ts 都要用 _root.ts 的共用略過清單,不准自己另外
-// 宣告一份 SKIP_DIRS-like 的陣列(這樣才不會有下一支 gate 重蹈 .next 事故的覆轍)。
+// S10: every check-*.ts that walks the directory tree must use the shared skip list in _root.ts, and must not declare
+// its own SKIP_DIRS-like array (so that the next gate does not repeat the .next incident).
 // ---------------------------------------------------------------------------
 
 describe('check-boundaries:S10 共用清單的 grep 迴歸測試', () => {
@@ -383,8 +383,8 @@ describe('check-boundaries:S10 共用清單的 grep 迴歸測試', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S14(模板 1.4.1,來源 AI_KM 2026-09-05,PITFALLS P-73):--root 明講時的設定檔搜尋順序,
-// 不准退回腳本自身所在目錄(那通常是模板自己的佔位設定)。
+// S14 (template 1.4.1, source AI_KM 2026-09-05, PITFALLS P-73): config search order when --root is explicit,
+// must not fall back to the directory the script itself lives in (that is usually the template's own placeholder config).
 // ---------------------------------------------------------------------------
 
 describe('check-boundaries:S14 --root 明講時的設定檔解析(P-73)', () => {
@@ -410,15 +410,15 @@ describe('check-boundaries:S14 --root 明講時的設定檔解析(P-73)', () => 
   }, SPAWN_TIMEOUT_MS);
 
   it('模板路徑跟 consumer 路徑不同時,--root 明講會用 consumer 自己的 owners.json,不是腳本自身(模板)目錄那份', () => {
-    // 模擬事故的形狀:「模板路徑」下有一份佔位 owners.json;「consumer 路徑」是另一個
-    // 完全不同的 repo,有自己填好的 owners.json。從模板路徑直接執行、對 consumer 路徑
-    // 明講 --root、不設 GATES_CONFIG_DIR——應該用 consumer 的那份,不是模板腳本自己
-    // 所在目錄的那份。
+    // Simulates the shape of the incident: there is a placeholder owners.json under the "template path"; the "consumer path" is another
+    // completely different repo with its own filled-in owners.json. Run directly from the template path, with --root given
+    // explicitly for the consumer path and GATES_CONFIG_DIR unset — it should use the consumer's copy, not the one in the template script's own
+    // directory.
     const templateDir = makeFixture();
     copyFileSync(CHECK_BOUNDARIES_TS, join(templateDir, 'scripts', 'check-boundaries.ts'));
     copyFileSync(ROOT_TS, join(templateDir, 'scripts', '_root.ts'));
-    // 模板自己的佔位落點表:只認得一個 consumer 完全用不到的落點,如果不小心用了這份,
-    // consumer 的原始碼會變成全部 unmapped。
+    // The template's own placeholder landing-zone table: it only knows one landing zone the consumer never uses; if this copy were used by mistake,
+    // all of the consumer's source would become unmapped.
     writeOwners(templateDir, {
       owners: [['only-in-template/', 'template-owner'], ['contracts/', 'contracts']],
       glue: [],
@@ -441,7 +441,7 @@ describe('check-boundaries:S14 --root 明講時的設定檔解析(P-73)', () => 
     const code = r.status ?? -1;
     const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
 
-    // 用的是 consumer 的落點表(packages/a、packages/b 都對得到落點)→ 無違規、無 unmapped。
+    // The consumer's landing-zone table is used (packages/a and packages/b both map to a landing zone) → no violations, no unmapped.
     expect(code).toBe(0);
     expect(output).toContain(`設定:${join(consumerDir, 'scripts', 'boundaries.owners.json')}`);
     expect(output).not.toContain(join(templateDir, 'scripts', 'boundaries.owners.json'));
@@ -474,7 +474,7 @@ describe('check-boundaries:S14 --root 明講時的設定檔解析(P-73)', () => 
 });
 
 // ---------------------------------------------------------------------------
-// S11(模板 1.4.1,來源 nightmare-assault):涵蓋率永遠印 + 棘輪基準(只准升不准降)。
+// S11 (template 1.4.1, source nightmare-assault): always print coverage + ratchet baseline (may only go up, never down).
 // ---------------------------------------------------------------------------
 
 describe('check-boundaries:S11 涵蓋率永遠印 + 棘輪', () => {
@@ -496,7 +496,7 @@ describe('check-boundaries:S11 涵蓋率永遠印 + 棘輪', () => {
     writeOwners(dir, BASE_OWNERS);
     writeAllow(dir, []);
     writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
-    // packages/newthing/ 沒有在 owners 表裡,兩個檔案都會落到同一個「未納管目錄」。
+    // packages/newthing/ is not in the owners table, so both files fall into the same "unmanaged directory".
     writeSrc(dir, 'packages/newthing/one.ts', 'export const a = 1;\n');
     writeSrc(dir, 'packages/newthing/two.ts', 'export const b = 1;\n');
 
@@ -512,7 +512,7 @@ describe('check-boundaries:S11 涵蓋率永遠印 + 棘輪', () => {
     writeOwners(dir, { ...BASE_OWNERS, coverageBaseline: { managed: 2, scanned: 2 } });
     writeAllow(dir, []);
     writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
-    writeSrc(dir, 'packages/newthing/one.ts', 'export const a = 1;\n'); // 這次只有 1/2 納管,基準是 2/2
+    writeSrc(dir, 'packages/newthing/one.ts', 'export const a = 1;\n'); // this run has only 1/2 managed, the baseline is 2/2
 
     const { code, output } = run(dir);
 
@@ -525,7 +525,7 @@ describe('check-boundaries:S11 涵蓋率永遠印 + 棘輪', () => {
     writeOwners(dir, { ...BASE_OWNERS, coverageBaseline: { managed: 1, scanned: 2 } });
     writeAllow(dir, []);
     writeSrc(dir, 'packages/a/index.ts', 'export const x = 1;\n');
-    writeSrc(dir, 'packages/b/index.ts', 'export const y = 1;\n'); // 這次 2/2 納管,基準只要求 1/2
+    writeSrc(dir, 'packages/b/index.ts', 'export const y = 1;\n'); // this run has 2/2 managed, the baseline only requires 1/2
 
     const { code, output } = run(dir);
 

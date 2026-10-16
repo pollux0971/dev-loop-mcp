@@ -1,4 +1,4 @@
-// v4 的改動:每一條都對應 v3 實測報告裡的一個問題(見 docs/dlm/CHANGELOG.md 的 4.0.0)。
+// What v4 changed: each item matches one problem in the v3 real-run report (see 4.0.0 in docs/dlm/CHANGELOG.md).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -177,11 +177,11 @@ test('新專案的節點把程式放在 packages/ 與 apps/ 以外 → 提案照
 });
 
 test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「跳過測試棒」,選了記 leg_done;整合棒零變動也能過;合併後請使用者試用', async () => {
-  // 這裡測「派出去之後才發現綠、worker 回報卡住」的路徑,所以關掉派工前的檢查(下一個測試測它)
+  // This tests the path where "it turns out green after dispatch, and the worker reports stuck", so the pre-dispatch check is turned off (the next test covers it)
   const proj = makeProject({ mode: 'already-green', config: { integration: { precheck_green: false } } });
   addNode(proj, CALC, CALC_GHERKIN);
   await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
-  // 能力節點那邊已經把整合點要的入口做好了(實測:只看得到 MCP 的 AI 把命令列入口放在能力節點裡)
+  // The capability node has already built the entry point the integration point needs (seen in a real run: an AI that only sees MCP put the command-line entry inside the capability node)
   sh(proj, `mkdir -p packages/app && echo "console.log('ok');" > packages/app/main.mjs && git add -A && git -c user.name=t -c user.email=t@t commit -qm app`);
   addNode(proj, I1, I1_GHERKIN);
   const open = (st) => [...st.decisions.values()].find((r) => r.request?.ref.startsWith('escalation:') && !r.answer)?.request;
@@ -214,7 +214,7 @@ test('整合點的驗收在派測試棒之前就是綠的:不派測試棒(記 no
   assert.deepEqual(legs, ['integrate'], '測試棒沒有派 worker');
   assert.ok(!ev.some((e) => e.type === 'decision_request' && e.ref.startsWith('escalation:')), '不用問使用者');
   assert.ok(s.nodes.get('I1').e2e?.requestedSeq, '合併後照樣請使用者試用');
-  // 試用失敗 → 重做帶 findings:測試棒照樣派(可能要補測試)
+  // Hand trial failed → redo with findings: the test leg is still dispatched (tests may need to be added)
   confirmE2e(proj, 'I1', false, '還不行');
   const s2 = await tickUntil(proj, (st) => [...st.dispatches.values()].filter((d) => d.node_id === 'I1').length > 1);
   assert.equal([...s2.dispatches.values()].filter((d) => d.node_id === 'I1').at(-1).leg, 'test', '重做時派測試棒');
@@ -286,7 +286,7 @@ test('宣稱的證據就是驗收指令、dlm 已經重跑確認:不再問小模
   assert.ok(cs.length > 0);
   assert.ok(cs.every((r) => r.outcome === 'SKIPPED' && /證據就是驗收指令/.test(r.detail)), JSON.stringify(cs));
   assert.ok(!openDecisions(s).some((r) => r.ref === `accept:${t.dispatch_id}`), '測試棒不用問使用者');
-  // 不是多餘的題目照舊問小模型:實作棒的「寫死測試值」題照樣有問(不是 SKIPPED)
+  // Questions that are not redundant are still put to the small model: the dev leg's "hard-coded test values" question is still asked (not SKIPPED)
   const s2 = await tickUntil(proj, (st) => [...st.dispatches.values()].some((d) => d.leg === 'dev' && d.verify));
   const dev = [...s2.dispatches.values()].find((d) => d.leg === 'dev');
   assert.ok(dev.verify.results.some((r) => r.check === 'scenario-honesty' && r.outcome !== 'SKIPPED'), JSON.stringify(dev.verify.results.map((r) => [r.check, r.outcome])));
@@ -336,7 +336,7 @@ test('dlm run --help 只印說明,不啟動背景迴圈;不認得的旗標直接
 test('notify.cmd:有新的事等使用者時通知一次;user-prompt hook 附一行提醒', async () => {
   const out = join(tempDir(), 'notify.txt');
   const proj = makeProject({ level: 0, config: { notify: { cmd: `printf '%s' "$DLM_NOTIFY_TEXT" >> ${out}` } } });
-  addNode(proj, CALC, CALC_GHERKIN); // 提案是 Front 當著使用者的面提的:不通知
+  addNode(proj, CALC, CALC_GHERKIN); // The proposal was made by Front in front of the user: no notification
   await tickUntil(proj, (st) => openRequests(st).some((r) => r.ref.startsWith('accept:')));
   assert.match(readFileSync(out, 'utf8'), /1 件新的事.*accept:/);
   const before = readFileSync(out, 'utf8');

@@ -7,8 +7,8 @@ Feature: (one line: what this phase delivers)
     Given (shared precondition, fixtures only)
 
   Scenario: The module runs on its own
-    # 這兩句是 features/steps/common.steps.ts 已經定義好的步驟,原文照抄就能跑。
-    # 要執行的指令與預期輸出寫在 standalone.json(key 由本檔的能力 tag 推出,例:@todo → 01-todo)。
+    # These two steps are already defined in features/steps/common.steps.ts; copy them verbatim and they run.
+    # The command to run and the expected output are written in standalone.json (the key is derived from this file's capability tag, e.g. @todo -> 01-todo).
     When the standalone dev command is run
     Then it exits with status 0
 

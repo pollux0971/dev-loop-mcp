@@ -1,69 +1,69 @@
 /**
- * cucumber dry-run 守門:讀摘要行,不信退出碼(P-86,來源 AI_KM 顧問 2026-09-08)。
+ * cucumber dry-run guard: read the summary line, do not trust the exit code (P-86, source AI_KM advisor 2026-09-08).
  *
- * 背景:`cucumber-js --dry-run` 會把 ambiguous(同一句話對到兩個定義)與 undefined(沒有
- * 任何定義)都印在摘要行裡——例如 `822 steps (1 ambiguous, …)`——但 **exit 0,加 `--strict`
- * 仍然 0**(@cucumber/cucumber 11.3.0 實測,見 CHANGELOG 1.6.0;`--strict` 只管 pending,
- * 不管 dry-run 下的 ambiguous/undefined)。直接把 `npm run accept:dry` 接進 CI 或
- * `gates.config.json` 的 `chain`,就是「接上了、印得出錯、永遠不紅」的守門——正是 P-32 /
- * P-43 那一型:綠燈來自「沒有人看結果」,不是「結果是對的」。
+ * Background: `cucumber-js --dry-run` prints both ambiguous (one sentence matching two definitions) and undefined (no
+ * definition at all) in the summary line, e.g. `822 steps (1 ambiguous, …)`, but **exits 0, and with `--strict`
+ * it is still 0** (seen in a real run with @cucumber/cucumber 11.3.0, see CHANGELOG 1.6.0; `--strict` only covers pending,
+ * not ambiguous/undefined under dry-run). Wiring `npm run accept:dry` straight into CI or the `chain` of
+ * `gates.config.json` gives a guard that is "connected, can print errors, and never goes red" — exactly the P-32 /
+ * P-43 type: the green light comes from "nobody looks at the result", not from "the result is right".
  *
- * 這支腳本做的事只有一件:自己跑一次 dry-run,把摘要行讀回來,**依摘要行判紅綠**:
- *   - 摘要行 `N scenarios (...)` / `N steps (...)` 裡出現 undefined / ambiguous / failed
- *     任一桶且數字 ≥ 1 → exit 1,把每桶的數字印出來。
- *   - `N scenarios` 是 0 → exit 1,印「掃到 0 個場景……掃描器壞了」——跟 P-32 同一條規則:
- *     tag 過濾器、paths 設定、feature 檔全被排除,任一種都會讓 dry-run「什麼都沒檢查」
- *     卻宣稱通過;0 目標永遠是掃描器壞了,不是很乾淨。
- *   - 輸出裡找不到摘要行、cucumber 起不來、或 cucumber 自己退出碼非 0(例如 Parse
- *     error,P-16)→ exit 1。**只有「退出碼非 0」這個方向信 cucumber**——它說壞就是壞;
- *     它說好(exit 0)不算數,要摘要行也乾淨才算。
- *   - 其餘 → exit 0。
+ * This script does exactly one thing: run a dry-run itself, read the summary line back, and **decide red/green from the summary line**:
+ *   - If the summary line `N scenarios (...)` / `N steps (...)` shows any of the undefined / ambiguous / failed
+ *     buckets with a number >= 1 → exit 1, and print the number of each bucket.
+ *   - If `N scenarios` is 0 → exit 1, print "scanned 0 scenarios ... the scanner is broken" — the same rule as P-32:
+ *     a tag filter, the paths setting, or feature files all being excluded can each make the dry-run "check nothing"
+ *     yet claim a pass; 0 targets always means the scanner is broken, not that things are clean.
+ *   - If no summary line is found in the output, cucumber cannot start, or cucumber's own exit code is non-zero (e.g. Parse
+ *     error, P-16) → exit 1. **Only the direction "exit code non-zero" trusts cucumber**: when it says broken, it is broken;
+ *     when it says fine (exit 0) that does not count, the summary line must also be clean.
+ *   - Otherwise → exit 0.
  *
- * cucumber 的完整輸出(含 `Failures:` 清單,指出哪兩個定義撞了)原樣透傳到終端機,
- * 摘要行的判斷印在最後——終端機前的人看到的就是 cucumber 自己的訊息,不是轉述。
+ * The full cucumber output (including the `Failures:` list, which shows which two definitions collide) is passed through to the terminal as is,
+ * and the summary-line verdict is printed last — the person at the terminal sees cucumber's own messages, not a paraphrase.
  *
- * **兩段,兩種桶(AI_KM 2026-09-08 第二輪)**:consumer 依規格刻意讓「還沒做」的場景 undefined
- * (todo 整合點、`@model` 場景——那是「還沒做」不是「弄壞了」),驗收 job 用 `--tags` 把它們排除。
- * 裸跑 dry-run 會把這些設計上的 undefined 當成錯,升版後第一次紅的不是 P-32 清單,是 todo。所以:
- *   段 A(驗收集合):用跟驗收 job **相同**的 tag 運算式跑,undefined / ambiguous / failed 都紅。
- *     tag 來源優先序:`--tags <expr>` 旗標 > `gates.config.json` 的 `dryRun.tags` > 不帶
- *     (交給 cucumber 設定檔自己的 `tags`)。
- *   段 B(全集):**不帶** `--tags` 再跑一次(cucumber 設定檔的 `tags` 仍生效),只看 ambiguous——
- *     兩個定義撞名跟 tag 無關,被 tag 排除的場景一旦被排進來就炸,所以要對全集看;undefined 在
- *     這一段一律不算(那正是刻意的 todo)。段 A 沒帶任何 tag 時,段 B 跟段 A 是同一次執行,略過。
- *   `scanned` 是段 A 的場景數。
+ * **Two sections, two kinds of buckets (AI_KM 2026-09-08 second round)**: per the spec the consumer deliberately leaves "not yet done" scenarios undefined
+ * (todo integration points, `@model` scenarios — those are "not done yet", not "broken"), and the acceptance job excludes them with `--tags`.
+ * A bare dry-run would count these by-design undefined as errors, so after an upgrade the first red would not be the P-32 list but the todos. Therefore:
+ *   Section A (acceptance set): run with the **same** tag expression as the acceptance job; undefined / ambiguous / failed are all red.
+ *     Tag source priority: `--tags <expr>` flag > `dryRun.tags` in `gates.config.json` > none
+ *     (leave it to the `tags` in cucumber's own config file).
+ *   Section B (full set): run again **without** `--tags` (the `tags` in the cucumber config file still apply) and look only at ambiguous —
+ *     two definitions colliding has nothing to do with tags; a scenario excluded by tag blows up once it gets included, so the full set must be checked; undefined
+ *     is never counted in this section (that is exactly the deliberate todo). If section A has no tag, section B is the same run as section A and is skipped.
+ *   `scanned` is the scenario count of section A.
  *
- * cucumber 執行目錄(cwd)三層決定,跟 `check-phase-coverage.ts` / `check-known-defects.ts`
- * 同一套(各自一份,不共用 helper——`sync-gates.sh` 把每支 check-*.ts 當獨立檔案複製):
- *   `--cwd` 旗標 > `gates.config.json` 的 `"cucumberCwd"` > 自動偵測(ROOT 或它的直接
- *   子目錄有沒有 cucumber.js 等設定檔)。三層都沒有 → exit 1、印「找不到 cucumber 設定」。
+ * The cucumber working directory (cwd) is decided in three layers, the same scheme as `check-phase-coverage.ts` / `check-known-defects.ts`
+ * (each has its own copy, no shared helper — `sync-gates.sh` copies every check-*.ts as an independent file):
+ *   `--cwd` flag > `"cucumberCwd"` in `gates.config.json` > auto-detect (whether ROOT or its direct
+ *   subdirectories contain a config file such as cucumber.js). If none of the three has it → exit 1, print "cucumber config not found".
  *
- * 用法(repo 根從 `git rev-parse --show-toplevel` 解析;`--root <dir>` 明講的話優先):
- *   npx tsx scripts/check-dry-run.ts                          # tag 來自 gates.config.json 的 dryRun.tags,沒有就交給 cucumber 設定檔
- *   npx tsx scripts/check-dry-run.ts --tags 'not @manual'     # 明講 tag 表達式(package.json 的 accept:dry 就是這樣呼叫)
- *   npx tsx scripts/check-dry-run.ts --root <dir> --cwd <cucumber 執行目錄>
- *   npx tsx scripts/check-dry-run.ts -- --name 'Scenario X'   # `--` 之後的參數原樣附給 cucumber-js(兩段都附)
+ * Usage (the repo root is resolved from `git rev-parse --show-toplevel`; an explicit `--root <dir>` takes priority):
+ *   npx tsx scripts/check-dry-run.ts                          # tags come from dryRun.tags in gates.config.json; if absent, leave it to the cucumber config file
+ *   npx tsx scripts/check-dry-run.ts --tags 'not @manual'     # give the tag expression explicitly (this is how accept:dry in package.json calls it)
+ *   npx tsx scripts/check-dry-run.ts --root <dir> --cwd <cucumber working dir>
+ *   npx tsx scripts/check-dry-run.ts -- --name 'Scenario X'   # arguments after `--` are passed to cucumber-js as is (appended in both sections)
  *
  * gates.config.json:
- *   { "dryRun": { "tags": "not @manual and not @todo" } }     # 驗收 job 用的那一條,填這裡就不用跟 package.json 對兩份
+ *   { "dryRun": { "tags": "not @manual and not @todo" } }     # the one the acceptance job uses; put it here so you need not keep two copies in sync with package.json
  *
- * 退出碼:0 段 A 摘要行乾淨且場景數 ≥ 1、段 B 0 ambiguous;1 任一桶非零、0 個場景、找不到摘要行、
- * cucumber 起不來、cucumber 自己退出碼非 0、找不到 cucumber 設定、設定檔壞掉。
+ * Exit code: 0 when section A's summary line is clean and the scenario count is >= 1 and section B has 0 ambiguous; 1 when any bucket is non-zero, 0 scenarios, no summary line found,
+ * cucumber cannot start, cucumber's own exit code is non-zero, no cucumber config found, or a broken config file.
  *
- * gate 標記:`gate=dry-run result=PASS|FAIL scanned=<段 A 場景數>`(0 目標與執行失敗都是 scanned=0)。
+ * Gate marker: `gate=dry-run result=PASS|FAIL scanned=<section A scenario count>` (0 targets and execution failure both give scanned=0).
  *
- * 反向驗證(坑 23,來源 AI_KM:**守門提案接進 CI 前要先讓它紅一次**,跟「先故意改壞設定檔」
- * 是同一條,只是改壞的是輸入):
- *   (a) 挑一句已經有定義的 Cucumber Expression,整行原樣複製貼進另一個 *.steps.ts →
- *       跑這支腳本 → 應該紅,摘要行出現 `ambiguous`,`Failures:` 列出兩個定義的檔案:行號。
- *       同一份 fixture 直接跑 `npx cucumber-js --dry-run --strict` → exit 0(這就是為什麼
- *       需要這支腳本)。
- *   (b) 刪掉剛貼的那個定義 → 重跑 → 應該綠。
- *   (c) 在某個 feature 檔加一句沒有任何定義的步驟 → 應該紅,摘要行出現 `undefined`。
- *   (d) `--tags '@這個tag不存在'` → 應該紅,印「掃到 0 個場景」。
- *   (e) 把 (c) 那句沒定義的步驟放進一個 `@todo` 場景、`--tags 'not @todo'` → 應該綠(設計上的
- *       todo 不算);把 (a) 的撞名句子放進同一個 `@todo` 場景、同樣的 tags → 應該紅(段 B 抓到)。
- *   `check-dry-run.test.ts` 把 (a)–(e) 都做成自動測試,對一個 fixture repo 跑真的 cucumber。
+ * Reverse verification (pitfall 23, source AI_KM: **a guard proposal must be made to go red once before it is wired into CI**, the same rule as "deliberately break the config file first",
+ * except what is broken here is the input):
+ *   (a) Pick a Cucumber Expression that already has a definition, copy the whole line verbatim into another *.steps.ts →
+ *       run this script → it should go red, the summary line shows `ambiguous`, and `Failures:` lists the file:line of both definitions.
+ *       Running `npx cucumber-js --dry-run --strict` directly on the same fixture → exit 0 (this is why
+ *       this script is needed).
+ *   (b) Delete the definition just pasted → rerun → it should be green.
+ *   (c) Add a step with no definition to some feature file → it should be red, the summary line shows `undefined`.
+ *   (d) `--tags '@this-tag-does-not-exist'` → it should be red, printing the "scanned 0 scenarios" message.
+ *   (e) Put the undefined step from (c) into a `@todo` scenario with `--tags 'not @todo'` → it should be green (a by-design
+ *       todo does not count); put the colliding sentence from (a) into the same `@todo` scenario with the same tags → it should be red (section B catches it).
+ *   `check-dry-run.test.ts` makes (a)–(e) into automated tests that run real cucumber against a fixture repo.
  */
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -77,17 +77,17 @@ import {
   requireRootDir,
 } from './_root.js';
 
-/** 所有掃描器共用的那句話。0 個目標的紅,方向永遠是「掃描器壞了」。 */
+/** The one sentence shared by all scanners. A red from 0 targets always points to "the scanner is broken". */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
-/** 這支腳本在 gate 機器可讀標記裡的名字。 */
+/** The name of this script in the gate's machine-readable marker. */
 const GATE_NAME = 'dry-run';
 
-/** dry-run 不執行 step,大型 repo(八百多個 step)也只要幾秒;這個逾時是防卡死,不是效能預算。 */
+/** dry-run does not execute steps; even a big repo (800+ steps) takes only a few seconds. This timeout guards against hangs, it is not a performance budget. */
 const DRY_RUN_TIMEOUT_MS = 120_000;
 
-/** 摘要行裡看到這幾桶任一個 ≥ 1 就紅。dry-run 下 cucumber 會回報 undefined 與 ambiguous;
- *  failed 理論上不會出現(沒執行 step),列進來是防禦——出現了一樣不該綠。 */
+/** If any of these buckets in the summary line is >= 1, it is red. Under dry-run cucumber reports undefined and ambiguous;
+ *  failed should in theory never appear (no step is executed); it is listed defensively — if it does appear it should not be green either. */
 const BAD_BUCKETS = ['undefined', 'ambiguous', 'failed'] as const;
 
 function argValue(name: string): string | undefined {
@@ -99,7 +99,7 @@ const ROOT_EXPLICIT = argValue('--root') !== undefined;
 const ROOT = resolve(argValue('--root') ?? GIT_ROOT);
 requireRootDir(ROOT, ROOT_EXPLICIT, GATE_NAME);
 
-/** `--` 之後的參數原樣附給 cucumber-js。 */
+/** Arguments after `--` are passed to cucumber-js as is. */
 function passthroughArgs(): string[] {
   const i = process.argv.indexOf('--');
   return i >= 0 ? process.argv.slice(i + 1) : [];
@@ -111,19 +111,19 @@ function configError(msg: string): never {
   process.exit(1);
 }
 
-/** 委派給 `_root.ts` 的 `lookupConfig`(S14,PITFALLS P-73):`--root` 明講時不退回這支
- *  腳本自己所在的目錄。gates.config.json 對這支腳本是選填(只讀 `cucumberCwd`),找不到
- *  就走自動偵測,不理會 hardErrorMessage。 */
+/** Delegates to `lookupConfig` in `_root.ts` (S14, PITFALLS P-73): when `--root` is explicit, do not fall back to the directory this
+ *  script lives in. gates.config.json is optional for this script (only `cucumberCwd` is read); if not found,
+ *  auto-detection is used and hardErrorMessage is ignored. */
 function findConfigFile(name: string): string | undefined {
   const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
   console.log(`${name}: ${result.source}`);
   return result.path;
 }
 
-// ---- cucumber 執行目錄(cwd)三層決定 ----
+// ---- cucumber working directory (cwd): decided in three layers ----
 
 const CUCUMBER_CONFIG_FILES = ['cucumber.js', 'cucumber.cjs', 'cucumber.mjs', 'cucumber.json', 'cucumber.yaml', 'cucumber.yml'];
-/** S10:共用略過清單 + `archive`(模板慣例的封存目錄,不在通用清單裡)。 */
+/** S10: the shared skip list + `archive` (the template's convention for archive directories, not in the generic list). */
 const CWD_SCAN_SKIP = new Set([...DEFAULT_SKIP_DIRS, 'archive']);
 
 function hasCucumberConfig(dir: string): boolean {
@@ -157,8 +157,8 @@ function autodetectCucumberCwd(): string | undefined {
 
 interface GatesConfig { cucumberCwd?: string; tags?: string }
 
-/** 讀一次 gates.config.json(選填):`cucumberCwd` 與 `dryRun.tags`。解析錯誤、不認識的頂層鍵、
- *  型別錯都在這裡大聲失敗(S9),不是未捕捉的堆疊。 */
+/** Read gates.config.json once (optional): `cucumberCwd` and `dryRun.tags`. Parse errors, unknown top-level keys,
+ *  and wrong types all fail loudly here (S9), not as an uncaught stack trace. */
 function loadConfig(): GatesConfig {
   const cfgPath = findConfigFile('gates.config.json');
   const cfg = loadGatesConfig(cfgPath, GATE_NAME);
@@ -191,7 +191,7 @@ function resolveCucumberCwd(): string {
   const cucumberCwd = CONFIG.cucumberCwd;
   if (cucumberCwd !== undefined) {
     const resolved = resolve(ROOT, cucumberCwd);
-    // 設定了但指錯路徑,不能被自動偵測靜默救回(CHANGELOG 1.3.2 (A))。
+    // Set but pointing to the wrong path; auto-detection must not silently rescue it (CHANGELOG 1.3.2 (A)).
     if (!existsSync(resolved)) configError(`"cucumberCwd" 指定的目錄不存在:${resolved}`);
     return resolved;
   }
@@ -210,17 +210,17 @@ function baseEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-// ---- 摘要行解析 ----
+// ---- summary line parsing ----
 
 export interface SummaryLine {
   total: number;
-  /** 括號裡每一桶的數字,例如 { ambiguous: 1, skipped: 3 }。 */
+  /** The number for each bucket in the parentheses, e.g. { ambiguous: 1, skipped: 3 }. */
   buckets: Record<string, number>;
 }
 
-/** 從 cucumber `--format summary` 的輸出裡抓 `N scenarios (...)` 或 `N steps (...)`。
- *  括號裡是 `<數字> <桶名>` 用逗號分隔;`0 scenarios` 這種沒括號的也要認得(cucumber 對 0
- *  個場景印的是 `0 scenarios` 加 `0 steps`,沒有括號)。 */
+/** Grab `N scenarios (...)` or `N steps (...)` from the output of cucumber `--format summary`.
+ *  The parentheses hold `<number> <bucket name>` separated by commas; forms without parentheses such as `0 scenarios` must also be recognized (for 0
+ *  scenarios cucumber prints `0 scenarios` plus `0 steps`, with no parentheses). */
 export function parseSummaryLine(output: string, noun: 'scenarios' | 'steps'): SummaryLine | undefined {
   const re = new RegExp(`(\\d+)\\s+${noun.replace(/s$/, '')}s?\\b\\s*(?:\\(([^)]*)\\))?`);
   const m = output.match(re);
@@ -235,7 +235,7 @@ export function parseSummaryLine(output: string, noun: 'scenarios' | 'steps'): S
   return { total, buckets };
 }
 
-/** 摘要行裡壞掉的桶(數字 ≥ 1 的 undefined / ambiguous / failed),回傳 `桶名=數字` 清單。 */
+/** The broken buckets in the summary line (undefined / ambiguous / failed with number >= 1), returned as a list of `bucket=number`. */
 export function badBuckets(summary: SummaryLine): string[] {
   const out: string[] = [];
   for (const b of BAD_BUCKETS) {
@@ -247,7 +247,7 @@ export function badBuckets(summary: SummaryLine): string[] {
 
 interface DryRunOutcome { scenarios: SummaryLine; steps: SummaryLine; status: number | null; output: string }
 
-/** 跑一次 dry-run,把輸出原樣透傳,回傳解析後的兩條摘要行。起不來 / 逾時 / 找不到摘要行 → configError。 */
+/** Run the dry-run once, pass the output through as is, and return the two parsed summary lines. Cannot start / timeout / no summary line found → configError. */
 function runDryRun(cwd: string, label: string, args: string[]): DryRunOutcome {
   console.log(`dry-run: ${label}:npx ${args.map((a) => (/\s/.test(a) ? `'${a}'` : a)).join(' ')}`);
   const r = spawnSync('npx', args, { cwd, encoding: 'utf8', env: baseEnv(), timeout: DRY_RUN_TIMEOUT_MS });
@@ -259,8 +259,8 @@ function runDryRun(cwd: string, label: string, args: string[]): DryRunOutcome {
   const scenarios = parseSummaryLine(output, 'scenarios');
   const steps = parseSummaryLine(output, 'steps');
   if (!scenarios || !steps) {
-    // 找不到摘要行:多半是 cucumber 起不來(設定檔壞、模組載入失敗、Parse error 印在摘要之前就中止)。
-    // 退出碼非 0 的話一起印——這個方向是信 cucumber 的。
+    // No summary line found: most likely cucumber could not start (broken config, module load failure, a Parse error aborting before the summary is printed).
+    // If the exit code is non-zero, print it too — in that direction we trust cucumber.
     configError(
       `${label}:輸出裡找不到 "N scenarios (...)" / "N steps (...)" 摘要行` +
         `${r.status !== null && r.status !== 0 ? `(cucumber 退出碼 ${r.status})` : ''}`,
@@ -280,7 +280,7 @@ function main(): void {
 
   console.log(`dry-run: cucumber cwd = ${cwdDisplay};tag 來源:${tagSource}${tags !== undefined ? `('${tags}')` : ''}`);
 
-  // ---- 段 A:驗收集合(跟驗收 job 同一條 tag),undefined / ambiguous / failed 都紅 ----
+  // ---- Section A: acceptance set (same tag as the acceptance job), undefined / ambiguous / failed are all red ----
   const argsA = [...base];
   if (tags !== undefined) argsA.push('--tags', tags);
   argsA.push(...extra);
@@ -302,11 +302,11 @@ function main(): void {
     }
   }
   if (a.status !== 0 && !badA.length) {
-    // 摘要行乾淨但 cucumber 自己說壞(例如某個 feature 檔 Parse error)。這個方向信 cucumber。
+    // Summary line is clean but cucumber itself says broken (e.g. a Parse error in some feature file). In this direction we trust cucumber.
     failures.push(`段 A:cucumber 退出碼 ${a.status ?? 'unknown'}(摘要行乾淨,但 cucumber 自己回報了錯誤,看上面的輸出)`);
   }
 
-  // ---- 段 B:全集(不帶 --tags),只看 ambiguous ----
+  // ---- Section B: full set (without --tags), look only at ambiguous ----
   let bNote = '';
   if (tags !== undefined) {
     const b = runDryRun(cucumberCwd, '段 B(全集,只看 ambiguous)', [...base, ...extra]);

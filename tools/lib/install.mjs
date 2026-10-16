@@ -1,7 +1,7 @@
-// 安裝與升級只有一條管線(取代 v1 的 npx 初始化 + sync-gates.sh 兩條)。
-// 所有權用 .dlm-install.json 的 sha 判斷:
-//   不存在 → 建;存在且 sha 等於上次安裝的 → 可覆蓋;存在但被改過 → 衝突。
-// 只要有一個衝突,整批一個檔都不寫。seed-only 的檔(使用者的專案內容)只在第一次建立,之後永不覆蓋。
+// Install and upgrade go through one pipeline (replacing v1's two: npx init + sync-gates.sh).
+// Ownership is decided by the sha in .dlm-install.json:
+//   does not exist -> create; exists and sha equals the last install -> may overwrite; exists but was modified -> conflict.
+// If there is even one conflict, no file in the batch is written. Seed-only files (the user's project content) are created only the first time and never overwritten after that.
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,16 +21,16 @@ function readVersion() {
 }
 
 /**
- * v4.5:範本裡只有「從零開始的 TypeScript / vitest / cucumber 專案」用得到的檔。裝進已經有程式的既有專案時不裝:
- * Python 專案多出 package.json、tsconfig、一堆 .ts gate 腳本,只會讓 gate 跑錯東西;Node 專案的 package.json 是它自己的
- * (seed 不覆蓋),範本的 scripts/*.ts 根本沒接上,只會跟專案自己的 scripts/ 搶名字。
+ * v4.5: the template has only the files that a "from-scratch TypeScript / vitest / cucumber project" uses. They are not installed into an existing project that already has code:
+ * a Python project would get an extra package.json, tsconfig and a pile of .ts gate scripts, which only make the gate run the wrong things; a Node project's package.json is its own
+ * (seed does not overwrite), so the template's scripts/*.ts are not wired in and would only fight the project's own scripts/ for names.
  */
 export const NODE_TEMPLATE = [
   'package.json', 'tsconfig.json', 'cucumber.js', 'vitest.config.ts', 'vitest.scripts.config.ts', 'stryker.config.json',
   'scripts/**', 'features/steps/*.ts',
 ];
 
-/** 回傳 [{ dest, content(Buffer), seed }]。profile = 'existing' 時不含 NODE_TEMPLATE。 */
+/** Returns [{ dest, content(Buffer), seed }]. With profile = 'existing' it does not include NODE_TEMPLATE. */
 export function plannedFiles(name, { profile = 'full' } = {}) {
   const payload = join(REPO_ROOT, 'payload');
   const seedGlobs = readFileSync(join(payload, '.dlm-seed-only'), 'utf8').split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
@@ -84,7 +84,7 @@ function write(target, actions, removals, profile = 'full') {
   writeJson(join(target, MANIFEST), { version: readVersion(), ...(profile !== 'full' ? { profile } : {}), files });
 }
 
-/** dlm 在 .gitignore 裡需要的行(既有專案自己的 .gitignore 不會被範本覆蓋,缺的補在最後)。 */
+/** Lines dlm needs in .gitignore (an existing project's own .gitignore is not overwritten by the template; missing lines are appended at the end). */
 const DLM_IGNORES = ['.dlm/', '*.tmp-*'];
 function ensureIgnores(dir) {
   const p = join(dir, '.gitignore');
@@ -99,10 +99,10 @@ function ensureIgnores(dir) {
 const RENDERED = ['STATUS.md', 'DECISIONS.md', 'standalone.json'];
 
 /**
- * 把 dlm 的檔 commit 起來:這次寫到的、加上 dlm 規劃的檔裡還沒進 git 的(安裝清單、產生檔、.gitignore 也算)。
- * 只 commit 這些路徑(git commit -- <路徑>),不碰使用者 staged 的其他東西。不是 git repo 就不做。
- * v4.7.3 實測:既有專案(已經有 git)裝 dlm 後,tools/、AGENTS.md、.claude/ 都沒進 git;合併前的全 gate 在 main + 分支 的臨時樹
- * 跑 node tools/dlm.mjs check,找不到 dlm,實作棒每次都紅,三次後封鎖。
+ * Commit dlm's files: the ones written this time, plus the ones dlm plans that are not yet in git (install manifest, generated files and .gitignore count too).
+ * Commit only these paths (git commit -- <paths>), without touching anything else the user has staged. Skipped if this is not a git repo.
+ * v4.7.3 real run: after installing dlm into an existing project (already in git), tools/, AGENTS.md and .claude/ were not in git; the full gate before merge, in a temp tree of main + branch,
+ * ran node tools/dlm.mjs check and could not find dlm, so the dev leg was red every time and blocked after three.
  */
 export function commitDlmFiles(dir, message, { touched = [], profile = 'full' } = {}) {
   if (!existsSync(join(dir, '.git'))) return null;
@@ -125,7 +125,7 @@ export function init(target, { name, existing = false, commit = true } = {}) {
   if (entries.length && !existing) throw new DlmError(`${dir} 不是空目錄。既有專案請加 --existing(只補缺的檔,衝突就一個都不寫)`);
   if (existsSync(join(dir, MANIFEST))) throw new DlmError(`${dir} 已經裝過 dlm,請用 dlm upgrade`);
   if (existsSync(join(dir, LEGACY.manifest))) throw new DlmError(`${dir} 已經裝過舊版 dp(4.8.0 以前),請用 dlm upgrade(會順便改成 dlm 的檔名)`);
-  // 已經有程式的既有專案:範本的 TS 工具鏈不裝(gate 改跑專案自己的測試,見 dlm setup 的 Brownfield)
+  // Existing project that already has code: do not install the template's TS toolchain (the gate runs the project's own tests instead; see Brownfield in dlm setup)
   const profile = existing && entries.length && detectProject(dir).code_files > 0 ? 'existing' : 'full';
   const { actions, conflicts } = plan(dir, plannedFiles(name ?? 'my-project', { profile }), null);
   if (conflicts.length) throw new DlmError(`有 ${conflicts.length} 個同名檔內容不同,一個都沒寫:\n  - ${conflicts.join('\n  - ')}`);
@@ -140,7 +140,7 @@ export function init(target, { name, existing = false, commit = true } = {}) {
     run('git add -A && git -c user.name=dlm -c user.email=dlm@localhost commit --quiet -m "dlm init"', { cwd: dir });
     git = 'initialized';
   } else {
-    // v4.7.3:已經有 git 的專案以前什麼都不 commit(見 commitDlmFiles)。.gitignore 補上 .dlm/,不然 dlm 的工作目錄整個出現在 git status
+    // v4.7.3: a project already in git used to commit nothing (see commitDlmFiles). Add .dlm/ to .gitignore, otherwise dlm's whole working directory shows up in git status
     const ignores = ensureIgnores(dir);
     const created = actions.filter((a) => a.op === 'create').map((a) => a.dest);
     if (commit) committed = commitDlmFiles(dir, 'dlm init --existing', { touched: [...created, MANIFEST, ...RENDERED, ...(ignores ? ['.gitignore'] : [])], profile });
@@ -155,8 +155,8 @@ export function init(target, { name, existing = false, commit = true } = {}) {
 }
 
 /**
- * 升級 dlm 管理的檔。v4.7.3:寫完就把 dlm 的檔 commit(commitDlmFiles)。以前留在工作目錄,tick 看到有未 commit 的變更就拒絕執行;
- * 從 MCP 升級的 AI 沒有 git 可用,只能請使用者自己去終端機 commit(實測)。commit=false 可以不 commit。
+ * Upgrade the files dlm manages. v4.7.3: after writing, commit dlm's files (commitDlmFiles). Before, they stayed in the working directory, and the tick refused to run when it saw uncommitted changes;
+ * an AI upgrading through MCP has no git, so it could only ask the user to commit in a terminal (seen in a real run). commit=false skips the commit.
  */
 export function upgrade(target, { dryRun = false, commit = true } = {}) {
   const dir = resolve(target);
@@ -221,7 +221,7 @@ function finishUpgrade(dir, { actions, removals, profile, commit, summary, legac
     summary.note = '已從 dp 改名成 dlm。重開 Claude Code 才會用新的 hooks(重開前的 session 還在呼叫 tools/dp.mjs,它現在只轉給 tools/dlm.mjs,重開後可以刪);'
       + '這台電腦的 MCP 也要從 dev-loop-mcp 重裝一次(dlm mcp install)';
   }
-  // 順便把 dlm 的檔裡還沒進 git 的也 commit(4.7.3 以前裝進既有專案的,tools/ 等都沒 commit;dlm doctor 會指到這裡)
+  // Also commit the dlm files that are not yet in git (for projects installed into an existing project before 4.7.3, tools/ etc. were never committed; dlm doctor points here)
   const message = legacy ? `dlm upgrade ${summary.from} → ${summary.to} (rename dp → dlm)` : `dlm upgrade ${summary.from} → ${summary.to}`;
   summary.commit = commit ? commitDlmFiles(dir, message, { touched: [...summary.update, ...summary.create, ...summary.remove, MANIFEST, ...RENDERED, ...migrated], profile }) : null;
   return summary;

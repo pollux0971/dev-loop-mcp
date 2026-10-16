@@ -1,7 +1,7 @@
-// 可驗證的使用者授權與帳本簽章共用的金鑰。
+// The key shared by verifiable user authorization and ledger signing.
 //
-// 金鑰放在 repo 外(預設 ~/.config/dlm/key,可用 DLM_KEY_FILE 改),權限 0600。用來察覺「有人直接改了帳本或原話紀錄」。
-// worker 跟你是同一個 OS 使用者,讀得到這把 key;它防的是手誤與粗糙的竄改,不是蓄意的對手(見 docs/dlm/SECURITY.md)。
+// The key lives outside the repo (default ~/.config/dlm/key, changeable with DLM_KEY_FILE), mode 0600. It is used to notice "someone edited the ledger or the verbatim-words record directly".
+// A worker runs as the same OS user as you and can read this key; it guards against slips and crude tampering, not a deliberate adversary (see docs/dlm/SECURITY.md).
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -12,7 +12,7 @@ export function keyPath() {
   return process.env.DLM_KEY_FILE || join(machineDir(), 'key');
 }
 
-/** 讀金鑰;不存在時 create=true 就建一把新的(0600)。 */
+/** Read the key; if it does not exist and create=true, make a new one (0600). */
 export function loadKey({ create = false } = {}) {
   const p = keyPath();
   if (!existsSync(p)) {
@@ -43,13 +43,13 @@ export function macEqual(a, b) {
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-// ------------------------------------------------------------------ 使用者原話
+// ------------------------------------------------------------------ user verbatim words
 
 export const UTTERANCES_REL = '.dlm/utterances.jsonl';
 
 const utterancePayload = (u) => `${u.ts}\0${u.session ?? ''}\0${u.text}`;
 
-/** UserPromptSubmit hook 呼叫:把使用者這一輪真正送出的文字簽章存檔。 */
+/** Called by the UserPromptSubmit hook: sign and save the text the user actually sent this turn. */
 export function recordUtterance(root, text, { session } = {}) {
   const key = loadKey({ create: true });
   const u = { ts: new Date().toISOString(), ...(session ? { session } : {}), text };
@@ -65,7 +65,7 @@ export function recordUtterance(root, text, { session } = {}) {
   return u;
 }
 
-/** 比對用:只留字母與數字(含中日韓文字)。Front 為了過 shell 規則拿掉標點,仍然對得上。 */
+/** For matching: keep only letters and digits (including CJK characters). Front strips punctuation to get past shell rules and it still matches. */
 export function normalizeSpeech(s) {
   return String(s ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 }
@@ -83,8 +83,8 @@ export function readUtterances(root) {
 }
 
 /**
- * --verbatim 必須是最近 windowMinutes 內、某一筆簽章有效的使用者原話的子字串。
- * 回傳 { sha }(那筆原話的 sha256,記進事件);對不上就丟錯,並說明為什麼。
+ * --verbatim must be a substring of the user's verbatim words, from within the last windowMinutes, in an entry whose signature is valid.
+ * Returns { sha } (the sha256 of that entry, recorded in the event); if nothing matches it throws and says why.
  */
 export function verifyVerbatim(root, verbatim, { windowMinutes = 30, now = Date.now() } = {}) {
   const want = normalizeSpeech(verbatim);
@@ -103,7 +103,7 @@ export function verifyVerbatim(root, verbatim, { windowMinutes = 30, now = Date.
   throw new DlmError(`--verbatim 對不上使用者最近 ${windowMinutes} 分鐘內親口說的任何一句話${extra}。只能記錄使用者這一輪的原話;轉述不算授權`);
 }
 
-/** 給測試與 `dlm auth` 用:把金鑰檔換成指定內容。 */
+/** For tests and `dlm auth`: replace the key file with the given content. */
 export function writeKey(text) {
   const p = keyPath();
   ensureDir(dirname(p));

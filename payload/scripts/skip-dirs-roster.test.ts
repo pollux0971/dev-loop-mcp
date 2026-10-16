@@ -1,47 +1,47 @@
 /**
- * 共用排除層的名冊(1.7.0,DECISIONS_NEEDED #13;P-90 / P-91 的結構版)。
+ * Roster for the shared exclusion layer (1.7.0, DECISIONS_NEEDED #13; the structural version of P-90 / P-91).
  *
- * 背景:同一個病在一天內出現了四次——共用的東西存在,卻有人繞過它自己做一份:
- *   - P-90:`.stryker-tmp` 只在 `check-doc-links.ts` 自帶清單裡,另外 8 支掃描器全踩進變異沙箱;
- *   - 1.6.3:`check-doc-rot.ts` 自己複製了一份 `skipDirs` 合併邏輯,共用層新加的 glob 硬錯對它不生效;
- *   - 1.6.5:`check-doc-links.ts` 同一個形狀;
- *   - 1.6.9:`sync-gates.sh` 的語言偵測自帶排除清單(那一次跨語言,由 `sync-gates.test.sh`
- *     步驟 11 斷言差集為空,不在這支的射程內)。
+ * Background: the same disease showed up four times in one day. The shared thing existed, but someone bypassed it and made their own copy:
+ *   - P-90: `.stryker-tmp` was only in `check-doc-links.ts`'s own list, and the other 8 scanners all walked into the mutation sandbox;
+ *   - 1.6.3: `check-doc-rot.ts` copied its own `skipDirs` merge logic, so the hard glob error newly added to the shared layer did not apply to it;
+ *   - 1.6.5: `check-doc-links.ts`, the same shape;
+ *   - 1.6.9: the language detection in `sync-gates.sh` carried its own exclusion list (that one was cross-language; `sync-gates.test.sh`
+ *     step 11 asserts the difference set is empty, so it is out of reach of this test).
  *
- * P-91 當時寫的修法是一條通則:「每次在共用層加檢查,都要回頭確認沒有人繞過共用層」。
- * **那是一條要人記得的規則**,而那四次每一次都是撞上才發現——grep 永遠只抓得到當下想得到的
- * 那幾個字(協調者 1.6.3 時用 `grep -l stryker-tmp` 查「還有哪支自帶清單」,那個查法只找得到
- * 「自帶同一個**值**」的,結構上就找不到「自帶同一段**邏輯**」的)。
- * 名冊是同一條規則的結構版:目錄列舉,不是手抄清單,新掃描器加進來時不可能漏掉。
+ * The fix P-91 wrote back then was a general rule: "every time a check is added to the shared layer, go back and confirm nobody bypasses the shared layer".
+ * **That is a rule someone has to remember**, and each of the four times it was found only after running into it. grep only ever catches
+ * the words you can think of at that moment (the coordinator in 1.6.3 used `grep -l stryker-tmp` to find "which others carry their own list"; that approach only finds
+ * those that "carry the same **value**", and structurally cannot find those that "carry the same **logic**").
+ * The roster is the structural version of the same rule: it enumerates the directory instead of keeping a hand-copied list, so a new scanner cannot be missed.
  *
- * ## 規則
+ * ## Rule
  *
- * 每一支 `scripts/check-*.ts`(不含測試檔)只要**碰到排除邏輯**(原始碼出現 `skipDirs` 或
- * `DEFAULT_SKIP_DIRS`),就必須二選一:
- *   (1) 呼叫共用的 `resolveSkipDirs(`;或
- *   (2) 列在下面的 `EXEMPT`,**附理由**。
- * 兩邊都沒有 → 紅,訊息指名是哪一支。
+ * Every `scripts/check-*.ts` (test files excluded) that **touches exclusion logic** (the source contains `skipDirs` or
+ * `DEFAULT_SKIP_DIRS`) must pick one of two:
+ *   (1) call the shared `resolveSkipDirs(`; or
+ *   (2) be listed in `EXEMPT` below, **with a reason**.
+ * Neither → red, and the message names which one.
  *
- * ## 豁免要貴一點(硬性)
+ * ## Exemptions must cost something (hard rule)
  *
- * 豁免欄**必填理由**,而且理由有最短長度——否則名冊會退化成「把漏掉的補進豁免清單就綠了」,
- * 那正是 #8 原案被打掉的失效模式(機制被自己的使用方式稀釋)。另外兩條防腐:
- *   - 豁免指名的檔案必須真的存在(改名或刪檔後殘留的豁免 → 紅);
- *   - 豁免的檔案**不准**其實已經呼叫 `resolveSkipDirs(`(那筆豁免已經過期,留著會讓下一個人以為
- *     那支還在繞路)→ 紅。
+ * The exemption entry **requires a reason**, and the reason has a minimum length. Otherwise the roster would degrade into "add whatever was missed to the exemption list and it goes green",
+ * which is exactly the failure mode that sank the original #8 proposal (the mechanism diluted by how it is used). Two more anti-rot rules:
+ *   - A file named by an exemption must really exist (an exemption left over after a rename or delete → red);
+ *   - An exempted file **must not** already call `resolveSkipDirs(` (that exemption has expired, and keeping it would make the next person think
+ *     that scanner still takes a detour) → red.
  *
- * ## 為什麼用字面比對仍然可以(P-89 的四個位置)
+ * ## Why literal matching is still fine (the four places from P-89)
  *
- * 這支是字面掃描,所以 P-89 說的四個假命中位置(註解、log 字串、fixture、文件舉例)都會發生:
- * 一支只在**註解**裡提到 `skipDirs` 的掃描器也會被要求二選一。**那是刻意的保守方向**——
- * 假陽性的代價是「寫一行理由」,假陰性的代價是「又一次靜默繞過」;前者可見,後者不可見。
- * 反方向(一支真的自己合併清單,但原始碼裡剛好沒出現那兩個字)目前沒有已知寫法做得到,
- * 因為合併的起點一定是 `DEFAULT_SKIP_DIRS` 或 consumer 的 `skipDirs`。
+ * This is a literal scan, so the four false-hit places P-89 mentions (comments, log strings, fixtures, doc examples) all happen:
+ * a scanner that mentions `skipDirs` only in a **comment** is also required to pick one of two. **That is a deliberately conservative direction**:
+ * the cost of a false positive is "write one line of reason", the cost of a false negative is "another silent bypass"; the former is visible, the latter is not.
+ * The opposite direction (a scanner really merges its own list but the source happens not to contain those two words) has no known way to be written at present,
+ * because the starting point of a merge is always `DEFAULT_SKIP_DIRS` or the consumer's `skipDirs`.
  *
- * ## 陽性對照
+ * ## Positive control
  *
- * 至少要有 `MIN_SHARED` 支被判定為「呼叫共用層」。掃到 0 支不是「很乾淨」,是這支名冊壞了
- * (目錄路徑錯、樣式錯)——跟 P-32 同一條規則。
+ * At least `MIN_SHARED` scanners must be judged as "calls the shared layer". Scanning 0 is not "very clean", it means this roster is broken
+ * (wrong directory path, wrong pattern). Same rule as P-32.
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -50,20 +50,20 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** 碰到排除邏輯的判定字樣。 */
+/** Pattern that decides a file touches exclusion logic. */
 const TOUCHES_SKIP = /\bskipDirs\b|\bDEFAULT_SKIP_DIRS\b/;
-/** 呼叫共用層的判定字樣。 */
+/** Pattern that decides a file calls the shared layer. */
 const CALLS_SHARED = /\bresolveSkipDirs\s*\(/;
 
-/** 豁免理由的最短長度——豁免要貴一點。 */
+/** Minimum length of an exemption reason; exemptions must cost something. */
 const MIN_REASON_LENGTH = 40;
 
-/** 陽性對照:至少要有這麼多支被判定為呼叫共用層。1.7.0 當下實測為 7 支;v4.1 拿掉 doc-rot / doc-links / known-defects 後是 4 支。 */
+/** Positive control: at least this many scanners must be judged as calling the shared layer. Seen in a real run at 1.7.0: 7; after v4.1 removed doc-rot / doc-links / known-defects: 4. */
 const MIN_SHARED = 4;
 
 /**
- * 碰到排除邏輯、但**刻意不**呼叫 `resolveSkipDirs()` 的掃描器。每一筆都要說清楚:
- * 它用那份清單做什麼、那個用途的母體為什麼跟「consumer 要排除哪些目錄」不同(P-92 的「先問母體」)。
+ * Scanners that touch exclusion logic but **deliberately do not** call `resolveSkipDirs()`. Each entry must make clear:
+ * what it uses that list for, and why the population for that use differs from "which directories the consumer wants excluded" (P-92's "ask about the population first").
  */
 const EXEMPT: Record<string, string> = {
   'check-dry-run.ts':
@@ -93,7 +93,7 @@ describe('skipDirs 名冊:碰到排除邏輯的掃描器,必須呼叫共用的 r
   });
 
   it.each(files)('%s:碰到排除邏輯 → 要嘛呼叫 resolveSkipDirs(),要嘛在 EXEMPT 附理由', (file) => {
-    if (!touching.includes(file)) return; // 沒碰排除邏輯的掃描器不在這條規則的射程內
+    if (!touching.includes(file)) return; // A scanner that doesn't touch exclusion logic is out of reach of this rule
     const callsShared = CALLS_SHARED.test(source(file));
     const exempt = Object.prototype.hasOwnProperty.call(EXEMPT, file);
     expect(

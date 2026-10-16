@@ -1,43 +1,47 @@
 /**
- * 模組命名空間轉型守門(P-88,來源 AI_KM 顧問 2026-09-08)。
+ * Module-namespace cast gate (P-88, source: AI_KM consultant 2026-09-08).
  *
- * 背景:steps 檔裡這樣呼叫實作——
+ * Background: calling the implementation like this in a steps file --
  *
  *   import * as core from '../../packages/core/src/index.js';
  *   const api = core as unknown as { computeDue: (x: Input) => Output };
  *   api.computeDue(input);
  *
- * ——會讓兩道守門對「有人把 `computeDue` 刪了(或改名)」同時瞎掉:`tsc` 看到的是
- * `unknown` 再轉成一個手寫的物件型別,實作有沒有那個函式它不管;grep 找 `core.computeDue`
- * 也找不到(呼叫的是 `api.computeDue`,而 `api` 的型別是手寫的)。函式真的消失時,只有
- * 真跑那個場景才會炸 `api.computeDue is not a function`——而那個場景可能在別人的 tag 底下。
+ * -- makes two gates blind at the same time to "someone deleted (or renamed) `computeDue`": what `tsc`
+ * sees is `unknown` cast to a hand-written object type, and it does not care whether the
+ * implementation has that function; grep for `core.computeDue` finds nothing either (the call is
+ * `api.computeDue`, and the type of `api` is hand-written). When the function really disappears,
+ * only actually running that scenario blows up with `api.computeDue is not a function`, and that
+ * scenario may sit under someone else's tag.
  *
- * 只擋**模組命名空間**那一種轉型:`<namespace> as unknown as …`,其中 `<namespace>` 是
- * 同一個檔案裡 `import * as X from` 或 `import X = require(...)` 引進來的名字;另外擋
- * `import('…') as unknown as` / `require('…') as unknown as` 這種對動態載入結果直接轉型。
- * **不**全掃 `as unknown as`——AI_KM 實測全掃是 23 抓 2,其餘 21 個是對值(測試資料、
- * 第三方回傳值)的正常轉型,一律擋會逼人把守門放寬,放寬之後真的那 2 個也一起放掉。
- * 守門只對著會讓別的守門瞎掉的那一種,不對著語法本身。
+ * It blocks only **the module-namespace** kind of cast: `<namespace> as unknown as …`, where
+ * `<namespace>` is a name brought in by `import * as X from` or `import X = require(...)` in the
+ * same file; it also blocks casting the result of a dynamic load directly, such as
+ * `import('…') as unknown as` / `require('…') as unknown as`.
+ * It does **not** scan every `as unknown as`: AI_KM's real run of a full scan caught 2 out of 23,
+ * and the other 21 were normal casts of values (test data, third-party return values). Blocking
+ * them all would force people to loosen the gate, and once loosened the 2 real ones would pass
+ * too. The gate aims only at the kind that blinds other gates, not at the syntax itself.
  *
- * 掃描範圍:`gates.config.json` 的 `moduleCast.scanDirs`(相對 ROOT 的目錄陣列),沒填就是
- * `["features/steps"]`。底下所有 `.ts` / `.tsx` / `.mts` / `.cts`(不含 `.d.ts`),略過
- * `_root.ts` 的 DEFAULT_SKIP_DIRS + `gates.config.json` 的 `skipDirs`。註解裡的內容先剝掉
- * 再比對(反向驗證時 `// const api = core as unknown as …` 不算)。
+ * Scan range: `moduleCast.scanDirs` in `gates.config.json` (an array of dirs relative to ROOT);
+ * if not set, `["features/steps"]`. All `.ts` / `.tsx` / `.mts` / `.cts` files below it (not
+ * `.d.ts`), skipping DEFAULT_SKIP_DIRS of `_root.ts` + `skipDirs` of `gates.config.json`. The
+ * content of comments is stripped before matching (in the reverse check, `// const api = core as unknown as …` does not count).
  *
- * 用法(repo 根從 `git rev-parse --show-toplevel` 解析;`--root <dir>` 明講的話優先):
+ * Usage (the repo root is resolved from `git rev-parse --show-toplevel`; `--root <dir>` wins if given):
  *   npx tsx scripts/check-module-cast.ts
  *   npx tsx scripts/check-module-cast.ts --root <dir>
  *
- * 退出碼:0 掃到 ≥1 個檔案且 0 個命中;1 有命中、掃到 0 個檔案(掃描器壞了)、設定檔壞掉。
- * gate 標記:`gate=module-cast result=PASS|FAIL scanned=<檔案數>`。
+ * Exit codes: 0 scanned >=1 file and 0 hits; 1 there are hits, scanned 0 files (the scanner is broken), or the config file is broken.
+ * Gate marker: `gate=module-cast result=PASS|FAIL scanned=<file count>`.
  *
- * 反向驗證:
- *   (a) 在任一 steps 檔加 `import * as m from './_world.js'; const x = m as unknown as { f: () => void };`
- *       → 應該紅,印出 檔案:行號 與那一行。
- *   (b) 把同一行改成 `const x = someValue as unknown as { f: () => void };`(`someValue` 不是
- *       命名空間)→ 應該綠——這是「只擋那一種」的證明。
- *   (c) 把 (a) 那行整行註解掉 → 應該綠。
- *   `check-module-cast.test.ts` 把 (a)–(c) 做成自動測試。
+ * Reverse checks:
+ *   (a) Add `import * as m from './_world.js'; const x = m as unknown as { f: () => void };` to any steps file
+ *       -> should be red, printing file:line and that line.
+ *   (b) Change the same line to `const x = someValue as unknown as { f: () => void };` (`someValue` is not
+ *       a namespace) -> should be green. This proves "it blocks only that one kind".
+ *   (c) Comment out the whole line from (a) -> should be green.
+ *   `check-module-cast.test.ts` turns (a)-(c) into automated tests.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -50,10 +54,10 @@ import {
   resolveSkipDirs,
 } from './_root.js';
 
-/** 所有掃描器共用的那句話。0 個目標的紅,方向永遠是「掃描器壞了」。 */
+/** The one sentence shared by all scanners. A red with 0 targets always means "the scanner is broken". */
 const SCANNER_BROKEN = '這不是很乾淨,是掃描器壞了';
 
-/** 這支腳本在 gate 機器可讀標記裡的名字。 */
+/** The name of this script in the machine-readable gate marker. */
 const GATE_NAME = 'module-cast';
 
 const DEFAULT_SCAN_DIRS = ['features/steps'];
@@ -71,9 +75,9 @@ function toPosix(p: string): string {
   return p.split('\\').join('/');
 }
 
-/** 委派給 `_root.ts` 的 `lookupConfig`(S14,PITFALLS P-73):`--root` 明講時不退回這支
- *  腳本自己所在的目錄。gates.config.json 對這支腳本是選填(`moduleCast.scanDirs`、
- *  `skipDirs`),找不到就用預設,不理會 hardErrorMessage。 */
+/** Delegates to `lookupConfig` of `_root.ts` (S14, PITFALLS P-73): when `--root` is given, do not
+ *  fall back to the directory this script itself sits in. gates.config.json is optional for this
+ *  script (`moduleCast.scanDirs`, `skipDirs`); if not found, use the defaults and ignore hardErrorMessage. */
 function findConfigFile(name: string): string | undefined {
   const result = lookupConfig(import.meta.dirname, name, { root: ROOT, rootExplicit: ROOT_EXPLICIT });
   console.log(`${name}: ${result.source}`);
@@ -84,7 +88,7 @@ interface Settings { scanDirs: string[]; skipDirs: Set<string> }
 
 function loadSettings(): Settings {
   const p = findConfigFile('gates.config.json');
-  // 解析錯誤、不認識的頂層鍵都在這裡大聲失敗(S9),不是未捕捉的堆疊。
+  // Parse errors and unknown top-level keys fail loudly here (S9), not as an uncaught stack.
   const raw = loadGatesConfig(p, GATE_NAME);
   const skipDirs = resolveSkipDirs(raw, GATE_NAME);
   const section = raw?.moduleCast;
@@ -120,14 +124,14 @@ function* walk(dir: string, skipDirs: Set<string>): Generator<string> {
   }
 }
 
-/** 去掉註解但保留換行(行號不變),避免註解掉的轉型被誤判成還活著。 */
+/** Strip comments but keep newlines (line numbers unchanged), so a commented-out cast is not mistaken for a live one. */
 export function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/(^|[^:'"`])\/\/[^\n]*/g, (_m, pre: string) => pre);
 }
 
-/** 這個檔案裡以命名空間形式引進的模組名字:`import * as X from` 與 `import X = require(`。 */
+/** Module names brought in as a namespace in this file: `import * as X from` and `import X = require(`. */
 export function namespaceImports(src: string): string[] {
   const names = new Set<string>();
   const star = /\bimport\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s+from\b/g;
@@ -140,7 +144,7 @@ export function namespaceImports(src: string): string[] {
 
 export interface CastHit { line: number; text: string; reason: string }
 
-/** 對一個檔案的原始碼找「模組命名空間轉型」。回傳每個命中的行號、原文、理由。 */
+/** Find "module-namespace casts" in one file's source. Returns the line number, original text and reason of each hit. */
 export function findModuleCasts(rawSrc: string): CastHit[] {
   const src = stripComments(rawSrc);
   const names = namespaceImports(src);
@@ -148,7 +152,7 @@ export function findModuleCasts(rawSrc: string): CastHit[] {
   const lines = src.split('\n');
   const rawLines = rawSrc.split('\n');
   const nsRe = names.length ? new RegExp(`\\b(${names.map((n) => n.replace(/\$/g, '\\$')).join('|')})\\s+as\\s+unknown\\s+as\\b`) : undefined;
-  // `(await import('./x.js')) as unknown as` / `require('./x.js') as unknown as`:對動態載入結果直接轉型。
+  // `(await import('./x.js')) as unknown as` / `require('./x.js') as unknown as`: casting the result of a dynamic load directly.
   const dynRe = /\b(?:import|require)\s*\([^)]*\)\s*\)?\s*as\s+unknown\s+as\b/;
   lines.forEach((line, i) => {
     if (nsRe) {

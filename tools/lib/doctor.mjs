@@ -1,5 +1,5 @@
-// `dlm doctor`:一鍵健康檢查。每一項給 ✓ / ⚠ / ✗,不對的附一行修法。
-// 給人看的,也給 Front 看的(`dlm doctor --json`)。只讀,不改任何東西。
+// `dlm doctor`: a one-shot health check. Each item gets ✓ / ⚠ / ✗, with a one-line fix for the ones that are wrong.
+// For people, and for Front too (`dlm doctor --json`). Read only; changes nothing.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { keyPath } from './auth.mjs';
@@ -16,7 +16,7 @@ const ok = (name, detail) => ({ name, status: 'ok', detail });
 const warn = (name, detail, fix) => ({ name, status: 'warn', detail, fix });
 const fail = (name, detail, fix) => ({ name, status: 'fail', detail, fix });
 
-/** `FOO=1 BAR=2 claude -p ...` → `claude`。 */
+/** `FOO=1 BAR=2 claude -p ...` → `claude`. */
 export function executableOf(cmd) {
   const tokens = String(cmd ?? '').trim().split(/\s+/);
   const exe = tokens.find((t) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(t));
@@ -43,8 +43,8 @@ function checkGit(root, config) {
 }
 
 /**
- * v4.7.3 dlm 自己的檔有沒有進 git。合併前的全 gate 在 main + 分支 的臨時樹(從 git 來)跑 node tools/dlm.mjs check;
- * dlm 的檔沒 commit,臨時樹裡就沒有 dlm,實作棒每次都紅、三次後封鎖。4.7.3 以前 dlm init --existing 裝進已經有 git 的專案就是這樣(實測)。
+ * v4.7.3 Whether dlm's own files are in git. The full gate before a merge runs node tools/dlm.mjs check in the temp tree of main + branch (made from git);
+ * if dlm's files are not committed, the temp tree has no dlm, the dev leg goes red every time, and after three tries it is blocked. That is what happened when a version before 4.7.3 ran dlm init --existing into a project that already had git (seen in a real run).
  */
 function checkDlmTracked(root) {
   if (run('git rev-parse --is-inside-work-tree', { cwd: root }).code !== 0) return [];
@@ -64,7 +64,7 @@ async function checkWorker(root, config) {
   return hostHas(exe) ? ok('worker 指令', exe) : fail('worker 指令', `找不到 ${exe}`, `先安裝 ${exe},或改 agents.worker.cmd`);
 }
 
-/** v4.6:每個角色用的帳號在這台電腦上有沒有、登入了沒。 */
+/** v4.6: whether the account used by each role exists on this machine and is logged in. */
 function checkAccounts(config) {
   const out = [];
   let registry;
@@ -137,7 +137,7 @@ function checkGates(root, config) {
   const missing = chain.filter((n) => !gateCommand(n, config, pkg?.scripts ?? {}));
   if (missing.length) out.push(fail('合併 gate', `package.json 沒有這些 script、gates.commands 也沒有:${missing.join(', ')}`, '補上 script、在 gates.commands 寫對應的指令,或從 gates.chain 拿掉'));
   const gateProblems = out.length;
-  // v4.5:既有專案沒記基線的話,主線上本來就紅的測試會讓每一次合併都被擋
+  // v4.5: if an existing project has no recorded baseline, tests that were already red on main will block every merge
   if (config.project?.mode === 'brownfield') {
     const b = readBaseline(root);
     if (!b) out.push(warn('測試基線', '既有專案還沒記測試基線:主線上本來就紅的測試會擋住每一次合併', 'node tools/dlm.mjs onboard'));
@@ -150,7 +150,7 @@ function checkGates(root, config) {
   }
   const hasDeps = pkg && Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length > 0;
   if (hasDeps && !existsSync(join(root, 'node_modules'))) out.push(warn('依賴', 'package.json 有依賴但沒有 node_modules:gate 會失敗', 'npm install'));
-  // v4:cucumber.js 是你的檔(dlm upgrade 不覆蓋)。v3 版會讓單一節點的驗收連別的節點一起跑,而且全 gate 會被還沒做完的節點卡死
+  // v4: cucumber.js is your file (dlm upgrade does not overwrite it). The v3 version made the acceptance of one node run together with other nodes, and the full gate got stuck on nodes not finished yet
   const cuc = join(root, 'cucumber.js');
   if (chain.some((n) => n.startsWith('accept')) && existsSync(cuc) && !readFileSync(cuc, 'utf8').includes('pending-features')) {
     out.push(warn('驗收設定', 'cucumber.js 是 v3 以前的版本:兩個以上節點同時在做時,全 gate 的 accept 會被彼此未完成的場景卡死',

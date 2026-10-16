@@ -1,10 +1,10 @@
 /**
- * scripts/check-standalone.ts 的單元測試(模板 1.4.0 S3:pending 語意 + `_doc` metadata)。
+ * Unit tests for scripts/check-standalone.ts (template 1.4.0 S3: pending semantics + `_doc` metadata).
  *
- * 跟其餘掃描器的測試同一個形狀:造一次性的暫存目錄當假 consumer 根,`--root` +
- * `--manifest` 明講,不碰真的 repo。pending 測試需要真的執行指令(不能只用 `--list`,
- * 因為 pending 的「done 與否決定要不要讓 gate 變紅」邏輯只在真跑那條分支才會走到),
- * 所以指令一律用 `node -e "process.exit(N)"` 這種零副作用的東西。
+ * Same shape as the tests of the other scanners: build a throwaway temp directory as the fake consumer root,
+ * and pass `--root` + `--manifest` explicitly, so the real repo is never touched. The pending tests need to really run commands (`--list` alone is not enough,
+ * because the pending logic "whether it is done decides whether the gate turns red" is only reached on the branch that really runs),
+ * so the commands are always something with zero side effects, such as `node -e "process.exit(N)"`.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -240,7 +240,7 @@ describe('check-standalone:pending 語意(來源 nightmare-assault)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S9:設定檔(manifest)壞掉要大聲失敗,不是未捕捉的堆疊。
+// S9: a broken config file (manifest) must fail loudly, not as an uncaught stack trace.
 // ---------------------------------------------------------------------------
 
 describe('check-standalone:S9 manifest 壞掉', () => {
@@ -260,7 +260,7 @@ describe('check-standalone:S9 manifest 壞掉', () => {
 
   it('standalone.json 根本不存在 → 一樣大聲失敗(不是未捕捉的 ENOENT)', () => {
     const root = makeRoot();
-    const manifestPath = join(root, 'standalone.json'); // 沒有 writeFileSync
+    const manifestPath = join(root, 'standalone.json'); // no writeFileSync
 
     const { code, output } = run(root, manifestPath);
 

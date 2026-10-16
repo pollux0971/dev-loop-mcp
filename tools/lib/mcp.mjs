@@ -1,12 +1,12 @@
-// `dlm mcp`:dev-loop-mcp 的 MCP server(stdio、JSON-RPC 2.0、零依賴)。v4.7 起是「這台電腦一個」:
-// 裝一次(dlm mcp install),在哪個目錄開 Claude Code / Codex / Cursor 都能用,管這台電腦上所有 dlm 專案。
+// `dlm mcp`: the MCP server of dev-loop-mcp (stdio, JSON-RPC 2.0, zero dependencies). Since v4.7 it is "one per machine":
+// install once (dlm mcp install) and it works from any directory where you open Claude Code / Codex / Cursor, managing every dlm project on this machine.
 //
-// 工具 = api.mjs 的路由表(跟 HTTP API 同一份定義,名稱是 dlm_ + operationId 的 snake_case);
-// prompts = flow.mjs 的常用流程;initialize 的 instructions 帶流程摘要與規則。
-// 專案的操作交給那個專案自己的 dlm 執行(service.mjs),版本不同也沒關係。
+// Tools = the route table in api.mjs (the same definition as the HTTP API; names are dlm_ + the snake_case of operationId);
+// prompts = the common flows in flow.mjs; the initialize instructions carry a flow summary and the rules.
+// Project operations are handed to that project's own dlm (service.mjs), so differing versions do not matter.
 //
-// 安全:dlm 派出去的 worker / Critic 不能用(DLM_ROLE 有值、或在 .dlm/ 底下就拒絕啟動;worker 的副本也沒有 .mcp.json)。
-// decide / confirm / unblock / resume 是使用者的決定,工具說明寫明只能轉達使用者這一輪的原話。
+// Safety: a worker / Critic dispatched by dlm must not use it (it refuses to start if DLM_ROLE is set or the cwd is under .dlm/; the worker's copy has no .mcp.json either).
+// decide / confirm / unblock / resume are the user's decisions; the tool descriptions say to relay only the user's verbatim words from this turn.
 import { createInterface } from 'node:readline';
 import { sep } from 'node:path';
 import { ROUTES, buildArgs } from './api.mjs';
@@ -19,7 +19,7 @@ const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const USER_DECISION = new Set(['decide', 'confirm', 'unblock', 'resume', 'setSettings']);
 const DESTRUCTIVE = new Set(['halt', 'removeProject', 'removeAccount', 'stopLoop']);
 
-/** MCP 不提供:串流(MCP 工具是一問一答;要追新事件用 dlm_list_events 帶 after)、openapi(給 HTTP 用的)。 */
+/** Not offered over MCP: streaming (MCP tools are one question, one answer; to follow new events use dlm_list_events with after) and openapi (that is for HTTP). */
 const mcpRoutes = () => ROUTES.filter((r) => r.kind !== 'stream' && r.id !== 'openapi');
 
 const PROJECT_PARAM = { type: 'string', description: '專案名稱(dlm_list_projects 列的)或專案目錄的絕對路徑。在 dlm 專案目錄裡啟動時可省略' };
@@ -53,7 +53,7 @@ export function toolList() {
   return mcpRoutes().map(toolOf);
 }
 
-/** 沒指定 project 時用哪一個:DLM_PROJECT,或啟動時的目錄是 dlm 專案。 */
+/** Which project to use when none is given: DLM_PROJECT, or the startup directory if it is a dlm project. */
 export function defaultProject(cwd, env = process.env) {
   if (env.DLM_PROJECT) return env.DLM_PROJECT;
   return isDlmProject(cwd) ? cwd : null;
@@ -87,7 +87,7 @@ export async function callTool(name, input, { cwd = process.cwd(), env = process
   return { content: text(JSON.stringify(r.body, null, 2)) };
 }
 
-/** 不讓 worker / Critic 用:它們能呼叫 dlm_decide 就等於自己批准自己。 */
+/** Workers / Critics must not use it: if they could call dlm_decide they would be approving themselves. */
 export function refuseReason(root, env = process.env) {
   if (env.DLM_ROLE) return `DLM_ROLE=${env.DLM_ROLE}:dlm 派出去的 ${env.DLM_ROLE} 不能使用 dlm 的 MCP`;
   // a project not yet upgraded from dp still sends workers out with DP_ROLE, into .dp/
@@ -112,11 +112,11 @@ function instructions(cwd, env) {
   ].filter(Boolean).join('\n');
 }
 
-/** 處理一則 JSON-RPC 訊息;回傳要送出的回應(通知回 null)。 */
+/** Handle one JSON-RPC message; returns the response to send (null for a notification). */
 export async function handle(msg, { cwd = process.cwd(), env = process.env } = {}) {
   const reply = (result) => ({ jsonrpc: '2.0', id: msg.id, result });
   const error = (code, message) => ({ jsonrpc: '2.0', id: msg.id ?? null, error: { code, message } });
-  if (msg.id === undefined) return null; // 通知(notifications/initialized 等)
+  if (msg.id === undefined) return null; // notifications (notifications/initialized etc.)
   switch (msg.method) {
     case 'initialize': {
       const want = msg.params?.protocolVersion;
@@ -163,7 +163,7 @@ export async function serveMcp({ cwd = process.cwd(), env = process.env, input =
       output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } })}\n`);
       continue;
     }
-    // 工具可能要跑很久(tick、setup):同時處理,各自回覆
+    // A tool may run for a long time (tick, setup): handle them concurrently, each replying on its own
     const p = handle(msg, { cwd, env }).then((res) => { if (res) output.write(`${JSON.stringify(res)}\n`); })
       .catch((e) => output.write(`${JSON.stringify({ jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32603, message: String(e?.message ?? e) } })}\n`));
     pending.add(p);

@@ -35,7 +35,7 @@ describe('dlm init / upgrade', () => {
     assert.deepEqual(upgrade(proj).update, [], '同版本升級什麼都不用動');
     rmSync(join(proj, 'docs/dlm/ROLES.md'));
     assert.deepEqual(upgrade(proj).create, ['docs/dlm/ROLES.md']);
-    // 模擬「安裝時是舊版內容、之後 dlm 更新了」:把檔案與清單都改成舊版
+    // Simulate "installed with the old content, then dlm was updated": change both the files and the manifest to the old version
     const manifest = readJson(join(proj, '.dlm-install.json'));
     writeFileSync(join(proj, 'prompts/worker.md'), 'old version');
     manifest.files['prompts/worker.md'] = sha256('old version');
@@ -47,7 +47,7 @@ describe('dlm init / upgrade', () => {
     assert.ok(up.commit, '升級完就 commit(tick 才不會因為有未 commit 的變更停下來)');
     assert.equal(sh(proj, 'git status --porcelain'), '');
     assert.match(sh(proj, 'git log -1 --format=%s'), /^dlm upgrade /);
-    // 使用者自己改過 → 衝突
+    // The user changed it themselves → conflict
     writeFileSync(join(proj, 'prompts/critic.md'), '我改過的 critic');
     writeFileSync(join(proj, 'docs/dlm/VERIFIER.md'), 'changed too');
     assert.throws(() => upgrade(proj), (e) => /prompts\/critic\.md/.test(e.message) && /docs\/dlm\/VERIFIER\.md/.test(e.message));
@@ -70,7 +70,7 @@ describe('dlm init / upgrade', () => {
     assert.match(readFileSync(join(dir, '.gitignore'), 'utf8'), /^__pycache__\/\n# dlm[^\n]*\n\.dlm\/\n/);
     assert.match(sh(dir, 'git log -1 --format=%s'), /^dlm init --existing$/);
 
-    // 4.7.3 以前的樣子:裝了但沒 commit
+    // How it looked before 4.7.3: installed but not committed
     const old = tempDir();
     put(join(old, 'app.py'), 'print(1)\n');
     sh(old, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm legacy');

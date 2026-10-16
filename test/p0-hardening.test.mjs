@@ -1,4 +1,4 @@
-// P0 加固:接上真模型之前必修的 12 項(見 CHANGELOG 2.1.0)。每一項至少一個「壞樣本被擋下」的測試。
+// P0 hardening: the 12 items that must be fixed before connecting a real model (see CHANGELOG 2.1.0). Each item has at least one test where "a bad sample is blocked".
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -96,7 +96,7 @@ describe('#2 git hooks 停用、.git/config 被改就停機', () => {
 
   test('兩次 tick 之間 .git/config 被改 → 停機不派工;使用者 resume 後重記基準、繼續', async () => {
     const proj = makeProject();
-    await tick(proj); // 記下基準
+    await tick(proj); // Record the baseline
     addNode(proj, CALC, CALC_GHERKIN);
     sh(proj, 'git config filter.evil.clean "touch /tmp/pwned"');
     await tick(proj);
@@ -158,12 +158,12 @@ describe('#4 owns 重疊', () => {
     const spec = (id, owns) => ({ id, title: 't', intent: 'i', relation: 'followup', owns });
     const first = withSpawn({ version: 1, nodes: [parent] }, 'p/v1', spec('p/v1.1', ['packages/p/util/**']));
     assert.deepEqual(validateDag(first.dag), [], '子節點在父節點範圍內、有依賴順序:可以');
-    // 兩個 followup 都只依賴父節點,彼此沒有順序 → 可能同時施工
+    // Both followups depend only on the parent node and have no order between them → they may be built at the same time
     const second = withSpawn(first.dag, 'p/v1', spec('p/v1.2', ['packages/p/util/x/**']));
     assert.ok(validateDag(second.dag).some((p) => /p\/v1\.1 與 p\/v1\.2 的 owns 重疊/.test(p)));
     const disjoint = withSpawn(first.dag, 'p/v1', spec('p/v1.2', ['packages/p/other/**']));
     assert.deepEqual(validateDag(disjoint.dag), []);
-    // prereq 會繼承父節點(含先前的 prereq)的依賴,所以跟前一個 prereq 有順序,可以重疊
+    // A prereq inherits the parent's dependencies (including earlier prereqs), so it is ordered after the previous prereq and they may overlap
     const pre = withSpawn(withSpawn({ version: 1, nodes: [parent] }, 'p/v1', { ...spec('p/v1.1', ['packages/p/util/**']), relation: 'prereq' }).dag,
       'p/v1', { ...spec('p/v1.2', ['packages/p/util/**']), relation: 'prereq' });
     assert.deepEqual(validateDag(pre.dag), []);
@@ -220,7 +220,7 @@ describe('#6 合併 gate 過期要重跑', () => {
     }
     assert.ok(devReq, '實作棒在等使用者');
     const dispatchId = devReq.ref.slice('accept:'.length);
-    // 等待期間,別人在主線放進一個會紅的測試(模擬另一個節點先合併)
+    // While waiting, someone puts a test that goes red onto main (simulating another node merging first)
     mkdirSync(join(proj, 'packages/other/src'), { recursive: true });
     writeFileSync(join(proj, 'packages/other/src/other.test.mjs'), "import { test } from 'node:test';\nimport assert from 'node:assert';\ntest('boom', () => assert.fail('主線上的新測試'));\n");
     commitAllIn(proj, 'other merged');
@@ -348,7 +348,7 @@ describe('#9 不可信文字不直接進 Front', () => {
 
   test('escalation 的 question 不再內嵌 worker 的 summary', async () => {
     const proj = makeProject({ mode: 'escalate' });
-    // 假 worker 交 escalation,summary 是 worker 寫的「假 worker 不會做 test」
+    // The fake worker hands in an escalation; the summary is written by the worker ("假 worker ...")
     addNode(proj, CALC, CALC_GHERKIN);
     const s = await tickUntil(proj, (st) => openRequests(st).some((r) => r.ref.startsWith('escalation:')));
     const req = openRequests(s).find((r) => r.ref.startsWith('escalation:'));

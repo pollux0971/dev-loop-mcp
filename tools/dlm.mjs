@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dlm:dev-loop-mcp 的唯一指令。零依賴,Node >= 20。
+// dlm: the single command of dev-loop-mcp. Zero dependencies, Node >= 20.
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -118,7 +118,7 @@ function parseArgs(argv) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 背景迴圈睡覺時每半秒看一次有沒有人要它結束(dlm run --stop、dlm hub 的停止鈕)。 */
+/** While the background loop sleeps, it checks every half second whether someone wants it to end (dlm run --stop, the stop button in dlm hub). */
 async function sleepUnlessStopped(root, ms) {
   const until = Date.now() + ms;
   while (Date.now() < until) {
@@ -137,7 +137,7 @@ function summaryLine(s) {
   return `完成 ${s.counts.done}/${s.counts.nodes} · 進行 ${s.in_progress.length} · 審核 ${s.review.length} · 可派 ${s.dispatchable.length} · 卡住 ${s.blocked.length} · 待你 ${s.awaiting_user.decisions.length + s.awaiting_user.e2e.length} · $${s.budget.today_usd}`;
 }
 
-/** 會寫事件的指令執行完就重新產生 STATUS/DECISIONS,讓產生檔隨時跟帳本一致(commit 交給下一個 tick)。 */
+/** After a command that writes events finishes, regenerate STATUS/DECISIONS so the generated files always match the ledger (the commit is left to the next tick). */
 const MUTATING = new Set(['inbox', 'decide', 'confirm', 'halt', 'resume', 'unblock', 'intake']);
 // commands that work outside a project, or that handle an old dp project themselves (upgrade migrates it, doctor explains)
 const NO_PROJECT = new Set([undefined, 'help', '--help', 'init', 'upgrade', 'doctor', 'mcp', 'hub', 'project', 'account', 'api']);
@@ -152,7 +152,7 @@ async function main() {
   return code;
 }
 
-// v4:每個指令認得的旗標。v3 的 `dlm run --help` 把 --help 當成未知旗標忽略,直接在背景啟動了迴圈(實測)。
+// v4: the flags each command recognizes. v3's `dlm run --help` ignored --help as an unknown flag and started the loop in the background (seen in a real run).
 const FLAGS = {
   init: ['name', 'existing', 'no-commit'], setup: ['yes', 'answers'], doctor: ['json'], upgrade: ['dry-run'],
   tick: [], run: ['interval', 'max-ticks', 'until-idle', 'daemon', 'stop'],
@@ -301,7 +301,7 @@ async function dispatchCommand(cmd, rest) {
         if (!Number.isInteger(port) || port < 0 || port > 65535) throw new DlmError(`--serve 的 port 不對:${flags.serve}`);
         if (!(interval > 0)) throw new DlmError(`--interval 要是正數(秒):${flags.interval}`);
         await serveDashboard(root, { port, intervalMs: interval * 1000 });
-        await new Promise(() => {}); // 開著直到 Ctrl+C
+        await new Promise(() => {}); // Stays open until Ctrl+C
       }
       const out = resolve(flags.out && flags.out !== true ? flags.out : join(root, '.dlm', 'dashboard.html'));
       ensureDir(dirname(out));
@@ -318,9 +318,9 @@ async function dispatchCommand(cmd, rest) {
     case 'decide': {
       const [ref, choice] = pos;
       if (!ref || !choice) throw new DlmError('dlm decide <ref> <choice> --verbatim "..."');
-      // 沒有 --as:使用者的決定只由使用者寫;Critic 的代行只能由 orchestrator 在 tick 裡寫
+      // Without --as: the user's decision is written only by the user; a Critic's stand-in can only be written by the orchestrator inside a tick
       if (flags.as !== undefined) throw new DlmError('--as 已移除:dlm decide 只記錄使用者的決定;Critic 的判決由 tick 代寫');
-      // v4:一句話決定好幾件(v3 實測:四個節點同時等合併,使用者得一件一件說 yes)
+      // v4: one sentence decides several things (v3 real run: four nodes waited for merge at once and the user had to say yes one by one)
       for (const r of decideOp(root, { ref, choice, verbatim: flags.verbatim }).recorded) console.log(`已記錄 #${r.seq} ${r.ref}=${choice};下一個 tick 會執行`);
       return 0;
     }
@@ -337,7 +337,7 @@ async function dispatchCommand(cmd, rest) {
       return 0;
     }
     case 'hook': {
-      // Claude Code hooks:stdin 是 JSON。user-prompt 的 stdout 會被當成對話脈絡:只印 dlm 自己產生的那一行提醒。
+      // Claude Code hooks: stdin is JSON. The stdout of user-prompt is treated as conversation context: print only the one reminder line that dlm itself generates.
       let input = {};
       try { input = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { /* 空輸入 */ }
       const r = runHook(pos[0], input);
@@ -357,7 +357,7 @@ async function dispatchCommand(cmd, rest) {
       console.log(`#${resume(root, flags.verbatim === true ? '' : flags.verbatim).seq} 已恢復`);
       return 0;
     case 'settings': {
-      // v4.7.3:只改使用者說要改的那幾項(以前要重跑 dlm setup,會連其他設定一起問、一起寫)
+      // v4.7.3: change only the items the user said to change (before, you had to rerun dlm setup, which asked about and wrote all the other settings too)
       const num = (k) => (flags[k] === undefined || flags[k] === true ? undefined : Number(flags[k]));
       const r = setSettings(root, { autonomy_level: num('autonomy'), daily_usd: num('budget'), parallel: num('parallel'), verbatim: flags.verbatim });
       for (const [k, v] of Object.entries(r.changed)) console.log(`✓ ${k}:${v.from} → ${v.to}`);
@@ -434,7 +434,7 @@ async function dispatchCommand(cmd, rest) {
     case 'project':
       return projectCommand(pos, flags);
     case 'api': {
-      // 文件從路由表與流程表產生(payload/docs/dlm 的 API.md、openapi.json、FLOW.md 就是這樣來的)
+      // The docs are generated from the route table and the flow table (the API.md, openapi.json and FLOW.md in payload/docs/dlm come from this)
       const kind = pos[0] ?? 'md';
       const gen = { md: apiMarkdown, openapi: openapiJson, flow: flowMarkdown }[kind];
       if (!gen) throw new DlmError('dlm api [md|openapi|flow]');
@@ -448,11 +448,11 @@ async function dispatchCommand(cmd, rest) {
       if (!Number.isInteger(port) || port < 0 || port > 65535) throw new DlmError(`--port 不對:${flags.port}`);
       if (!(interval > 0)) throw new DlmError(`--interval 要是正數(秒):${flags.interval}`);
       await serveHub({ port, intervalMs: interval * 1000 });
-      await new Promise(() => {}); // 開著直到 Ctrl+C
+      await new Promise(() => {}); // Stays open until Ctrl+C
       return 0;
     }
     case 'op': {
-      // API / MCP 在專案裡執行操作的入口:stdin(或 --args)是 JSON,stdout 最後一行是 { ok, result } / { ok:false, error, status }
+      // Entry point for API / MCP to run an operation inside a project: stdin (or --args) is JSON, and the last stdout line is { ok, result } / { ok:false, error, status }
       let args = {};
       try {
         const raw = flags.args && flags.args !== true ? flags.args : (process.stdin.isTTY ? '' : readFileSync(0, 'utf8'));
@@ -702,4 +702,3 @@ main().then((code) => process.exit(code ?? 0), (e) => {
   console.error(e);
   process.exit(1);
 });
-

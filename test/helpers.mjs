@@ -13,13 +13,13 @@ import { pidAlive, readJson, run, writeJson } from '../tools/lib/util.mjs';
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// 測試不碰你真的 ~/.config/dlm/key:整個測試行程(含它開的 dlm 子程序)用一把暫存金鑰
+// Tests do not touch your real ~/.config/dlm/key: the whole test process (including the dlm child processes it starts) uses one temporary key
 if (!process.env.DLM_KEY_FILE) process.env.DLM_KEY_FILE = join(mkdtempSync(join(tmpdir(), 'dlm-key-')), 'key');
-// v4.7:帳號、專案清單、hub token 也不碰你真的 ~/.config/dlm
+// v4.7: accounts, the project list and the hub token do not touch your real ~/.config/dlm either
 if (!process.env.DLM_CONFIG_DIR) process.env.DLM_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'dlm-config-'));
 export const FAKE = join(REPO, 'test', 'fixtures', 'fake-worker.mjs');
 export const FAKE_VERIFIER = join(REPO, 'test', 'fixtures', 'fake-verifier.mjs');
-/** 測試專案沒有 node_modules:用 node 內建 test runner 當專案測試,讓合併 gate 真的跑到所有節點的測試。 */
+/** A test project has no node_modules: use node's built-in test runner as the project test, so the merge gate really runs every node's tests. */
 export const TEST_SCRIPT = 'node --test "packages/**/*.test.mjs"';
 
 const temps = [];
@@ -48,13 +48,13 @@ export function makeProject({ mode = 'good', level = 1, config = {} } = {}) {
   cfg.agents.worker.cmd = `FAKE_MODE=${mode} node ${FAKE}`;
   cfg.autonomy.level = level;
   cfg.gates.chain = ['check:dlm', 'test'];
-  // 測試專案沒有 node_modules / tsx / stryker:dry-run 與 mutation 由專門的測試開
+  // A test project has no node_modules / tsx / stryker: dry-run and mutation are opened by dedicated tests
   cfg.verify = { ...cfg.verify, dry_run_cmd: null, mutation: { ...cfg.verify?.mutation, cmd: null } };
-  // 使用者授權的簽章流程由 p1 測試專門驗;其他測試直接以使用者身分 decide
+  // The signed user-authorization flow is checked by the p1 tests; other tests decide directly as the user
   cfg.auth = { mode: 'off' };
-  // 沒有沙箱也讓 L2 測試跑得動(真實專案要你自己打開這個開關)
+  // Let the L2 tests run without a sandbox (a real project must turn this switch on yourself)
   cfg.sandbox = { backend: 'none', allow_unsandboxed_autonomy: true };
-  // 預設接上假的小模型(一律 NO_OBJECTION);沒有 Verifier 時有 gherkin 的最後一棒不會自動合併
+  // A fake small model is attached by default (always NO_OBJECTION); without a Verifier, the last leg of a node with gherkin is not merged automatically
   cfg.agents.verifier = { ...cfg.agents.verifier, backend: 'cmd', cmd: `FV=ok node ${FAKE_VERIFIER}` };
   cfg.verify = { ...cfg.verify, rerun_allow: ['node --test', 'node packages/'], ...(config.verify ?? {}) };
   for (const [k, v] of Object.entries(config)) {
@@ -85,7 +85,7 @@ export const I1 = {
 };
 export const I1_GHERKIN = '@integration @i1\nFeature: app\n  @e2e\n  Scenario: user runs the app\n    When I run the app\n    Then I see ok\n';
 
-/** 走完整的 intake:提案 → 使用者批准。下一個 tick 會套用。 */
+/** Walk the full intake: proposal → user approval. The next tick applies it. */
 export function addNode(proj, spec, gherkin) {
   const p = proposeFeature(proj, spec, gherkin);
   decide(proj, `node:${p.id}`, 'yes', '好,加進去');
@@ -107,7 +107,7 @@ export async function waitWorkers(proj, timeoutMs = 30000) {
   }
 }
 
-/** 一直 tick 直到 pred(state) 成立;回傳最後的 state。 */
+/** Keep ticking until pred(state) holds; returns the last state. */
 export async function tickUntil(proj, pred, { max = 25, log = () => {} } = {}) {
   for (let i = 0; i < max; i++) {
     const r = await tick(proj, { log });

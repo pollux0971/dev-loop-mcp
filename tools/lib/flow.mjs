@@ -1,6 +1,6 @@
-// v4.7 dlm 的流程定義(唯一的一份):從建專案到一版一版交付。GET /api/v1/flow、MCP 的 dlm_flow 工具與 prompts、
-// docs/dlm/FLOW.md 都從這裡來。每一步寫明誰做(user = 使用者本人、agent = 呼叫 MCP / API 的 AI、dlm = 背景迴圈)
-// 和要呼叫哪一個操作(api.mjs 的 route id;MCP 工具名是 dlm_ + 它的 snake_case)。
+// v4.7 dlm flow definition (the only copy): from creating a project to delivering version after version. GET /api/v1/flow, the MCP dlm_flow tool and prompts,
+// and docs/dlm/FLOW.md all come from here. Each step says who does it (user = the user in person, agent = the AI calling MCP / the API, dlm = the background loop)
+// and which operation to call (the route id in api.mjs; the MCP tool name is dlm_ + its snake_case).
 
 export const FLOW = [
   {
@@ -81,7 +81,7 @@ export const RULES = [
   '不要直接改專案的 dag.json、ledger/、docs/dlm-baseline.json;一律透過這些操作。',
 ];
 
-/** MCP prompts:常用流程的開場白(Claude Code 裡是 /mcp__dlm__<name>)。 */
+/** MCP prompts: opening lines for the common flows (in Claude Code they are /mcp__dlm__<name>). */
 export const PROMPTS = [
   {
     name: 'new-project', title: '用 dlm 開一個新專案',
@@ -116,7 +116,7 @@ export const PROMPTS = [
 const snake = (id) => id.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 export const toolName = (routeId) => `dlm_${snake(routeId)}`;
 
-/** 一段流程寫成文字(MCP prompts、文件用)。 */
+/** A flow written out as text (for MCP prompts and docs). */
 export function flowText(ids = FLOW.map((s) => s.id)) {
   const out = [];
   for (const stage of FLOW.filter((s) => ids.includes(s.id))) {
