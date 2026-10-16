@@ -52,7 +52,12 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
 - **主控台沒有軟體在開發時,一打開是規劃頁(Front · intake)**:沒有節點在施工、驗收、卡住、退避、可以派工,也沒有等合併 / 卡住 / 子節點的決定時,
   `dashboardData` 的 `initial_view` 是 `planning`(另有 `building`),否則是 `console`。頁面照它開第一頁,不再記住上次看的頁;
   舊版 dp 的專案沒有這個欄位,頁面用看得到的資料估。hub 點「開主控台」也一樣。
-- 新測試 10 個,加上 PR #1 的 1 個。`npm test` 181 個全部通過(4.7.2 是 171 個)。
+- **改提案用 `supersedes` 取代還沒決定的舊提案**:`dp_propose_feature` / `dp_propose_bundle` 多一個參數 `supersedes`(例 `["p-001"]`,
+  指令是 `dp intake … --supersedes p-001`)。新的決定請求記下它取代誰;被取代的不再待決(收件匣、主控台都不列)、`decide` 會拒絕並指出該決定哪一份,
+  規劃頁標成「已被 p-002 取代」。只能取代還沒決定的。沒帶 `supersedes`、但還在等決定的舊提案有同樣的節點時,提案結果帶提醒。
+  實跑(minilang,Sonnet 5.5 當 Front):AI 發現第一份提案的 gherkin 欄位算錯,重提一份後只能請使用者「忽略」舊的;
+  兩份都被批准的話,先寫進 DAG 的是舊的(錯的)那份。事件格式只多一個選填欄位 `decision_request.supersedes`,舊帳本照樣重播。
+- 新測試 11 個,加上 PR #1 的 1 個。`npm test` 182 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

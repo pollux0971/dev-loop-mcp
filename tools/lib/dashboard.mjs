@@ -199,7 +199,7 @@ function detailOf(e) {
   }
 }
 
-const RAW_FIELDS = ['dispatch_id', 'leg', 'attempt', 'results', 'verdict', 'usd', 'role', 'ok', 'reason', 'commit', 'merge_sha', 'ref', 'choice', 'findings',
+const RAW_FIELDS = ['dispatch_id', 'leg', 'attempt', 'results', 'verdict', 'usd', 'role', 'ok', 'reason', 'commit', 'merge_sha', 'ref', 'choice', 'findings', 'supersedes',
   'question', 'options', 'recommendation', 'verbatim', 'scenarios'];
 
 /** 提案(intake 寫的):規劃頁用來顯示「這一版要做什麼」與 gherkin。 */

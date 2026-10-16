@@ -193,6 +193,11 @@ export function replay(events, dag) {
         break;
       case 'decision_request':
         decisions.set(ev.ref, { request: ev, answer: decisions.get(ev.ref)?.answer ?? null });
+        // v4.7.3:新提案取代舊的(還沒決定的)→ 舊的關掉,不再待決
+        for (const old of ev.supersedes ?? []) {
+          const rec = decisions.get(old);
+          if (rec?.request && !rec.answer) rec.superseded = ev.ref;
+        }
         break;
       case 'decision': {
         const rec = decisions.get(ev.ref) ?? { request: null, answer: null };
@@ -252,7 +257,7 @@ export function replay(events, dag) {
 }
 
 export function openDecisions(state) {
-  return [...state.decisions.values()].filter((d) => d.request && !d.answer).map((d) => d.request);
+  return [...state.decisions.values()].filter((d) => d.request && !d.answer && !d.superseded).map((d) => d.request);
 }
 
 export function pendingE2e(state) {

@@ -29,7 +29,7 @@ export const FLOW = [
     goal: '使用者批准的一個版本:能力節點 + 一個整合點(使用者親手試用的時間點)',
     steps: [
       { who: 'agent', note: '跟使用者談這一版要能做什麼;有 docs/ROADMAP.md 先讀。照 intake skill 的格式寫節點與 gherkin' },
-      { who: 'agent', call: 'proposeBundle', note: '一次提整個版本(或 proposeFeature 提單一節點)。這只是提案,不會動 DAG' },
+      { who: 'agent', call: 'proposeBundle', note: '一次提整個版本(或 proposeFeature 提單一節點)。這只是提案,不會動 DAG。要改還沒批准的提案就重提一份並帶 supersedes(舊的會關掉,不會被誤批准)' },
       { who: 'user', note: '看過提案說好或要改' },
       { who: 'agent', call: 'decide', note: 'ref = node:<proposal_id>,choice = yes,verbatim = 使用者的原話。只在使用者親口說好之後' },
     ],

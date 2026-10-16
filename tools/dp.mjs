@@ -91,8 +91,8 @@ MCP(v4.7:這台電腦一個,管所有 dp 專案;工具與 HTTP API 同一份定�
   dp api [md|openapi|flow]                   印出 API 文件、OpenAPI 規格、流程(docs/dp/API.md、FLOW.md 就是這樣產生的)
 
 新東西進 DAG(都要使用者批准)
-  dp intake feature --spec spec.json [--gherkin file.feature]
-  dp intake bundle --spec bundle.json        一次提一整個版本(多個節點 + gherkin + 整合點),一次批准
+  dp intake feature --spec spec.json [--gherkin file.feature] [--supersedes p-001]
+  dp intake bundle --spec bundle.json [--supersedes p-001]   一次提一整個版本(多個節點 + gherkin + 整合點),一次批准;--supersedes 取代還沒決定的舊提案
   dp intake apply <proposal-id>
 
 檢查
@@ -155,7 +155,7 @@ const FLAGS = {
   tick: [], run: ['interval', 'max-ticks', 'until-idle', 'daemon', 'stop'],
   status: ['json'], dashboard: ['out', 'serve', 'interval'], inbox: ['no-mark'], show: [], decide: ['verbatim', 'as'], confirm: ['verbatim'],
   halt: ['reason', 'keep-workers'], resume: ['verbatim'], unblock: ['verbatim'],
-  intake: ['spec', 'gherkin'], onboard: ['no-commit'], baseline: ['no-commit'], check: [], gates: [], render: [], stats: [], hook: [],
+  intake: ['spec', 'gherkin', 'supersedes'], onboard: ['no-commit'], baseline: ['no-commit'], check: [], gates: [], render: [], stats: [], hook: [],
   account: ['cli', 'plan', 'home', 'model', 'json', 'max-parallel'], mcp: ['client'],
   project: ['name', 'json'], hub: ['port', 'interval'], op: ['args'], api: [],
 };
@@ -398,11 +398,13 @@ async function dispatchCommand(cmd, rest) {
       if (mode === 'feature') {
         const spec = readJson(resolve(need(flags, 'spec', 'JSON 檔:id/title/intent/owns/...')));
         const gherkin = flags.gherkin ? readFileSync(resolve(flags.gherkin), 'utf8') : null;
-        const p = proposeFeature(root, spec, gherkin);
+        const sup = flags.supersedes && flags.supersedes !== true ? String(flags.supersedes).split(',') : undefined;
+        const p = proposeFeature(root, spec, gherkin, { supersedes: sup });
         console.log(`提案 ${p.id} 已建立,等使用者決定 node:${p.id}`);
         for (const w of p.warnings) console.log(`⚠ ${w}`);
       } else if (mode === 'bundle') {
-        const p = proposeBundle(root, readJson(resolve(need(flags, 'spec', 'JSON 檔:{ release, goal, roadmap?, nodes: [...] }'))));
+        const sup = flags.supersedes && flags.supersedes !== true ? String(flags.supersedes).split(',') : undefined;
+        const p = proposeBundle(root, readJson(resolve(need(flags, 'spec', 'JSON 檔:{ release, goal, roadmap?, nodes: [...] }'))), { supersedes: sup });
         console.log(`提案 ${p.id} 已建立(整個版本一次批准),等使用者決定 node:${p.id}`);
         for (const w of p.warnings) console.log(`⚠ ${w}`);
       } else if (mode === 'apply') {

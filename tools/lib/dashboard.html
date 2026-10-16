@@ -870,14 +870,17 @@ function renderPlanning(main){
           body.appendChild(el('div', { cls:'gk-file', onclick:function(ev){ if (ev.target.tagName !== 'PRE') this.classList.toggle('open'); } }, ['▸ ' + g.path + ' · ' + g.scenarios + ' 個場景', el('pre', { text:g.text })]));
         });
       }
-      if (r.options && r.options.length) {
+      var replacedBy = null;
+      for (var j = 0; j < data.timeline.length; j++) { var y = data.timeline[j]; if (y.type === 'decision_request' && y.raw && (y.raw.supersedes || []).indexOf(r.ref) >= 0) { replacedBy = y.raw.ref; break; } }
+      if (replacedBy) body.appendChild(el('div', { cls:'opts' }, [el('div', { cls:'gopt' }, [span('gk', '—'), span('gt', '已被 ' + replacedBy.replace('node:', '') + ' 取代,不用決定')])]));
+      else if (r.options && r.options.length) {
         var answer = null;
         for (var i = 0; i < data.timeline.length; i++) { var x = data.timeline[i]; if (x.type === 'decision' && x.raw && x.raw.ref === r.ref && x.seq > e.seq) { answer = x.raw.choice; break; } }
         body.appendChild(el('div', { cls:'opts' }, r.options.map(function(o){
           return el('div', { cls:'gopt' + (answer === o.key ? ' picked' : '') }, [span('gk', o.key), span('gt', o.label), r.recommendation === o.key ? span('gr', '建議') : null]);
         })));
       }
-      var open = r.options && r.options.length && !data.timeline.some(function(x){ return x.type === 'decision' && x.raw && x.raw.ref === r.ref && x.seq > e.seq; });
+      var open = !replacedBy && r.options && r.options.length && !data.timeline.some(function(x){ return x.type === 'decision' && x.raw && x.raw.ref === r.ref && x.seq > e.seq; });
       st.appendChild(el('div', { cls:'ps-msg ps-b' + (k === 'stuck' || open ? ' stuck' : '') }, [
         el('div', { cls:'lbl', text:(k === 'proposal' ? 'Front · 提案 ' + (p ? p.id + ' · ' + (p.release || '') : '') : k === 'accept' ? 'dp · 等你決定合併' : 'dp · 卡點') + ' · ' + when(e.ts) }), body
       ]));

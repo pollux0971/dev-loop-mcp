@@ -10,7 +10,7 @@ import { readEvents } from '../tools/lib/ledger.mjs';
 import { Ctx, haltWorkers, tick } from '../tools/lib/orchestrator.mjs';
 import { pendingFeatures } from '../tools/lib/pending.mjs';
 import { depsStatus } from '../tools/lib/snapshot.mjs';
-import { replay } from '../tools/lib/state.mjs';
+import { openDecisions, replay } from '../tools/lib/state.mjs';
 import { codeChunks, gherkinLiterals } from '../tools/lib/verify/index.mjs';
 import { pidAlive } from '../tools/lib/util.mjs';
 import {
@@ -207,6 +207,27 @@ test('整合點的 gherkin 沿用能力的句子(一字不差)→ 提案帶提�
   const p = proposeBundle(proj, { release: 'v1b', nodes: [{ ...CALC, id: 'calc2/v1', owns: ['packages/calc2/**'], gherkin_text: CALC_GHERKIN }, { ...I1, id: 'I9', owns: ['packages/app9/**'], depends_on: ['calc2/v1'], gherkin_text: reused }] });
   assert.equal(p.warnings.length, 1, JSON.stringify(p.warnings));
   assert.match(p.warnings[0], /I9 的 gherkin 有 2\/3 句跟能力節點一字不差(.*)測試棒做不出紅燈/);
+});
+
+test('改提案:新提案帶 supersedes 取代還沒決定的舊提案(舊的不再待決、不能批准);沒帶又有同樣的節點會提醒', () => {
+  const proj = makeProject();
+  const p1 = proposeFeature(proj, CALC, CALC_GHERKIN);
+  const p2 = proposeFeature(proj, { ...CALC, intent: '改過的 intent' }, CALC_GHERKIN, { supersedes: [p1.id] });
+  assert.deepEqual(p2.supersedes, [`node:${p1.id}`]);
+  assert.ok(!p2.warnings.some((w) => w.includes(p1.id)), '帶了 supersedes 就不提醒重複');
+  let s = stateOf(proj);
+  assert.equal(s.decisions.get(`node:${p1.id}`).superseded, `node:${p2.id}`);
+  assert.ok(!openDecisions(s).some((r) => r.ref === `node:${p1.id}`), '舊的不再待決');
+  assert.throws(() => decide(proj, `node:${p1.id}`, 'yes', '好'), /已經被 node:p-002 取代/);
+  assert.match(readEvents(proj).filter((e) => e.type === 'decision_request').at(-1).question, /取代 p-001/);
+  const p3 = proposeFeature(proj, { ...CALC, intent: '又改一次' }, CALC_GHERKIN);
+  assert.ok(p3.warnings.some((w) => /p-002 還在等決定,也有 calc\/v1(.*)supersedes: \["p-002"\]/.test(w)), JSON.stringify(p3.warnings));
+  assert.throws(() => proposeFeature(proj, CALC, CALC_GHERKIN, { supersedes: [p1.id] }), /已經被 node:p-002 取代了/);
+  decide(proj, `node:${p3.id}`, 'no', '不要這份');
+  assert.throws(() => proposeFeature(proj, CALC, CALC_GHERKIN, { supersedes: [p3.id] }), /已經決定過了/);
+  decide(proj, `node:${p2.id}`, 'yes', '好');
+  const viaOp = spawnSync(process.execPath, [DP, 'op', 'propose_feature'], { cwd: proj, encoding: 'utf8', input: JSON.stringify({ spec: { ...CALC, id: 'calc2/v1', owns: ['packages/calc2/**'] }, gherkin: CALC_GHERKIN, supersedes: ['p-009'] }) });
+  assert.match(viaOp.stdout, /node:p-009 不是一份提案/);
 });
 
 test('intake bundle:一版一次批准;沒有整合點就拒絕;下一版自動依賴上一版的整合點', () => {

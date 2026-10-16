@@ -35,20 +35,57 @@ function checkNodes(root, nodes) {
   if (problems.length) throw new DpError(`提案不合法:\n  - ${problems.join('\n  - ')}`);
 }
 
-function propose(root, proposal, question, { recommendation = 'yes', warnings = [] } = {}) {
+function propose(root, proposal, question, { recommendation = 'yes', warnings = [], supersedes = [] } = {}) {
   const id = nextProposalId(root);
   const path = `${PROPOSALS}/${id}.json`;
-  writeJson(join(root, path), { id, ...proposal, ...(warnings.length ? { warnings } : {}) });
+  writeJson(join(root, path), { id, ...proposal, ...(warnings.length ? { warnings } : {}), ...(supersedes.length ? { supersedes } : {}) });
+  const replaces = supersedes.length ? `(取代 ${supersedes.map((r) => r.slice(5)).join('、')})` : '';
   append(root, 'dp-cli', 'decision_request', {
     ref: `node:${id}`,
-    question,
+    question: `${question}${replaces}`,
     options: [{ key: 'yes', label: '批准,寫進 DAG' }, { key: 'no', label: '不要' }],
     recommendation,
     ...(warnings.length ? { reason: `提醒:${warnings.join(';')}` } : {}),
+    ...(supersedes.length ? { supersedes } : {}),
     from: 'intake',
     detail_path: path,
   });
-  return { id, path, warnings };
+  return { id, path, warnings, supersedes };
+}
+
+/**
+ * v4.7.3 取代還沒決定的提案:supersedes 寫 p-001 或 node:p-001。只能取代還在等決定的;被取代的不再待決、不能再批准。
+ * 實測:AI 提案後發現 gherkin 算錯,重提一份,舊的只能請使用者「忽略」;兩份都被批准時,先寫進 DAG 的是舊的(錯的)那份。
+ */
+function supersedeRefs(root, list) {
+  if (list === undefined || list === null) return [];
+  if (!Array.isArray(list)) throw new DpError('supersedes 要是陣列(例 ["p-001"])');
+  const state = replay(readEvents(root), loadDag(root));
+  return [...new Set(list.map((x) => (String(x).startsWith('node:') ? String(x) : `node:${x}`)))].map((ref) => {
+    const rec = state.decisions.get(ref);
+    if (!rec?.request) throw new DpError(`supersedes 的 ${ref} 不是一份提案`);
+    if (rec.answer) throw new DpError(`${ref} 已經決定過了(${rec.answer.choice}),不能取代;要改就另提一份新的`);
+    if (rec.superseded) throw new DpError(`${ref} 已經被 ${rec.superseded} 取代了`);
+    return ref;
+  });
+}
+
+/** 還在等決定的舊提案跟這份有同樣的節點,又沒寫 supersedes → 提醒(兩份都批准的話,先寫進 DAG 的是舊的那份)。 */
+function pendingOverlapWarnings(root, nodes, superseded) {
+  const state = replay(readEvents(root), loadDag(root));
+  const ids = new Set(nodes.map((n) => n.id));
+  const out = [];
+  for (const rec of state.decisions.values()) {
+    const ref = rec.request?.ref ?? '';
+    if (!ref.startsWith('node:') || rec.answer || rec.superseded || superseded.includes(ref)) continue;
+    const old = readJson(join(root, PROPOSALS, `${ref.slice(5)}.json`), null);
+    const same = (old?.nodes ?? []).map((n) => n.id).filter((nid) => ids.has(nid));
+    if (same.length) {
+      out.push(`${ref.slice(5)} 還在等決定,也有 ${same.join('、')}:這份如果是要取代它,提案時帶 supersedes: ["${ref.slice(5)}"]`
+        + '(舊的會關掉,不會被誤批准);兩份都批准的話,先寫進 DAG 的是舊的那份');
+    }
+  }
+  return out;
 }
 
 /**
@@ -176,12 +213,17 @@ function normalizeFeature(root, spec, gherkinText) {
 
 const chNote = (n) => (n.characterize?.targets?.length && !n.characterize.skip ? `;先釘住 ${n.characterize.targets.length} 個既有檔的現有行為` : '');
 
-export function proposeFeature(root, spec, gherkinText) {
+export function proposeFeature(root, spec, gherkinText, { supersedes } = {}) {
+  const sup = supersedeRefs(root, supersedes);
   const node = normalizeFeature(root, spec, gherkinText);
   checkNodes(root, [node]);
   return propose(root, { kind: 'feature', nodes: [node], files: gherkinText ? { [node.gherkin]: gherkinText } : {} },
     `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}`,
-    { warnings: [...layoutWarnings(root, [node]), ...gherkinOverlapWarnings(root, [node], gherkinText ? { [node.gherkin]: gherkinText } : {})] });
+    {
+      warnings: [...layoutWarnings(root, [node]), ...gherkinOverlapWarnings(root, [node], gherkinText ? { [node.gherkin]: gherkinText } : {}),
+        ...pendingOverlapWarnings(root, [node], sup)],
+      supersedes: sup,
+    });
 }
 
 /**
@@ -193,7 +235,8 @@ export function proposeFeature(root, spec, gherkinText) {
  * - roadmap 有寫就存成 docs/ROADMAP.md(後面幾版的方向;只有這一版會進 DAG)。
  * v3 實測:6 個節點分 4 次提案、使用者批 4 次;路線圖只存在 Front 的對話裡,換一個 session 就沒了。
  */
-export function proposeBundle(root, bundle) {
+export function proposeBundle(root, bundle, { supersedes } = {}) {
+  const sup = supersedeRefs(root, supersedes);
   if (!bundle?.release || !/^[\w.-]+$/.test(bundle.release)) throw new DpError('bundle 要有 release(例:"v1")');
   if (!Array.isArray(bundle.nodes) || !bundle.nodes.length) throw new DpError('bundle.nodes 是空的');
   const dag = loadDag(root);
@@ -228,7 +271,7 @@ export function proposeBundle(root, bundle) {
   const pinned = nodes.reduce((k, n) => k + (n.characterize?.skip ? 0 : n.characterize?.targets?.length ?? 0), 0);
   return propose(root, { kind: 'bundle', release: bundle.release, nodes, files, ...(bundle.roadmap ? { overwrite: ['docs/ROADMAP.md'] } : {}) },
     `新增 ${bundle.release}:${bundle.goal ?? ''}(${nodes.length} 個節點:${list}${gate ? `;等 ${gate} 試用過才開工` : ''}${pinned ? `;先釘住 ${pinned} 個既有檔的現有行為` : ''})`,
-    { warnings: [...layoutWarnings(root, nodes), ...gherkinOverlapWarnings(root, nodes, files)] });
+    { warnings: [...layoutWarnings(root, nodes), ...gherkinOverlapWarnings(root, nodes, files), ...pendingOverlapWarnings(root, nodes, sup)], supersedes: sup });
 }
 
 // ------------------------------------------------------------------ apply

@@ -59,6 +59,10 @@ const FEATURE_SPEC = {
   type: 'object', required: SPEC_REQUIRED, additionalProperties: false, properties: NODE_FIELDS,
   description: '一個節點的規格(欄位同 dag.json 的節點)。例:{"id":"notes/v1","title":"記一筆筆記","intent":"notes add 存一筆、notes list 列出來","owns":["packages/notes/**"]}',
 };
+const SUPERSEDES = {
+  type: 'array', items: { type: 'string', pattern: '^(node:)?p-[0-9]+$' },
+  description: '這份取代哪幾份還沒決定的提案(例 ["p-001"])。改提案就重提一份並帶這個:舊的會關掉、不能再被批准;不帶的話舊的還在等決定,兩份都批准時先寫進 DAG 的是舊的',
+};
 const BUNDLE = {
   type: 'object', required: ['release', 'nodes'], additionalProperties: false,
   description: '一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。'
@@ -235,12 +239,12 @@ export const ROUTES = [
   {
     method: 'POST', path: '/api/v1/projects/{project}/proposals/feature', id: 'proposeFeature', tag: 'decisions', kind: 'op', op: 'propose_feature', write: true, ok: 201,
     summary: '提一個新節點(提案;使用者說好之後再 decide node:<proposal_id> yes)',
-    body: obj({ spec: FEATURE_SPEC, gherkin: str('Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景)') }, ['spec']),
+    body: obj({ spec: FEATURE_SPEC, gherkin: str('Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景)'), supersedes: SUPERSEDES }, ['spec']),
   },
   {
     method: 'POST', path: '/api/v1/projects/{project}/proposals/bundle', id: 'proposeBundle', tag: 'decisions', kind: 'op', op: 'propose_bundle', write: true, ok: 201,
     summary: '一次提一整個版本(多個節點 + gherkin + 整合點 + 路線圖)',
-    body: obj({ bundle: BUNDLE }, ['bundle']),
+    body: obj({ bundle: BUNDLE, supersedes: SUPERSEDES }, ['bundle']),
   },
   {
     method: 'POST', path: '/api/v1/projects/{project}/halt', id: 'halt', tag: 'loop', kind: 'op', op: 'halt', write: true,

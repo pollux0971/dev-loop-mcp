@@ -144,6 +144,7 @@ function checkDecision(root, ref, choice) {
   const rec = state.decisions.get(ref);
   if (!rec?.request) throw new DpError(`沒有待決事項 ${ref}`);
   if (rec.answer) throw new DpError(`${ref} 已經決定過了(${rec.answer.choice}),要推翻請開新的決定`);
+  if (rec.superseded) throw new DpError(`${ref} 已經被 ${rec.superseded} 取代,不能再決定;要決定的是 ${rec.superseded}`);
   const keys = rec.request.options.map((o) => o.key);
   if (!keys.includes(choice)) throw new DpError(`${ref} 的選項只有 ${keys.join('/')}`);
   return rec.request;

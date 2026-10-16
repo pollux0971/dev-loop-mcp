@@ -275,6 +275,8 @@ export const EVENT_FIELDS = {
       ref: str, question: str,
       options: { type: 'array', minItems: 2, items: { type: 'object', required: ['key', 'label'], properties: { key: str, label: str } } },
       recommendation: { type: 'string' }, reason: { type: 'string' }, blocks: strArr, from: str, detail_path: { type: 'string' },
+      // v4.7.3:這份提案取代哪幾份還沒決定的提案(ref,例 node:p-001)。被取代的不再列為待決,也不能再批准
+      supersedes: strArr,
       // question 只放 dp 自己產生的文字;worker / 模型 / git 輸出放這裡,給 Front 看時一律加圍欄
       untrusted_text: { type: 'string' }, untrusted_source: { type: 'string' },
     },

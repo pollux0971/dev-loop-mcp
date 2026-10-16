@@ -3122,6 +3122,14 @@
                   "gherkin": {
                     "type": "string",
                     "description": "Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景)"
+                  },
+                  "supersedes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(node:)?p-[0-9]+$"
+                    },
+                    "description": "這份取代哪幾份還沒決定的提案(例 [\"p-001\"])。改提案就重提一份並帶這個:舊的會關掉、不能再被批准;不帶的話舊的還在等決定,兩份都批准時先寫進 DAG 的是舊的"
                   }
                 },
                 "required": [
@@ -3407,6 +3415,14 @@
                         }
                       }
                     }
+                  },
+                  "supersedes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(node:)?p-[0-9]+$"
+                    },
+                    "description": "這份取代哪幾份還沒決定的提案(例 [\"p-001\"])。改提案就重提一份並帶這個:舊的會關掉、不能再被批准;不帶的話舊的還在等決定,兩份都批准時先寫進 DAG 的是舊的"
                   }
                 },
                 "required": [

@@ -392,6 +392,7 @@ operationId `proposeFeature` · MCP `dp_propose_feature` · `dp op propose_featu
 | `spec.characterize.cmd` | body | string |  |  |
 | `spec.characterize.skip` | body | string |  |  |
 | `gherkin` | body | string |  | Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景) |
+| `supersedes` | body | string[] |  | 這份取代哪幾份還沒決定的提案(例 ["p-001"])。改提案就重提一份並帶這個:舊的會關掉、不能再被批准;不帶的話舊的還在等決定,兩份都批准時先寫進 DAG 的是舊的 |
 
 ### `POST /api/v1/projects/{project}/proposals/bundle`
 
@@ -430,6 +431,7 @@ operationId `proposeBundle` · MCP `dp_propose_bundle` · `dp op propose_bundle`
 | `bundle.nodes[].characterize.skip` | body | string |  |  |
 | `bundle.nodes[].gherkin_text` | body | string |  | 這個節點的 gherkin 全文(phase 與 integration 要有這個或 gherkin_file,除非 gherkin 指的檔已經存在) |
 | `bundle.nodes[].gherkin_file` | body | string |  | 或:專案裡 gherkin 檔的相對路徑(讀它的內容) |
+| `supersedes` | body | string[] |  | 這份取代哪幾份還沒決定的提案(例 ["p-001"])。改提案就重提一份並帶這個:舊的會關掉、不能再被批准;不帶的話舊的還在等決定,兩份都批准時先寫進 DAG 的是舊的 |
 
 ## 背景迴圈與停機
 
