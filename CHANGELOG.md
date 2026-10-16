@@ -60,7 +60,11 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
 - **mutation 找不到相關的單元測試時分清楚**:Stryker(vitest.related)找不到 import 改到的檔的單元測試,會印「No tests were executed」、exit 1,
   以前一律 ABSTAIN(「沒產生可讀的報告」),每次都升級問使用者。現在整合棒是 SKIPPED:命令列等組合層本來就用子程序從外面測、
   由整合驗收把關;其他棒照舊 ABSTAIN,但說明是「沒有任何單元測試直接 import 改到的檔」。實跑:minilang 的 I1(apps/cli)。
-- 新測試 12 個,加上 PR #1 的 1 個。`npm test` 183 個全部通過(4.7.2 是 171 個)。
+- **宣稱的證據就是驗收指令時不再問小模型**:worker 宣稱「驗收是紅的」「整合 gherkin 全綠」這類話、證據指令就是這一棒的驗收指令,
+  而且 dp 剛用同一條指令重跑確認過(照規定紅 / 綠、紅的原因也對、退出碼跟宣稱一樣)時,claim-supported 記 SKIPPED,不再問小模型。
+  以前小模型兩種問法常答得不一樣 → ABSTAIN → 升級問使用者,是今天實跑最常見的打擾(todo-cli、wordfreq、minilang 都有)。
+  其他宣稱、場景誠實度照舊問。
+- 新測試 13 個,加上 PR #1 的 1 個。`npm test` 184 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

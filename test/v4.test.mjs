@@ -14,7 +14,7 @@ import { openDecisions, replay } from '../tools/lib/state.mjs';
 import { codeChunks, gherkinLiterals } from '../tools/lib/verify/index.mjs';
 import { pidAlive } from '../tools/lib/util.mjs';
 import {
-  CALC, CALC_GHERKIN, I1, I1_GHERKIN, REPO, addNode, cleanup, makeProject, sh, stateOf, tempDir, tickUntil, writeFile,
+  CALC, CALC_GHERKIN, FAKE_VERIFIER, I1, I1_GHERKIN, REPO, addNode, cleanup, makeProject, sh, stateOf, tempDir, tickUntil, writeFile,
 } from './helpers.mjs';
 
 after(cleanup);
@@ -228,6 +228,22 @@ test('改提案:新提案帶 supersedes 取代還沒決定的舊提案(舊的不
   decide(proj, `node:${p2.id}`, 'yes', '好');
   const viaOp = spawnSync(process.execPath, [DP, 'op', 'propose_feature'], { cwd: proj, encoding: 'utf8', input: JSON.stringify({ spec: { ...CALC, id: 'calc2/v1', owns: ['packages/calc2/**'] }, gherkin: CALC_GHERKIN, supersedes: ['p-009'] }) });
   assert.match(viaOp.stdout, /node:p-009 不是一份提案/);
+});
+
+test('宣稱的證據就是驗收指令、dp 已經重跑確認:不再問小模型,兩種問法不一致也不會變成沒把握;其他宣稱照舊問', async () => {
+  const proj = makeProject({ config: { agents: { verifier: { backend: 'cmd', cmd: `FV=disagree node ${FAKE_VERIFIER}` } } } });
+  addNode(proj, CALC, CALC_GHERKIN);
+  const s = await tickUntil(proj, (st) => [...st.dispatches.values()].some((d) => d.leg === 'test' && d.verify));
+  const t = [...s.dispatches.values()].find((d) => d.leg === 'test');
+  const cs = t.verify.results.filter((r) => r.check === 'claim-supported');
+  assert.ok(cs.length > 0);
+  assert.ok(cs.every((r) => r.outcome === 'SKIPPED' && /證據就是驗收指令/.test(r.detail)), JSON.stringify(cs));
+  assert.ok(!openDecisions(s).some((r) => r.ref === `accept:${t.dispatch_id}`), '測試棒不用問使用者');
+  // 不是多餘的題目照舊問小模型:實作棒的「寫死測試值」題照樣有問(不是 SKIPPED)
+  const s2 = await tickUntil(proj, (st) => [...st.dispatches.values()].some((d) => d.leg === 'dev' && d.verify));
+  const dev = [...s2.dispatches.values()].find((d) => d.leg === 'dev');
+  assert.ok(dev.verify.results.some((r) => r.check === 'scenario-honesty' && r.outcome !== 'SKIPPED'), JSON.stringify(dev.verify.results.map((r) => [r.check, r.outcome])));
+  assert.ok(dev.verify.results.filter((r) => r.check === 'claim-supported').every((r) => r.outcome === 'SKIPPED'), '實作棒「驗收通過」的宣稱也不用再問');
 });
 
 test('intake bundle:一版一次批准;沒有整合點就拒絕;下一版自動依賴上一版的整合點', () => {

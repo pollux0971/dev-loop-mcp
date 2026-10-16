@@ -76,11 +76,15 @@ export async function runVerify(ctx) {
   const leg = dispatch.leg;
   const isLast = leg === pipelineFor(node, config).at(-1);
   let reruns = [];
+  // 驗收指令 → dp 自己重跑的結果(PASS = 照規定紅 / 綠,紅的原因也對)
+  const accepted = new Map();
   try {
     const evidence = checkEvidence(ex, report, config);
     reruns = evidence.reruns;
     results.push(...evidence.results);
-    results.push(...checkAcceptance(ex, envelope, config));
+    const acc = checkAcceptance(ex, envelope, config);
+    results.push(...acc);
+    envelope.acceptance.forEach((a, i) => accepted.set(normCmd(a.cmd), acc[i]?.outcome));
     if (leg === 'test' || leg === 'test-fix') results.push(...checkDryRun(ex, node, config));
     if (['dev', 'integrate'].includes(leg)) results.push(...checkStandalone(ex, node, config));
     if (leg === 'integrate') {
@@ -99,6 +103,13 @@ export async function runVerify(ctx) {
 
   // ---- 模型窄題 ----
   for (const rr of reruns) {
+    // v4.7.3:證據指令就是這一棒的驗收指令,而且 dp 剛用它重跑確認過(紅 / 綠照規定、紅的原因也對,退出碼也跟宣稱一樣):
+    // 再問小模型「輸出有沒有推翻這個宣稱」是多餘的;兩種問法答得不一樣就變成 ABSTAIN、升級問使用者。
+    // 實跑:todo-cli、wordfreq、minilang 好幾次要使用者決定合併,原因都是「驗收是紅的 / 全綠」這種宣稱兩種問法不一致
+    if (accepted.get(normCmd(rr.cmd)) === 'PASS') {
+      results.push({ check: 'claim-supported', outcome: 'SKIPPED', detail: `宣稱「${rr.claim.slice(0, 40)}」:證據就是驗收指令,dp 已經重跑確認,不再問小模型` });
+      continue;
+    }
     results.push(await modelCheck(root, config, 'claim-supported', { CLAIM: rr.claim, CMD: rr.cmd, EXIT: String(rr.exit), OUTPUT: rr.output }, `宣稱「${rr.claim.slice(0, 40)}」`));
   }
   if (['dev', 'integrate'].includes(leg) && node.gherkin) {
@@ -173,6 +184,9 @@ export function codeChunks(text, maxChars) {
  * 這種 SKIPPED 視同 ABSTAIN:交給 Critic 或使用者,不自動合併。帳本裡照實記 SKIPPED,只有路由這樣算。
  */
 export const ESCALATE_WHEN_NO_VERIFIER = ['scenario-honesty'];
+
+/** 比對指令用:去頭尾空白、連續空白當一個。 */
+const normCmd = (cmd) => String(cmd ?? '').trim().replace(/\s+/g, ' ');
 
 export function summarize(results, { verifierBackend } = {}) {
   const fails = results.filter((x) => x.outcome === 'FAIL');
