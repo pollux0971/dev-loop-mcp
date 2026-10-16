@@ -15,7 +15,7 @@ import { doctor, renderDoctor } from './lib/doctor.mjs';
 import { runHook } from './lib/hooks.mjs';
 import { mergeMcpJson, setup } from './lib/setup.mjs';
 import { ROLES, accountEnv, accountsFile, addAccount, cliOf, getAccount, loadAccounts, loginStatus, removeAccount, updateAccount } from './lib/accounts.mjs';
-import { VERSION, accountRows, decideOp, haltOp, loopPid, loopStart, loopStop, refreshRendered, runLockPath, runOp, runStopPath, setRole } from './lib/ops.mjs';
+import { VERSION, accountRows, decideOp, haltOp, loopPid, loopStart, loopStop, refreshRendered, runLockPath, runOp, runStopPath, setRole, setSettings } from './lib/ops.mjs';
 import { addProject, isDpProject, loadProjects, projectVersion, removeProject } from './lib/projects.mjs';
 import { hubToken, serveHub } from './lib/hub.mjs';
 import { apiMarkdown, flowMarkdown, openapiJson } from './lib/apidoc.mjs';
@@ -61,6 +61,7 @@ const HELP = `dp —— dev-paradigm-mcp v${VERSION}
   dp halt --reason "..." [--keep-workers]    停機,並終止還在跑的 worker(不算嘗試、不動 worktree)
   dp resume --verbatim "..."
   dp unblock <node> --verbatim "..."          使用者親自解除封鎖
+  dp settings [--autonomy 0|1|2] [--budget 8] [--parallel 3] --verbatim "..."   改自治等級、每日預算、同時幾個 worker(只改有給的)
   dp status [--json]
   dp dashboard [--out file.html] [--serve [port]]   視覺化主控台:寫成一個 HTML 檔,或開本機頁面即時更新(--serve 時可在「帳號」頁設定帳號)
   (--verbatim 是你的原話,可省略;對得上 hook 簽章過的原話時,事件會記下那句話的 hash)
@@ -342,6 +343,14 @@ async function dispatchCommand(cmd, rest) {
     case 'resume':
       console.log(`#${resume(root, flags.verbatim === true ? '' : flags.verbatim).seq} 已恢復`);
       return 0;
+    case 'settings': {
+      // v4.7.3:只改使用者說要改的那幾項(以前要重跑 dp setup,會連其他設定一起問、一起寫)
+      const num = (k) => (flags[k] === undefined || flags[k] === true ? undefined : Number(flags[k]));
+      const r = setSettings(root, { autonomy_level: num('autonomy'), daily_usd: num('budget'), parallel: num('parallel'), verbatim: flags.verbatim });
+      for (const [k, v] of Object.entries(r.changed)) console.log(`✓ ${k}:${v.from} → ${v.to}`);
+      for (const n of r.notes ?? []) console.log(`提醒:${n}`);
+      return 0;
+    }
     case 'onboard':
     case 'baseline': {
       const config = loadConfig(root);

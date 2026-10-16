@@ -27,8 +27,9 @@ import {
 } from './util.mjs';
 import { runVerify, summarize } from './verify/index.mjs';
 import {
-  copyTree, diffManifest, killSandboxed, linkDeps, nodeModulesFingerprint, removeTree, treeManifest,
+  copyTree, diffManifest, killSandboxed, linkDeps, nodeModulesFingerprint, removeTree, scratchCopy, treeManifest,
 } from './sandbox.mjs';
+import { hostExecutor } from './verify/script-checks.mjs';
 import { runArgv } from './util.mjs';
 
 export const STATE_PATHS = ['ledger', 'dag.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json'];
@@ -448,6 +449,7 @@ async function routeBlocked(ctx, d, report) {
     criticSays = c.value?.verdict === 'ASK_USER' ? c.value.reason : null;
   }
   const repeated = s.escalations >= 1;
+  const green = integrationAlreadyGreen(ctx, d, node);
   ctx.append('orchestrator', 'decision_request', {
     ref: `escalation:${d.dispatch_id}`,
     question: `${node.id} 的 worker 回報卡住${repeated ? '(Critic 指引重試後又卡住)' : ''};它的說法見下方`,
@@ -456,11 +458,13 @@ async function routeBlocked(ctx, d, report) {
     options: [
       { key: 'retry', label: '照我的指示重試(把指示寫在原話裡)' },
       ...(reopenable ? [{ key: 'reopen', label: '退回測試棒修正測試' }] : []),
+      ...(green?.green ? [SKIP_TEST_LEG] : []),
       { key: 'block', label: '先擱置' },
     ],
     // v4:重複卡住、或 Critic 判斷要你決定時,不推薦「重試」——沒有新指示的重試通常重蹈覆轍(v3/v4 實測)
-    recommendation: repeated || criticSays ? 'block' : 'retry',
-    reason: criticSays ? 'Critic 判斷這不是 worker 能自己解的(見 Critic 的說明),要重試請在原話裡寫具體指示'
+    recommendation: green?.green ? 'skip' : repeated || criticSays ? 'block' : 'retry',
+    reason: green?.green ? skipReason(green)
+      : criticSays ? 'Critic 判斷這不是 worker 能自己解的(見 Critic 的說明),要重試請在原話裡寫具體指示'
       : repeated ? '同一棒已經被指引重試過還是卡住;要重試請在原話裡寫具體指示' : 'worker 第一次回報卡住',
     blocks: [node.id],
     from: 'orchestrator',
@@ -786,6 +790,20 @@ export function applyDecisions(ctx) {
       if (!s || s.status !== 'blocked') continue;
       if (s.lastSeq > rec.answer.seq) continue; // 決定之後又被封鎖,是新的一次
       if (choice === 'retry') ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: verbatim });
+      if (choice === 'skip') {
+        // v4.7.3:使用者決定跳過整合點的測試棒。決定時的狀態可能變了,套用前再重跑一次驗收:還是綠的才記 leg_done
+        const d = kind === 'stuck'
+          ? [...ctx.state.dispatches.values()].reverse().find((x) => x.node_id === nodeId && x.leg === 'test')
+          : ctx.state.dispatches.get(target);
+        const node = getNode(ctx.dag, nodeId);
+        const g = integrationAlreadyGreen(ctx, d, node);
+        if (g?.green) {
+          ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: `使用者決定跳過測試棒:${skipReason(g)}` });
+          ctx.append('orchestrator', 'leg_done', { dispatch_id: d.dispatch_id, node_id: nodeId, leg: 'test' });
+        } else {
+          ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: `使用者要跳過測試棒,但 dp 重跑驗收不是綠的${g ? `(${g.cmd} → exit ${g.exit})` : ''}:照原本的測試棒做,寫出紅的測試` });
+        }
+      }
       if (choice === 'reopen') {
         const d = kind === 'stuck'
           ? [...ctx.state.dispatches.values()].reverse().find((x) => x.node_id === nodeId)
@@ -917,8 +935,31 @@ export function buildWorkerPrompt(ctx, node, envelope, wt) {
   });
 }
 
+/**
+ * v4.7.3 整合點的測試棒做不出紅燈:能力節點已經把整合 gherkin 全部做到了(驗收在動手前就是綠的)。
+ * 測試棒只能造假(重複定義步驟弄成 ambiguous、寫故意失敗的測試);誠實的 worker 會回報卡住,重試也一樣,版本永遠到不了試用。
+ * dp 自己在這一棒的樹上重跑驗收(用完即丟的副本):綠的才多給使用者一個選項「跳過測試棒」(記 leg_done,接著跑整合棒)。
+ * 只限整合點的測試棒:能力節點的驗收一開始就綠,代表 gherkin 沒寫到新東西,該回頭改規格。
+ * 實測:todo-cli 的 I1。只看得到 MCP 的 AI 把命令列入口放在能力節點裡,整合 gherkin 又沿用能力的句子,I1 的測試棒卡住。
+ */
+export function integrationAlreadyGreen(ctx, d, node) {
+  if (!d || d.leg !== 'test' || node?.kind !== 'integration' || !node.accept || !d.worktree || !existsSync(d.worktree)) return null;
+  const scratch = scratchCopy(ctx.root, d.worktree, `${d.dispatch_id}-green`);
+  try {
+    linkDeps(ctx.root, scratch);
+    const res = hostExecutor(scratch).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
+    return { green: res.code === 0, cmd: node.accept, exit: res.code };
+  } finally {
+    removeTree(scratch);
+  }
+}
+const SKIP_TEST_LEG = { key: 'skip', label: '驗收已經是綠的(dp 重跑過):跳過測試棒,接著跑整合棒' };
+const skipReason = (g) => `dp 在這一棒的樹上重跑 ${g.cmd},exit 0:整合點的驗收在動手前就是綠的(能力節點已經做到),測試棒做不出誠實的紅燈`;
+
 function blockStuck(ctx, cand) {
   const s = ctx.state.nodes.get(cand.id);
+  const last = [...ctx.state.dispatches.values()].reverse().find((x) => x.node_id === cand.id && x.leg === cand.leg);
+  const green = integrationAlreadyGreen(ctx, last, getNode(ctx.dag, cand.id));
   ctx.append('orchestrator', 'block', { node_id: cand.id, reason: `${cand.leg} 棒已 ${cand.attempt - 1} 次沒通過` });
   ctx.append('orchestrator', 'decision_request', {
     ref: `stuck:${cand.id}#${ctx.state.maxSeq}`,
@@ -928,11 +969,12 @@ function blockStuck(ctx, cand) {
     options: [
       { key: 'retry', label: '再試(把你的指示寫在原話裡)' },
       ...(canReopenTest(ctx, getNode(ctx.dag, cand.id), cand.leg) ? [{ key: 'reopen', label: '退回測試棒修正測試' }] : []),
+      ...(green?.green ? [SKIP_TEST_LEG] : []),
       { key: 'block', label: '先擱置' },
     ],
     // v4:v3 一律推薦 retry;連續失敗後沒有新指示的重試幾乎都是同樣的結果
-    recommendation: 'block',
-    reason: `同一棒已連續 ${cand.attempt - 1} 次沒通過;要重試請在原話裡寫具體指示,不然會重複同樣的失敗`,
+    recommendation: green?.green ? 'skip' : 'block',
+    reason: green?.green ? skipReason(green) : `同一棒已連續 ${cand.attempt - 1} 次沒通過;要重試請在原話裡寫具體指示,不然會重複同樣的失敗`,
     blocks: [cand.id],
     from: 'orchestrator',
   });

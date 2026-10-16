@@ -344,6 +344,7 @@ describe('#9 不可信文字不直接進 Front', () => {
     assert.ok(req, 'escalation 待決');
     assert.doesNotMatch(req.question, /假 worker/);
     assert.match(req.untrusted_text, /假 worker/);
+    assert.ok(!req.options.some((o) => o.key === 'skip'), '能力節點不給「跳過測試棒」(只限整合點,而且驗收要真的是綠的)');
   });
 });
 

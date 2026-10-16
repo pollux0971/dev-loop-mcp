@@ -15,6 +15,7 @@
 //   hardcode   實作棒對測試值寫死(run 永遠回 5)
 //   badtest    測試棒把期望值寫錯(2+3=6);實作棒發現後回報 fix_leg=test;test-fix 棒改對(v4)
 //   hang       睡 30 秒(測停機會不會終止 worker)
+//   already-green 整合點的測試棒:驗收在動手前就是綠的,誠實回報卡住(不造假紅燈);其他棒照 good(v4.7.3)
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -70,6 +71,9 @@ if (mode === 'escalate') {
   write(testFile, `import { test } from 'node:test';\ntest('adds', () => {{{ \n`);
   const cmd = `node --test ${testFile}`;
   report({ kind: 'done', summary: '寫好測試', claims: [{ text: '測試是紅的', evidence: { cmd, exit: sh(cmd) } }] });
+} else if (env.leg === 'test' && /^I\d+$/.test(env.node_id) && mode === 'already-green') {
+  const cmd = env.acceptance[0].cmd;
+  report({ kind: 'blocked', summary: `驗收在動手前就是綠的(${cmd} → exit ${sh(cmd)}),要紅只能造假`, claims: [] });
 } else if (env.leg === 'test' && /^I\d+$/.test(env.node_id)) {
   // 整合點的測試棒(v4):寫一個會紅的測試,等 integrate 棒接通
   write('packages/app/app.test.mjs', `import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { execFileSync } from 'node:child_process';\ntest('app prints ok', () => assert.match(execFileSync('node', ['packages/app/main.mjs'], { encoding: 'utf8' }), /ok/));\n`);

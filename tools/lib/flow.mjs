@@ -11,6 +11,7 @@ export const FLOW = [
       { who: 'agent', call: 'setupProject', note: '不互動設定:answers 沒給的用預設(Claude Code、Claude Haiku 當 Verifier、L1、每天 $5、同時 3 個 worker)。先問使用者自治等級與預算' },
       { who: 'agent', call: 'onboard', when: 'mode = brownfield', note: '記測試基線、產生 docs/AS-IS.md 草稿;再讀程式補完 AS-IS 並跟使用者確認' },
       { who: 'agent', call: 'doctor', note: '有 fail 就照修法處理或轉告使用者' },
+      { who: 'agent', call: 'setSettings', when: '使用者之後要改', note: '自治等級、每日預算、同時幾個 worker:只改那一項,verbatim 帶使用者原話;不要為了改一項重跑 setupProject' },
     ],
   },
   {

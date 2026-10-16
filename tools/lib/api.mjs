@@ -62,6 +62,8 @@ const FEATURE_SPEC = {
 const BUNDLE = {
   type: 'object', required: ['release', 'nodes'], additionalProperties: false,
   description: '一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。'
+    + '整合點的 gherkin 不要沿用能力 gherkin 的句子(一字不差會綁到能力的步驟定義,能力做完就已經綠了,整合點的測試棒做不出紅燈);'
+    + '命令列等組合層放在整合點的 owns(apps/<名稱>/**),能力節點只做 packages/<能力>/**。'
     + '例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["packages/notes/**"],"gherkin_text":"Feature: …"},'
     + '{"id":"I1","kind":"integration","title":"…","intent":"…","owns":["apps/cli/**"],"depends_on":["notes/v1"],"gherkin_text":"Feature: …\\n  @e2e\\n  Scenario: …"}]}',
   properties: {
@@ -192,6 +194,17 @@ export const ROUTES = [
         critic: { type: 'boolean' }, budget: { type: 'number', minimum: 0 }, parallel: { type: 'integer', minimum: 1, maximum: 20 },
         npm_install: { type: 'boolean' }, commit: { type: 'boolean' },
       }),
+    }),
+  },
+  {
+    method: 'PATCH', path: '/api/v1/projects/{project}/settings', id: 'setSettings', tag: 'projects', kind: 'op', op: 'set_settings', write: true,
+    summary: '改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dp.config.json 並 commit)',
+    description: '這些只有使用者能決定。不要為了改其中一項重跑 setupProject(它會連其他設定一起問、一起寫)。',
+    body: obj({
+      autonomy_level: int('0 = 每次合併都問;1 = 機器全過就自動合併;2 = 沒把握的先交 Critic', { minimum: 0, maximum: 2 }),
+      daily_usd: { type: 'number', minimum: 0.01, maximum: 10000, description: '每天最多花多少美金(到了就不再派工)' },
+      parallel: int('這個專案同時最多幾個 worker', { minimum: 1, maximum: 20 }),
+      verbatim: VERBATIM,
     }),
   },
   {

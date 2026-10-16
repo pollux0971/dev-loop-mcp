@@ -313,7 +313,7 @@ describe('dp mcp', () => {
     assert.match(r.content[0].text, /要指定 project/);
     for (const t of toolList()) {
       assert.equal(t.inputSchema.type, 'object', t.name);
-      if (['dp_decide', 'dp_confirm', 'dp_resume', 'dp_unblock'].includes(t.name)) assert.match(t.description, /親口/);
+      if (['dp_decide', 'dp_confirm', 'dp_resume', 'dp_unblock', 'dp_set_settings'].includes(t.name)) assert.match(t.description, /親口/);
     }
   });
 

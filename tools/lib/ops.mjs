@@ -8,6 +8,7 @@ import { existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'n
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROLES, globalUsage, loadAccounts, loginStatus } from './accounts.mjs';
+import { criticConfigured } from './agents.mjs';
 import { loadConfig } from './config.mjs';
 import { dashboardData } from './dashboard.mjs';
 import { loadDag } from './dag.mjs';
@@ -166,6 +167,42 @@ export function setRole(root, { role, accounts = [], model } = {}) {
   return { role, accounts: pool, model: cur.model ?? null, custom_cmd: !!cur.cmd, backend: cur.backend ?? null, commit, not_logged_in: notLoggedIn };
 }
 
+/**
+ * v4.7.3 改使用者親口決定的設定:自治等級、每日預算、同時幾個 worker。只改有給的欄位,改 dp.config.json 並 commit(訊息帶原話)。
+ * 以前只能重跑 dp setup:MCP 那邊的 AI 寫不了檔,重跑 setup 又會順手改到別的設定(實測:為了把預算從 $3 改成 $8,
+ * AI 先停背景迴圈、重跑 setup,worker 的帳號被換成固定指令,再用 setRole 改回來)。
+ */
+export const SETTING_LIMITS = { autonomy_level: [0, 2], daily_usd: [0.01, 10000], parallel: [1, 20] };
+export function setSettings(root, { autonomy_level, daily_usd, parallel, verbatim } = {}) {
+  const asked = { autonomy_level, daily_usd, parallel };
+  const changes = {};
+  for (const [k, v] of Object.entries(asked)) {
+    if (v === undefined || v === null) continue;
+    const [lo, hi] = SETTING_LIMITS[k];
+    const ok = typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi && (k === 'daily_usd' || Number.isInteger(v));
+    if (!ok) throw new DpError(`${k} 要是 ${lo}–${hi} 的${k === 'daily_usd' ? '數字' : '整數'}(收到 ${JSON.stringify(v)})`);
+    changes[k] = v;
+  }
+  if (!Object.keys(changes).length) throw new DpError('沒有要改的:給 autonomy_level、daily_usd、parallel 其中至少一個');
+  const cur = loadConfig(root);
+  const was = { autonomy_level: cur.autonomy.level, daily_usd: cur.budget.daily_usd, parallel: cur.caps.parallel };
+  const p = join(root, 'dp.config.json');
+  const before = readFileSync(p, 'utf8');
+  const raw = JSON.parse(before);
+  if ('autonomy_level' in changes) raw.autonomy = { ...(raw.autonomy ?? {}), level: changes.autonomy_level };
+  if ('daily_usd' in changes) raw.budget = { ...(raw.budget ?? {}), daily_usd: changes.daily_usd };
+  if ('parallel' in changes) raw.caps = { ...(raw.caps ?? {}), parallel: changes.parallel };
+  writeFileSync(p, `${JSON.stringify(raw, null, 2)}\n`);
+  let next;
+  try { next = loadConfig(root); } catch (e) { writeFileSync(p, before); throw new DpError(`設定不合法,已還原:${e.message}`); }
+  const summary = Object.keys(changes).map((k) => `${k} ${was[k]} → ${changes[k]}`).join(', ');
+  const said = verbatimOf({ verbatim });
+  const commit = commitAll(root, ['dp.config.json'], `dp settings: ${summary}${said ? `\n\n使用者原話:${said}` : ''}`);
+  const notes = [];
+  if (changes.autonomy_level === 2 && !criticConfigured(next)) notes.push('L2 沒設 Critic:Verifier 沒把握的交件照樣來問你(dp_set_role critic 設帳號,或重跑 setup 開 Critic)');
+  return { changed: Object.fromEntries(Object.keys(changes).map((k) => [k, { from: was[k], to: changes[k] }])), commit, ...(notes.length ? { notes } : {}) };
+}
+
 // ------------------------------------------------------------------ 專案的操作
 
 export function status(root) {
@@ -309,6 +346,7 @@ export const OPS = {
   },
   roles: { project: true, fn: (root) => ({ roles: projectRoles(root) }) },
   set_role: { project: true, write: true, fn: (root, a) => setRole(root, a) },
+  set_settings: { project: true, write: true, fn: (root, a) => setSettings(root, a) },
   loop: { project: true, fn: (root) => loopStatus(root) },
   loop_start: { project: true, write: true, fn: (root, a) => loopStart(root, { interval: a.interval ?? 60, maxTicks: a.max_ticks ?? null }) },
   loop_stop: { project: true, write: true, fn: (root, a) => loopStop(root, { wait: a.wait ?? 0 }) },

@@ -72,6 +72,47 @@ export function layoutWarnings(root, nodes) {
   });
 }
 
+/** gherkin 的步驟句子(去掉關鍵字、壓空白)。英文與繁中關鍵字都認。 */
+const STEP = /^\s*(?:Given|When|Then|And|But|\*|假如|假設|假定|當|那麼|而且|並且|同時|但是)\s+(.+?)\s*$/;
+export function gherkinSteps(text) {
+  return String(text ?? '').split('\n').map((l) => l.match(STEP)?.[1]?.replace(/\s+/g, ' ')).filter(Boolean);
+}
+
+function featureFiles(dir, out = []) {
+  if (!existsSync(dir)) return out;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) featureFiles(join(dir, e.name), out);
+    else if (e.name.endsWith('.feature')) out.push(join(dir, e.name));
+  }
+  return out;
+}
+
+/**
+ * 整合點的 gherkin 沿用能力 gherkin 的句子(一字不差)→ 提醒。cucumber 一句只能有一個定義:整合點的句子會綁到能力的步驟定義,
+ * 能力做完時整合點的驗收已經是綠的,測試棒做不出紅燈(intake skill 寫了這條,但只看得到 MCP 的 AI 讀不到)。
+ * 比對這份提案裡其他節點的 gherkin,加上主線上 features/ 底下已有的。
+ * 實測:todo-cli 的 I1 有 7/8 句跟 todo/v1 一樣,I1 的測試棒卡住。
+ */
+export function gherkinOverlapWarnings(root, nodes, files) {
+  const own = new Set(nodes.map((n) => n.gherkin).filter(Boolean));
+  const others = new Set();
+  for (const n of nodes) if (n.kind !== 'integration' && files[n.gherkin]) gherkinSteps(files[n.gherkin]).forEach((x) => others.add(x));
+  for (const f of featureFiles(join(root, 'features'))) {
+    const rel = f.slice(root.length + 1);
+    if (!own.has(rel)) gherkinSteps(readFileSync(f, 'utf8')).forEach((x) => others.add(x));
+  }
+  const out = [];
+  for (const n of nodes.filter((x) => x.kind === 'integration' && files[x.gherkin])) {
+    const mine = [...new Set(gherkinSteps(files[n.gherkin]))];
+    const dup = mine.filter((x) => others.has(x));
+    if (!dup.length) continue;
+    out.push(`${n.id} 的 gherkin 有 ${dup.length}/${mine.length} 句跟能力節點一字不差(例「${dup[0]}」):cucumber 一句只能有一個定義,`
+      + '整合點的句子會綁到能力的步驟,能力做完時整合點已經是綠的,測試棒做不出紅燈。整合點的句子寫成從使用者的角度操作整個程式'
+      + '(例 When I run "todo add milk" in a terminal),命令列等組合層放在整合點的 owns(apps/<名稱>/**),不要放在能力節點裡');
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ feature
 
 /** 既有專案(brownfield)才有的規則。設定讀不到就當 greenfield。 */
@@ -139,7 +180,8 @@ export function proposeFeature(root, spec, gherkinText) {
   const node = normalizeFeature(root, spec, gherkinText);
   checkNodes(root, [node]);
   return propose(root, { kind: 'feature', nodes: [node], files: gherkinText ? { [node.gherkin]: gherkinText } : {} },
-    `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}`, { warnings: layoutWarnings(root, [node]) });
+    `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}`,
+    { warnings: [...layoutWarnings(root, [node]), ...gherkinOverlapWarnings(root, [node], gherkinText ? { [node.gherkin]: gherkinText } : {})] });
 }
 
 /**
@@ -186,7 +228,7 @@ export function proposeBundle(root, bundle) {
   const pinned = nodes.reduce((k, n) => k + (n.characterize?.skip ? 0 : n.characterize?.targets?.length ?? 0), 0);
   return propose(root, { kind: 'bundle', release: bundle.release, nodes, files, ...(bundle.roadmap ? { overwrite: ['docs/ROADMAP.md'] } : {}) },
     `新增 ${bundle.release}:${bundle.goal ?? ''}(${nodes.length} 個節點:${list}${gate ? `;等 ${gate} 試用過才開工` : ''}${pinned ? `;先釘住 ${pinned} 個既有檔的現有行為` : ''})`,
-    { warnings: layoutWarnings(root, nodes) });
+    { warnings: [...layoutWarnings(root, nodes), ...gherkinOverlapWarnings(root, nodes, files)] });
 }
 
 // ------------------------------------------------------------------ apply

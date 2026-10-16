@@ -20,6 +20,8 @@ export const CLAUDE_CRITIC_TOOLS = ['Read', 'Grep', 'Glob', 'Bash(npm test*)', '
 // v4:v3 的預設沒給任何工具權限,headless 下 Critic 連 Read 都會被拒,「實際確認」做不到;改成唯讀工具 + 跑測試
 export const CLAUDE_CRITIC_CMD = `claude -p --output-format json --allowedTools ${CLAUDE_CRITIC_TOOLS.map((t) => `"${t}"`).join(' ')} --disallowedTools "Edit" "Write" "NotebookEdit"`;
 export const CLAUDE_VERIFIER_CMD = 'claude -p --model haiku --tools "" --no-session-persistence';
+/** worker_cmd 的這個答案 = 維持用帳號那個 CLI 的預設指令(worker 已經設了帳號時的預設)。 */
+export const VIA_ACCOUNTS = '(用帳號)';
 
 export function detectEnvironment() {
   return { claude: hostHas('claude') };
@@ -121,9 +123,17 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   const v2ClaudeDefault = cur.agents.worker.cmd === 'claude -p --output-format json --permission-mode acceptEdits < "$DP_PROMPT"';
   if (v2ClaudeDefault) log('  你原本的 Claude 指令是 v2 預設(acceptEdits),headless 下 worker 跑不了測試,預設值已換成新的寫法。');
   const keepOld = cur.agents.worker.cmd && cur.platform === platform && !v2ClaudeDefault;
-  const workerDefault = platform === 'custom' ? (cur.agents.worker.cmd ?? '') : (keepOld ? cur.agents.worker.cmd : CLAUDE_WORKER_CMD);
-  let workerCmd = await input('worker_cmd', '施工 AI 的啟動指令(不懂就按 Enter)', workerDefault);
+  // v4.7.3:worker 已經用帳號(沒有自己的 cmd,跑帳號那個 CLI 的預設指令)→ 預設維持。以前重跑 setup 一律寫進 Claude 的固定指令,
+  // 蓋過帳號的預設(換不了 CLI、帶不進 model)。實測:只想改預算而重跑 setup,worker 就變成 custom_cmd
+  const pool = cur.agents.worker.accounts ?? [];
+  const viaAccounts = !cur.agents.worker.cmd && pool.length > 0;
+  const workerDefault = viaAccounts ? VIA_ACCOUNTS
+    : platform === 'custom' ? (cur.agents.worker.cmd ?? '') : (keepOld ? cur.agents.worker.cmd : CLAUDE_WORKER_CMD);
+  let workerCmd = await input('worker_cmd', viaAccounts
+    ? `施工 AI 的啟動指令(現在用帳號 ${pool.join('、')} 的預設指令,按 Enter 維持;要換帳號用 dp account use worker)`
+    : '施工 AI 的啟動指令(不懂就按 Enter)', workerDefault);
   while (!workerCmd) workerCmd = await input('worker_cmd', '一定要有施工指令', '');
+  const keepAccounts = viaAccounts && workerCmd === VIA_ACCOUNTS;
   log('  worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dp/SECURITY.md)。');
 
   // 2. Verifier
@@ -150,7 +160,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     { key: '2', label: 'L2:沒把握的先交 Critic(另一個大模型),它也沒把握才問我' },
   ];
   const level = Number(await choose('autonomy', '自治等級?', levels, String(Math.min(cur.autonomy.level, 2))));
-  const agents = { ...(raw.agents ?? {}), worker: { ...(raw.agents?.worker ?? {}), cmd: workerCmd }, verifier };
+  const agents = { ...(raw.agents ?? {}), worker: { ...(raw.agents?.worker ?? {}), ...(keepAccounts ? {} : { cmd: workerCmd }) }, verifier };
   if (level >= 2 && platform !== 'custom') {
     const useCritic = await yesno('critic', '要開 Critic 嗎?(用 Claude 審,會多花一點錢)', true);
     const oldCritic = cur.platform === platform && cur.agents.critic.cmd && cur.agents.critic.cmd !== 'claude -p --output-format json' ? cur.agents.critic.cmd : null;

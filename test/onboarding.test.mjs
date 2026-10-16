@@ -207,3 +207,43 @@ test('payload 沒有已移除功能的殘留檔', () => {
   }
   assert.doesNotMatch(readFileSync(join(REPO, 'payload/dp.config.json'), 'utf8'), /"(sandbox|manager|front)"/);
 });
+
+test('改設定:dp settings 與 set_settings 只改有給的那幾項並 commit(訊息帶原話);格式不對拒絕;L2 沒設 Critic 會提醒', () => {
+  const proj = fresh();
+  const before = loadConfig(proj);
+  const cli = run(`node ${DP} settings --budget 8 --verbatim "預算改成每天 8 塊" --root ${proj}`);
+  assert.equal(cli.code, 0, cli.stdout + cli.stderr);
+  assert.match(cli.stdout, /daily_usd:5 → 8/);
+  const after = loadConfig(proj);
+  assert.equal(after.budget.daily_usd, 8);
+  assert.equal(after.autonomy.level, before.autonomy.level, '沒給的不動');
+  assert.equal(after.caps.parallel, before.caps.parallel);
+  assert.deepEqual(after.agents, before.agents, 'worker / Verifier 的設定不動(重跑 setup 會動到)');
+  assert.match(sh(proj, 'git log -1 --format=%B'), /daily_usd 5 → 8[\s\S]*使用者原話:預算改成每天 8 塊/);
+  assert.equal(sh(proj, 'git status --porcelain dp.config.json'), '', '改完就 commit');
+  const op = (args) => JSON.parse(run(`node ${DP} op set_settings`, { cwd: proj, input: JSON.stringify(args) }).stdout.trim().split('\n').at(-1));
+  const l2 = op({ autonomy_level: 2, parallel: 2, verbatim: '改 L2' });
+  assert.ok(l2.ok, JSON.stringify(l2));
+  assert.deepEqual(l2.result.changed, { autonomy_level: { from: 1, to: 2 }, parallel: { from: 3, to: 2 } });
+  assert.match(l2.result.notes[0], /L2 沒設 Critic/);
+  for (const bad of [{ autonomy_level: 3 }, { parallel: 1.5 }, { daily_usd: -1 }, {}]) assert.equal(op(bad).ok, false, JSON.stringify(bad));
+  assert.equal(loadConfig(proj).autonomy.level, 2, '失敗的呼叫不改設定');
+});
+
+test('重跑 setup 不會把 worker 的帳號換成固定指令;明確給了 worker_cmd 才換', async () => {
+  const proj = fresh();
+  const cfg = readJson(join(proj, 'dp.config.json'));
+  cfg.platform = 'claude';
+  cfg.agents.worker = { accounts: ['max-a'], timeout_minutes: 90 };
+  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  const s1 = scripted({ mode: 'greenfield', budget: '8', npm_install: 'n', commit: 'n' });
+  await setup(proj, { ask: s1.ask, detect: { claude: true }, log: quiet });
+  const raw = readJson(join(proj, 'dp.config.json'));
+  assert.ok(s1.asked.includes('worker_cmd'));
+  assert.equal(raw.agents.worker.cmd, undefined, '維持用帳號那個 CLI 的預設指令');
+  assert.deepEqual(raw.agents.worker.accounts, ['max-a']);
+  assert.equal(raw.budget.daily_usd, 8);
+  const s2 = scripted({ mode: 'greenfield', worker_cmd: 'my-agent < "$DP_PROMPT"', npm_install: 'n', commit: 'n' });
+  await setup(proj, { ask: s2.ask, detect: { claude: true }, log: quiet });
+  assert.equal(readJson(join(proj, 'dp.config.json')).agents.worker.cmd, 'my-agent < "$DP_PROMPT"');
+});

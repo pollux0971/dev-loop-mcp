@@ -47,6 +47,7 @@
 | GET | `/api/v1/projects/{project}/roles` | `dp_get_roles` | worker、Critic、Verifier 各用哪些帳號、什麼模型 |
 | GET | `/api/v1/projects/{project}/loop` | `dp_get_loop` | 背景迴圈在不在跑 |
 | POST | `/api/v1/projects/{project}/setup` | `dp_setup_project` | 不互動的 dp setup:寫 dp.config.json、裝 hooks、commit,回傳健康檢查 |
+| PATCH | `/api/v1/projects/{project}/settings` | `dp_set_settings` | 改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dp.config.json 並 commit) |
 | POST | `/api/v1/projects/{project}/onboard` | `dp_onboard` | 既有專案:記測試基線、產生 docs/AS-IS.md 草稿與 ROADMAP v0(已有的不覆蓋)並 commit |
 | POST | `/api/v1/projects/{project}/baseline` | `dp_baseline` | 重記測試基線:主線上哪些測試本來就紅(合併時不算到 worker 頭上) |
 | POST | `/api/v1/projects/{project}/decisions` | `dp_decide` | 記下使用者對待決事項的決定 |
@@ -186,6 +187,20 @@ operationId `setupProject` · MCP `dp_setup_project` · `dp op setup`
 | `answers.parallel` | body | integer |  |  |
 | `answers.npm_install` | body | boolean |  |  |
 | `answers.commit` | body | boolean |  |  |
+
+### `PATCH /api/v1/projects/{project}/settings`
+
+operationId `setSettings` · MCP `dp_set_settings` · `dp op set_settings`
+
+改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dp.config.json 並 commit)。這些只有使用者能決定。不要為了改其中一項重跑 setupProject(它會連其他設定一起問、一起寫)。
+
+| 參數 | 位置 | 型別 | | 說明 |
+|---|---|---|---|---|
+| `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
+| `autonomy_level` | body | integer |  | 0 = 每次合併都問;1 = 機器全過就自動合併;2 = 沒把握的先交 Critic |
+| `daily_usd` | body | number |  | 每天最多花多少美金(到了就不再派工) |
+| `parallel` | body | integer |  | 這個專案同時最多幾個 worker |
+| `verbatim` | body | string |  | 使用者這一輪的原話(照抄)。會記進帳本、成為下一張工單的指引;對得上 hook 簽章過的原話時,事件會記下那句話的 hash |
 
 ### `POST /api/v1/projects/{project}/onboard`
 
@@ -387,7 +402,7 @@ operationId `proposeBundle` · MCP `dp_propose_bundle` · `dp op propose_bundle`
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
 | `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
-| `bundle` | body | object | 必填 | 一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["packages/notes/**"],"gherkin_text":"Feature: …"},{"id":"I1","kind":"integration","title":"…","intent":"…","owns":["apps/cli/**"],"depends_on":["notes/v1"],"gherkin_text":"Feature: …\n  @e2e\n  Scenario: …"}]} |
+| `bundle` | body | object | 必填 | 一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。整合點的 gherkin 不要沿用能力 gherkin 的句子(一字不差會綁到能力的步驟定義,能力做完就已經綠了,整合點的測試棒做不出紅燈);命令列等組合層放在整合點的 owns(apps/<名稱>/**),能力節點只做 packages/<能力>/**。例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["packages/notes/**"],"gherkin_text":"Feature: …"},{"id":"I1","kind":"integration","title":"…","intent":"…","owns":["apps/cli/**"],"depends_on":["notes/v1"],"gherkin_text":"Feature: …\n  @e2e\n  Scenario: …"}]} |
 | `bundle.release` | body | string | 必填 | 版本(例 v1) |
 | `bundle.goal` | body | string |  | 這一版使用者能做什麼(一句話,會出現在要使用者批准的問題裡) |
 | `bundle.roadmap` | body | string |  | 路線圖全文(選填,Markdown;存成 docs/ROADMAP.md,每版一行「- v1: …」) |

@@ -14,7 +14,7 @@ import { replay } from '../tools/lib/state.mjs';
 import { codeChunks, gherkinLiterals } from '../tools/lib/verify/index.mjs';
 import { pidAlive } from '../tools/lib/util.mjs';
 import {
-  CALC, CALC_GHERKIN, I1, I1_GHERKIN, REPO, addNode, cleanup, makeProject, stateOf, tempDir, tickUntil, writeFile,
+  CALC, CALC_GHERKIN, I1, I1_GHERKIN, REPO, addNode, cleanup, makeProject, sh, stateOf, tempDir, tickUntil, writeFile,
 } from './helpers.mjs';
 
 after(cleanup);
@@ -174,6 +174,37 @@ test('新專案的節點把程式放在 packages/ 與 apps/ 以外 → 提案照
 
   const bf = makeProject({ config: { project: { mode: 'brownfield', language: 'node' } } });
   assert.deepEqual(proposeFeature(bf, off, CALC_GHERKIN).warnings, [], '既有專案照它自己的版面');
+});
+
+test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「跳過測試棒」,選了記 leg_done、接著跑整合棒、合併後請使用者試用', async () => {
+  const proj = makeProject({ mode: 'already-green' });
+  addNode(proj, CALC, CALC_GHERKIN);
+  await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
+  // 能力節點那邊已經把整合點要的入口做好了(實測:只看得到 MCP 的 AI 把命令列入口放在能力節點裡)
+  sh(proj, `mkdir -p packages/app && echo "console.log('ok');" > packages/app/main.mjs && git add -A && git -c user.name=t -c user.email=t@t commit -qm app`);
+  addNode(proj, I1, I1_GHERKIN);
+  const open = (st) => [...st.decisions.values()].find((r) => r.request?.ref.startsWith('escalation:') && !r.answer)?.request;
+  let s = await tickUntil(proj, (st) => open(st));
+  const req = open(s);
+  assert.ok(req.options.some((o) => o.key === 'skip'), JSON.stringify(req.options));
+  assert.equal(req.recommendation, 'skip');
+  assert.match(req.reason, /node packages\/app\/main\.mjs,exit 0/);
+  decide(proj, req.ref, 'skip', '跳過測試棒');
+  s = await tickUntil(proj, (st) => st.nodes.get('I1').status === 'done');
+  const iTest = [...s.dispatches.values()].find((d) => d.node_id === 'I1' && d.leg === 'test');
+  assert.ok(readEvents(proj).some((e) => e.type === 'leg_done' && e.dispatch_id === iTest.dispatch_id && e.leg === 'test'), '記 leg_done');
+  assert.ok([...s.dispatches.values()].some((d) => d.node_id === 'I1' && d.leg === 'integrate' && d.state === 'accepted'), '接著跑整合棒並合併');
+  assert.ok(s.nodes.get('I1').e2e?.requestedSeq, '合併後請使用者試用');
+});
+
+test('整合點的 gherkin 沿用能力的句子(一字不差)→ 提案帶提醒;句子不同就沒有', () => {
+  const proj = makeProject();
+  const clean = proposeBundle(proj, { release: 'v1', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }, { ...I1, gherkin_text: I1_GHERKIN }] });
+  assert.deepEqual(clean.warnings, []);
+  const reused = '@integration\nFeature: app\n  @e2e\n  Scenario: u\n    When I add 2 and 3\n    Then the result is 5\n    And I see ok\n';
+  const p = proposeBundle(proj, { release: 'v1b', nodes: [{ ...CALC, id: 'calc2/v1', owns: ['packages/calc2/**'], gherkin_text: CALC_GHERKIN }, { ...I1, id: 'I9', owns: ['packages/app9/**'], depends_on: ['calc2/v1'], gherkin_text: reused }] });
+  assert.equal(p.warnings.length, 1, JSON.stringify(p.warnings));
+  assert.match(p.warnings[0], /I9 的 gherkin 有 2\/3 句跟能力節點一字不差(.*)測試棒做不出紅燈/);
 });
 
 test('intake bundle:一版一次批准;沒有整合點就拒絕;下一版自動依賴上一版的整合點', () => {

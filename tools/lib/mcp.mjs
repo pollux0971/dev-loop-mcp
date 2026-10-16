@@ -16,7 +16,7 @@ import { isDpProject } from './projects.mjs';
 import { execRoute, findProject } from './service.mjs';
 
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-const USER_DECISION = new Set(['decide', 'confirm', 'unblock', 'resume']);
+const USER_DECISION = new Set(['decide', 'confirm', 'unblock', 'resume', 'setSettings']);
 const DESTRUCTIVE = new Set(['halt', 'removeProject', 'removeAccount', 'stopLoop']);
 
 /** MCP 不提供:串流(MCP 工具是一問一答;要追新事件用 dp_list_events 帶 after)、openapi(給 HTTP 用的)。 */

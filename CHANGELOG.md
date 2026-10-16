@@ -23,7 +23,21 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   合併 gate 的 `test` 是 0 個測試照樣綠(gherkin 的 accept 仍然有跑),mutation 測不到東西每次都 ABSTAIN,每一棒都要問使用者。
   現在 phase 節點的 owns 完全在 `package.json` 的 workspaces 以外時,`dp_propose_*` / `dp intake` 的結果帶 `warnings`,
   決定請求的 reason 也寫上(收件匣看得到);提案照樣建立,不擋。既有專案不檢查。`owns` 的說明與 schema 的範例也改成範本的版面(`packages/<能力>/**`、`apps/<名稱>/**`)。
-- 新測試 3 個(spec / bundle 的欄位與錯誤、dp_health;帳號模式的 Verifier 模型留著;版面提醒)。`npm test` 174 個全部通過。
+- **改自治等級、預算、同時幾個 worker 有自己的操作**:`dp settings --autonomy 2 --budget 8 --parallel 3 --verbatim "…"`,
+  API `PATCH /api/v1/projects/{project}/settings`,MCP `dp_set_settings`(路由表 41 個操作、MCP 38 個工具)。只改有給的那幾項,
+  改 `dp.config.json` 並 commit,commit 訊息帶使用者原話;跟 decide 一樣只轉達使用者親口說的。L2 沒設 Critic 時回提醒。
+  實跑時使用者說「預算提高到每天 $8」,只看得到 MCP 的 AI 沒有工具可用:讀了 setup.mjs、停背景迴圈、重跑 `dp_setup_project`,
+  worker 的帳號被換成固定指令,再用 `dp_set_role` 改回來。流程(`dp_flow`)的「建專案」多一步:之後要改就用 setSettings,不要重跑 setup。
+- **重跑 setup 不再把 worker 的帳號換成固定指令**:worker 已經用帳號(沒有自己的 cmd)時,worker_cmd 的預設是「維持用帳號那個 CLI 的預設指令」;
+  明確給了 worker_cmd 才換。
+- **整合點的驗收在動手前就是綠的,可以跳過測試棒**:能力節點已經把整合 gherkin 全部做到時(例:命令列入口放在能力節點裡,
+  整合 gherkin 又沿用能力的句子),整合點的測試棒只能造假才紅得了。誠實的 worker 回報卡住,重試也一樣,這一版永遠到不了試用。
+  現在 dp 在那一棒的樹上(用完即丟的副本)自己重跑驗收,exit 0 才在卡住的決定請求多一個選項 `skip`(並建議它);
+  使用者選了,套用前再重跑一次,還是綠的才記 `leg_done`,接著跑整合棒,合併後照常請使用者試用。只限整合點的測試棒
+  (能力節點一開始就綠,代表 gherkin 沒寫到新東西,該改規格)。實跑:todo-cli 的 I1。
+- **整合點的 gherkin 沿用能力的句子會被提醒**:跟這份提案裡其他節點、主線 `features/` 底下已有的 gherkin 比,一字不差的句子列出幾句、舉一句例子,
+  說明為什麼測試棒會做不出紅燈、該怎麼寫。intake skill 本來就有這條規則,現在也寫進 `dp_propose_bundle` 的說明。
+- 新測試 7 個。`npm test` 178 個全部通過。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 
