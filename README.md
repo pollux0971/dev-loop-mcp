@@ -32,14 +32,14 @@ Below is a shortened version of a real session from the test run behind this REA
 ```
 You:     Use dp to start a new project in /data/python/dp-demo/todo-cli. A todo CLI in Node.
          v1 is just `todo add <text>` and `todo list`; `todo done <n>` comes later.
-         Run worker, Critic and Verifier on my Claude Max account claude-max; Verifier on haiku.
+         Run worker, Critic and Verifier on my Claude subscription account; Verifier on haiku.
          Autonomy L1, $5 a day.
 Claude:  dp_flow → dp_list_accounts → dp_init_project → dp_setup_project → dp_set_role ×3 → dp_propose_bundle
          "Plan for v1 (proposal p-001): todo/v1 (add + list), shared/bin (the `todo` command),
           I1 (you try it yourself). The roadmap already has v2 = todo done. Say OK to start."
 You:     OK, approved, go.
 Claude:  dp_decide node:p-001 yes (your exact words) → dp_start_loop
-         "2 workers are running on claude-max: todo/v1 is writing tests first, shared/bin is editing package.json."
+         "2 workers are running on your account: todo/v1 is writing tests first, shared/bin is editing package.json."
 You:     Progress?
 Claude:  dp_get_project → dp_get_inbox → dp_show
          "shared/bin is done and waiting for you. The Verifier wasn't sure about one item: it wanted to
@@ -349,7 +349,7 @@ Total, today, daily limit, nodes done, cost per node. Below: cost by role and by
 
 ![Accounts: accounts on this machine and which ones each role uses](docs/images/accounts.png)
 
-Add or remove accounts on this machine, and tick which accounts each role (Worker, Critic, Verifier) rotates through, with an optional model. Each action runs `dp account …`, exactly like typing it in the terminal (the config change is committed). It only works with `--serve` or inside the hub, and only with a token created for that launch. (The login email is blanked out in this screenshot.)
+Add or remove accounts on this machine, and tick which accounts each role (Worker, Critic, Verifier) rotates through, with an optional model. Each action runs `dp account …`, exactly like typing it in the terminal (the config change is committed). It only works with `--serve` or inside the hub, and only with a token created for that launch. (In every screenshot here, the account name, plan and login email are anonymized.)
 
 ## Reference
 
@@ -407,7 +407,7 @@ More: [`payload/docs/dp/AGENTS-SETUP.md`](payload/docs/dp/AGENTS-SETUP.md), [`pa
 
 ### Real run, 2026-10-16
 
-Setup: Claude Code 2.1.301 on Linux, Node 22.15.1. `dp mcp install` registered `dp` in Claude Code's user scope (`claude mcp list` → ✔ Connected). Worker, Critic and Verifier all ran on one Claude Max subscription, registered as the dp account `claude-max` (`dp account add claude-max --cli claude --plan max --home ~/.claude`). I played the user with short messages. Front was a fresh `claude -p` session, resumed turn by turn, with **only** the dp MCP tools (for the existing project it also had read-only Read / Glob / Grep). Autonomy L1. Every screenshot in this README comes from this run.
+Setup: Claude Code 2.1.301 on Linux, Node 22.15.1. `dp mcp install` registered `dp` in Claude Code's user scope (`claude mcp list` → ✔ Connected). Worker, Critic and Verifier all ran on one Claude subscription, registered as a dp account that points at the existing login (`dp account add <name> --cli claude --home <login folder>`). I played the user with short messages. Front was a fresh `claude -p` session, resumed turn by turn, with **only** the dp MCP tools (for the existing project it also had read-only Read / Glob / Grep). Autonomy L1. Every screenshot in this README comes from this run.
 
 | | todo-cli (new project) | wordfreq (existing Python project) |
 |---|---|---|

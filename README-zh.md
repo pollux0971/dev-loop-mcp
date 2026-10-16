@@ -30,14 +30,14 @@ v4.7.3 · Node ≥ 20 · 零依賴 · 180 個自動測試 · worker CLI:Claude C
 ```
 你:     用 dp 在 /data/python/dp-demo/todo-cli 開一個新專案。我想做一個待辦事項 CLI(Node 就好):
          第一版只要 todo add <文字> 跟 todo list,之後再加 todo done <編號>。
-         worker、Critic、Verifier 都用我的 Claude Max 訂閱帳號 claude-max,Verifier 用 haiku。
+         worker、Critic、Verifier 都用我的 Claude 訂閱帳號,Verifier 用 haiku。
          自治等級 L1,每天預算 $5。
 Claude:  dp_flow → dp_list_accounts → dp_init_project → dp_setup_project → dp_set_role ×3 → dp_propose_bundle
          「第一版計畫(提案 p-001):todo/v1(add 與 list)、shared/bin(todo 指令)、
           I1(你親手試)。路線圖已經寫了 v2 = todo done。說好就開工。」
 你:     好,批准,開工吧
 Claude:  dp_decide node:p-001 yes(照抄原話)→ dp_start_loop
-         「2 個 worker 在 claude-max 上跑:todo/v1 先寫測試,shared/bin 在改 package.json。」
+         「2 個 worker 在你的帳號上跑:todo/v1 先寫測試,shared/bin 在改 package.json。」
 你:     進度呢?
 Claude:  dp_get_project → dp_get_inbox → dp_show
          「shared/bin 做完了,等你說要不要合併。Verifier 有 1 項沒把握:它想重跑
@@ -346,7 +346,7 @@ node tools/dp.mjs hub                 # 所有專案;點一個進它的主控台
 
 ![帳號:這台電腦的帳號與每個角色用哪幾個](docs/images/accounts.png)
 
-新增、移除這台電腦的帳號,勾選每個角色(Worker、Critic、Verifier)輪流用哪幾個,可填模型。每個動作就是跑一次 `dp account …`,跟在終端機打一模一樣(設定會 commit)。只有 `--serve` 或在 hub 裡能用,而且要帶這次啟動才產生的 token。(這張截圖遮掉了登入的 email。)
+新增、移除這台電腦的帳號,勾選每個角色(Worker、Critic、Verifier)輪流用哪幾個,可填模型。每個動作就是跑一次 `dp account …`,跟在終端機打一模一樣(設定會 commit)。只有 `--serve` 或在 hub 裡能用,而且要帶這次啟動才產生的 token。(這裡所有截圖的帳號名稱、方案和登入 email 都已匿名。)
 
 ## 參考
 
@@ -404,7 +404,7 @@ node tools/dp.mjs hub                 # 所有專案;點一個進它的主控台
 
 ### 實跑,2026-10-16
 
-環境:Linux 上的 Claude Code 2.1.301、Node 22.15.1。`dp mcp install` 把 `dp` 註冊進 Claude Code 的 user scope(`claude mcp list` → ✔ Connected)。Worker、Critic、Verifier 都跑在同一個 Claude Max 訂閱上,登記成 dp 帳號 `claude-max`(`dp account add claude-max --cli claude --plan max --home ~/.claude`)。我扮演使用者,打簡短的訊息;Front 是全新的 `claude -p` session,一輪一輪接著,**只給** dp 的 MCP 工具(既有專案另外給唯讀的 Read / Glob / Grep)。自治等級 L1。這份 README 的截圖都來自這次實跑。
+環境:Linux 上的 Claude Code 2.1.301、Node 22.15.1。`dp mcp install` 把 `dp` 註冊進 Claude Code 的 user scope(`claude mcp list` → ✔ Connected)。Worker、Critic、Verifier 都跑在同一個 Claude 訂閱上,登記成一個指到既有登入的 dp 帳號(`dp account add <名稱> --cli claude --home <登入目錄>`)。我扮演使用者,打簡短的訊息;Front 是全新的 `claude -p` session,一輪一輪接著,**只給** dp 的 MCP 工具(既有專案另外給唯讀的 Read / Glob / Grep)。自治等級 L1。這份 README 的截圖都來自這次實跑。
 
 | | todo-cli(新專案) | wordfreq(既有 Python 專案) |
 |---|---|---|

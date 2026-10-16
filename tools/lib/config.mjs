@@ -117,7 +117,7 @@ export function stripRemovedSettings(raw) {
   const removed = [];
   // v4.1 拿掉 http(Ollama)模式時,agents.verifier.model 是 Ollama 的模型名,一律拿掉;但 v4.6 起同一個欄位是帳號模式下
   // Verifier 用的模型(例 haiku、sonnet)。只有舊的 http 設定(backend http 或有 url)才當成已移除的設定。
-  // v4.7.3 實測:dp account use verifier claude-max --model haiku 之後 doctor 警告「http 模式已移除」,而且模型被丟掉、永遠用預設
+  // v4.7.3 實測:dp account use verifier <帳號> --model haiku 之後 doctor 警告「http 模式已移除」,而且模型被丟掉、永遠用預設
   const v0 = out.agents?.verifier;
   if (v0 && typeof v0 === 'object' && 'model' in v0 && (v0.backend === 'http' || 'url' in v0)) {
     const silent = !v0.model;
