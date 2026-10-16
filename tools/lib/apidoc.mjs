@@ -23,10 +23,14 @@ function params(r) {
   const rows = [];
   for (const [, k] of r.path.matchAll(/\{(\w+)\}/g)) rows.push([k, 'path', 'string', '必填', PATH_DESC[k]]);
   for (const [k, s] of Object.entries(r.query ?? {})) rows.push([k, 'query', typeOf(s), (r.required ?? []).includes(k) ? '必填' : '', s.description]);
-  for (const [k, s] of Object.entries(r.body?.properties ?? {})) {
-    rows.push([k, 'body', typeOf(s), (r.body.required ?? []).includes(k) ? '必填' : '', s.description]);
-    for (const [k2, s2] of Object.entries(s.properties ?? {})) rows.push([`${k}.${k2}`, 'body', typeOf(s2), '', s2.description]);
-  }
+  // 物件與物件陣列往下展開(spec.id、bundle.nodes[].gherkin_text…),必填照各層自己的 required
+  const walk = (prefix, s, required) => {
+    rows.push([prefix, 'body', typeOf(s), required ? '必填' : '', s.description]);
+    const inner = s.type === 'array' && s.items?.properties ? { s: s.items, at: `${prefix}[]` } : s.properties ? { s, at: prefix } : null;
+    if (!inner) return;
+    for (const [k, s2] of Object.entries(inner.s.properties)) walk(`${inner.at}.${k}`, s2, (inner.s.required ?? []).includes(k));
+  };
+  for (const [k, s] of Object.entries(r.body?.properties ?? {})) walk(k, s, (r.body.required ?? []).includes(k));
   return rows;
 }
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "dev-paradigm-mcp (dp) API",
-    "version": "4.7.2",
+    "version": "4.7.3",
     "description": "dp hub 提供的本機 API:多專案的監控與操作、訂閱帳號。只綁 127.0.0.1;除了 health 與 openapi,都要帶 token(`Authorization: Bearer <token>`,token 用 `dp hub token` 看)。決定類的端點(decisions、confirmations、unblock、resume)只能轉達使用者親口的決定。"
   },
   "servers": [
@@ -2855,11 +2855,152 @@
                 "properties": {
                   "spec": {
                     "type": "object",
-                    "description": "id、title、intent、owns、depends_on、accept…(見 docs/dp/INTAKE.md)"
+                    "required": [
+                      "id",
+                      "title",
+                      "intent"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps)"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "phase",
+                          "integration",
+                          "shared"
+                        ],
+                        "description": "phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔)"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "短標題"
+                      },
+                      "intent": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                        "description": "這個節點要做到什麼(300 字內)"
+                      },
+                      "owns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回"
+                      },
+                      "gherkin": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設)"
+                      },
+                      "accept": {
+                        "type": "string",
+                        "description": "驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試)"
+                      },
+                      "standalone": {
+                        "type": "string",
+                        "description": "這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸"
+                      },
+                      "depends_on": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "要先完成的節點 id"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "worker 提出的子節點才用:父節點 id(要跟 relation 一起寫)"
+                      },
+                      "relation": {
+                        "type": "string",
+                        "enum": [
+                          "prereq",
+                          "followup"
+                        ],
+                        "description": "prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫"
+                      },
+                      "tier": {
+                        "type": "string",
+                        "enum": [
+                          "strict",
+                          "standard",
+                          "loose"
+                        ],
+                        "description": "strict = 機器驗收全過也一定給 Critic 或你看;standard(預設)"
+                      },
+                      "pipeline": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "characterize",
+                            "test",
+                            "dev",
+                            "integrate",
+                            "test-fix"
+                          ]
+                        },
+                        "minItems": 1,
+                        "description": "要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize)"
+                      },
+                      "release": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉"
+                      },
+                      "tests": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "這個節點的測試檔(glob,選填;沒寫就從 owns 推)"
+                      },
+                      "characterize": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "tests": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "cmd": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "skip": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "description": "既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算"
+                      }
+                    },
+                    "description": "一個節點的規格(欄位同 dag.json 的節點)。例:{\"id\":\"notes/v1\",\"title\":\"記一筆筆記\",\"intent\":\"notes add 存一筆、notes list 列出來\",\"owns\":[\"src/notes/**\"]}"
                   },
                   "gherkin": {
                     "type": "string",
-                    "description": "Gherkin 全文(選填)"
+                    "description": "Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景)"
                   }
                 },
                 "required": [
@@ -2961,7 +3102,188 @@
                 "properties": {
                   "bundle": {
                     "type": "object",
-                    "description": "{ release, goal, roadmap?, nodes: [...] }"
+                    "required": [
+                      "release",
+                      "nodes"
+                    ],
+                    "additionalProperties": false,
+                    "description": "一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。例:{\"release\":\"v1\",\"goal\":\"能記一筆、列出來\",\"nodes\":[{\"id\":\"notes/v1\",\"title\":\"…\",\"intent\":\"…\",\"owns\":[\"src/notes/**\"],\"gherkin_text\":\"Feature: …\"},{\"id\":\"I1\",\"kind\":\"integration\",\"title\":\"…\",\"intent\":\"…\",\"depends_on\":[\"notes/v1\"],\"gherkin_text\":\"Feature: …\\n  @e2e\\n  Scenario: …\"}]}",
+                    "properties": {
+                      "release": {
+                        "type": "string",
+                        "description": "版本(例 v1)",
+                        "pattern": "^[\\w.-]+$"
+                      },
+                      "goal": {
+                        "type": "string",
+                        "description": "這一版使用者能做什麼(一句話,會出現在要使用者批准的問題裡)"
+                      },
+                      "roadmap": {
+                        "type": "string",
+                        "description": "路線圖全文(選填,Markdown;存成 docs/ROADMAP.md,每版一行「- v1: …」)"
+                      },
+                      "no_integration_reason": {
+                        "type": "string",
+                        "description": "這一版真的不需要整合點的理由(選填;沒有整合點又沒寫會被拒絕)"
+                      },
+                      "nodes": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "這一版的節點(順序 = 加進 DAG 的順序)",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "title",
+                            "intent"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps)"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "phase",
+                                "integration",
+                                "shared"
+                              ],
+                              "description": "phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔)"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "短標題"
+                            },
+                            "intent": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300,
+                              "description": "這個節點要做到什麼(300 字內)"
+                            },
+                            "owns": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "description": "這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回"
+                            },
+                            "gherkin": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設)"
+                            },
+                            "accept": {
+                              "type": "string",
+                              "description": "驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試)"
+                            },
+                            "standalone": {
+                              "type": "string",
+                              "description": "這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸"
+                            },
+                            "depends_on": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "description": "要先完成的節點 id"
+                            },
+                            "parent": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "worker 提出的子節點才用:父節點 id(要跟 relation 一起寫)"
+                            },
+                            "relation": {
+                              "type": "string",
+                              "enum": [
+                                "prereq",
+                                "followup"
+                              ],
+                              "description": "prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫"
+                            },
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "strict",
+                                "standard",
+                                "loose"
+                              ],
+                              "description": "strict = 機器驗收全過也一定給 Critic 或你看;standard(預設)"
+                            },
+                            "pipeline": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "characterize",
+                                  "test",
+                                  "dev",
+                                  "integrate",
+                                  "test-fix"
+                                ]
+                              },
+                              "minItems": 1,
+                              "description": "要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize)"
+                            },
+                            "release": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉"
+                            },
+                            "tests": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "description": "這個節點的測試檔(glob,選填;沒寫就從 owns 推)"
+                            },
+                            "characterize": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "targets": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "tests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "cmd": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "skip": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "description": "既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算"
+                            },
+                            "gherkin_text": {
+                              "type": "string",
+                              "description": "這個節點的 gherkin 全文(phase 與 integration 要有這個或 gherkin_file,除非 gherkin 指的檔已經存在)"
+                            },
+                            "gherkin_file": {
+                              "type": "string",
+                              "description": "或:專案裡 gherkin 檔的相對路徑(讀它的內容)"
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 },
                 "required": [

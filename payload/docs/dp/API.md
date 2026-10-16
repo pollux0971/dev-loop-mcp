@@ -1,4 +1,4 @@
-# dp API(v4.7.2)
+# dp API(v4.7.3)
 
 > 這份是 `node tools/dp.mjs api md` 從 `tools/lib/api.mjs` 產生的,不要手改。機器讀的版本:[openapi.json](openapi.json)(或執行中的 `GET /api/v1/openapi.json`)。
 
@@ -355,8 +355,28 @@ operationId `proposeFeature` · MCP `dp_propose_feature` · `dp op propose_featu
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
 | `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
-| `spec` | body | object | 必填 | id、title、intent、owns、depends_on、accept…(見 docs/dp/INTAKE.md) |
-| `gherkin` | body | string |  | Gherkin 全文(選填) |
+| `spec` | body | object | 必填 | 一個節點的規格(欄位同 dag.json 的節點)。例:{"id":"notes/v1","title":"記一筆筆記","intent":"notes add 存一筆、notes list 列出來","owns":["src/notes/**"]} |
+| `spec.id` | body | string | 必填 | 節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps) |
+| `spec.kind` | body | `phase` \| `integration` \| `shared` |  | phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔) |
+| `spec.title` | body | string | 必填 | 短標題 |
+| `spec.intent` | body | string | 必填 | 這個節點要做到什麼(300 字內) |
+| `spec.owns` | body | string[] |  | 這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回 |
+| `spec.gherkin` | body | string |  | gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設) |
+| `spec.accept` | body | string |  | 驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試) |
+| `spec.standalone` | body | string |  | 這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸 |
+| `spec.depends_on` | body | string[] |  | 要先完成的節點 id |
+| `spec.parent` | body | string |  | worker 提出的子節點才用:父節點 id(要跟 relation 一起寫) |
+| `spec.relation` | body | `prereq` \| `followup` |  | prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫 |
+| `spec.tier` | body | `strict` \| `standard` \| `loose` |  | strict = 機器驗收全過也一定給 Critic 或你看;standard(預設) |
+| `spec.pipeline` | body | `characterize` \| `test` \| `dev` \| `integrate` \| `test-fix`[] |  | 要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize) |
+| `spec.release` | body | string |  | 屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉 |
+| `spec.tests` | body | string[] |  | 這個節點的測試檔(glob,選填;沒寫就從 owns 推) |
+| `spec.characterize` | body | object |  | 既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算 |
+| `spec.characterize.targets` | body | string[] |  |  |
+| `spec.characterize.tests` | body | string[] |  |  |
+| `spec.characterize.cmd` | body | string |  |  |
+| `spec.characterize.skip` | body | string |  |  |
+| `gherkin` | body | string |  | Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景) |
 
 ### `POST /api/v1/projects/{project}/proposals/bundle`
 
@@ -367,7 +387,34 @@ operationId `proposeBundle` · MCP `dp_propose_bundle` · `dp op propose_bundle`
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
 | `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
-| `bundle` | body | object | 必填 | { release, goal, roadmap?, nodes: [...] } |
+| `bundle` | body | object | 必填 | 一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["src/notes/**"],"gherkin_text":"Feature: …"},{"id":"I1","kind":"integration","title":"…","intent":"…","depends_on":["notes/v1"],"gherkin_text":"Feature: …\n  @e2e\n  Scenario: …"}]} |
+| `bundle.release` | body | string | 必填 | 版本(例 v1) |
+| `bundle.goal` | body | string |  | 這一版使用者能做什麼(一句話,會出現在要使用者批准的問題裡) |
+| `bundle.roadmap` | body | string |  | 路線圖全文(選填,Markdown;存成 docs/ROADMAP.md,每版一行「- v1: …」) |
+| `bundle.no_integration_reason` | body | string |  | 這一版真的不需要整合點的理由(選填;沒有整合點又沒寫會被拒絕) |
+| `bundle.nodes` | body | object[] | 必填 | 這一版的節點(順序 = 加進 DAG 的順序) |
+| `bundle.nodes[].id` | body | string | 必填 | 節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps) |
+| `bundle.nodes[].kind` | body | `phase` \| `integration` \| `shared` |  | phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔) |
+| `bundle.nodes[].title` | body | string | 必填 | 短標題 |
+| `bundle.nodes[].intent` | body | string | 必填 | 這個節點要做到什麼(300 字內) |
+| `bundle.nodes[].owns` | body | string[] |  | 這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回 |
+| `bundle.nodes[].gherkin` | body | string |  | gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設) |
+| `bundle.nodes[].accept` | body | string |  | 驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試) |
+| `bundle.nodes[].standalone` | body | string |  | 這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸 |
+| `bundle.nodes[].depends_on` | body | string[] |  | 要先完成的節點 id |
+| `bundle.nodes[].parent` | body | string |  | worker 提出的子節點才用:父節點 id(要跟 relation 一起寫) |
+| `bundle.nodes[].relation` | body | `prereq` \| `followup` |  | prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫 |
+| `bundle.nodes[].tier` | body | `strict` \| `standard` \| `loose` |  | strict = 機器驗收全過也一定給 Critic 或你看;standard(預設) |
+| `bundle.nodes[].pipeline` | body | `characterize` \| `test` \| `dev` \| `integrate` \| `test-fix`[] |  | 要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize) |
+| `bundle.nodes[].release` | body | string |  | 屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉 |
+| `bundle.nodes[].tests` | body | string[] |  | 這個節點的測試檔(glob,選填;沒寫就從 owns 推) |
+| `bundle.nodes[].characterize` | body | object |  | 既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算 |
+| `bundle.nodes[].characterize.targets` | body | string[] |  |  |
+| `bundle.nodes[].characterize.tests` | body | string[] |  |  |
+| `bundle.nodes[].characterize.cmd` | body | string |  |  |
+| `bundle.nodes[].characterize.skip` | body | string |  |  |
+| `bundle.nodes[].gherkin_text` | body | string |  | 這個節點的 gherkin 全文(phase 與 integration 要有這個或 gherkin_file,除非 gherkin 指的檔已經存在) |
+| `bundle.nodes[].gherkin_file` | body | string |  | 或:專案裡 gherkin 檔的相對路徑(讀它的內容) |
 
 ## 背景迴圈與停機
 

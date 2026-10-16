@@ -2,6 +2,19 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。
 
+## 4.7.3 — MCP 看得到提案的格式、dp_health 能用
+
+- **提案的欄位寫進工具的 schema**:`dp_propose_feature` 的 `spec`、`dp_propose_bundle` 的 `bundle` 以前只宣告 `type: object`,
+  只看得到 MCP 的 AI 讀不到 `docs/dp/INTAKE.md`,猜不出格式(實測第一次呼叫把 spec 當字串送,被擋:`body.spec: 型別應為 object,實際是 string`)。
+  現在每個欄位的型別與限制直接取自 `schemas.mjs` 的 `nodeSchema`(格式仍然只定義在那一處),`api.mjs` 只補說明與範例;
+  bundle 列出 `release`、`goal`、`roadmap`、`no_integration_reason`、`nodes[]`(節點欄位 + `gherkin_text`、`gherkin_file`)。
+  只有 `enum` 的欄位補上 `type: string`(有些工具呼叫格式要求每個欄位都有 type)。格式錯了在呼叫時就回 400,並指出是哪一個欄位
+  (例 `body.bundle.nodes[0].kind`),不用等到 intake 才失敗。
+- `docs/dp/API.md` 的參數表往下展開物件與物件陣列(`spec.id`、`bundle.nodes[].gherkin_text`…),必填照各層的 required。
+  `API.md`、`openapi.json`、`FLOW.md` 用 `dp api` 重產。
+- **`dp_health` 從 MCP 呼叫一律失敗**(`health 不能這樣呼叫`):它列在工具裡,但只有 hub 會處理。現在 hub 與 MCP 共用同一個 `health()`。
+- 新測試 1 個(spec / bundle 的欄位就是 nodeSchema 的欄位、每個欄位有 type 與說明、錯誤指出欄位、dp_health)。
+
 ## 4.7.2 — 改名 dev-paradigm-mcp
 
 - 專案改名 dev-paradigm-mcp(package.json、README、`dp --help`、MCP 的 serverInfo、OpenAPI 標題、主控台左上角)。打包的資料夾也叫 `dev-paradigm-mcp/`。

@@ -5,7 +5,8 @@ import { spawn } from 'node:child_process';
 import { request } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CALC, CALC_GHERKIN, FAKE, REPO, cleanup, makeProject, sh, tempDir, tickUntil } from './helpers.mjs';
+import { CALC, CALC_GHERKIN, FAKE, I1, I1_GHERKIN, REPO, cleanup, makeProject, sh, tempDir, tickUntil } from './helpers.mjs';
+import { nodeSchema } from '../tools/lib/schemas.mjs';
 import { addAccount, globalUsage, logAccountEvent, pickAccount } from '../tools/lib/accounts.mjs';
 import { ROUTES, buildArgs, matchRoute, openapi } from '../tools/lib/api.mjs';
 import { FLOW, PROMPTS, toolName } from '../tools/lib/flow.mjs';
@@ -36,6 +37,37 @@ describe('API 定義與流程', () => {
     // MCP 沒有串流與 openapi;其他每一條路由都有工具
     assert.equal(names.length, ROUTES.filter((r) => r.kind !== 'stream' && r.id !== 'openapi').length);
     assert.ok(names.includes(toolName('decide')) && toolName('setRole') === 'dp_set_role');
+  });
+
+  test('提案的 spec / bundle 列出每個欄位(型別取自 nodeSchema),格式錯了指出是哪一個欄位;dp_health 在 MCP 能用', async () => {
+    const tools = Object.fromEntries(toolList().map((t) => [t.name, t]));
+    const spec = tools.dp_propose_feature.inputSchema.properties.spec;
+    assert.deepEqual(Object.keys(spec.properties).sort(), Object.keys(nodeSchema.properties).sort(), 'spec 的欄位就是 dag.json 節點的欄位');
+    assert.deepEqual(spec.required, ['id', 'title', 'intent'], 'kind 有預設(phase),不必填');
+    for (const [k, s] of Object.entries(spec.properties)) {
+      assert.ok(s.description, `spec.${k} 要有說明`);
+      assert.ok(s.type, `spec.${k} 要有 type(只有 enum 的也補上)`);
+    }
+    assert.equal(spec.properties.pipeline.items.type, 'string');
+    assert.equal(spec.properties.intent.maxLength, nodeSchema.properties.intent.maxLength, '限制照抄 nodeSchema');
+    const bundle = tools.dp_propose_bundle.inputSchema.properties.bundle;
+    assert.deepEqual(bundle.required, ['release', 'nodes']);
+    const item = bundle.properties.nodes.items;
+    for (const k of ['id', 'kind', 'owns', 'depends_on', 'gherkin_text', 'gherkin_file']) assert.ok(item.properties[k], `bundle.nodes[].${k}`);
+
+    const route = (id) => ROUTES.find((r) => r.id === id);
+    const err = (id, body) => buildArgs(route(id), { project: 'x' }, [], body).error;
+    assert.match(err('proposeFeature', { spec: JSON.stringify(CALC) }), /body\.spec: 型別應為 object,實際是 string/);
+    assert.match(err('proposeFeature', { spec: { id: 'calc/v1', intent: 'x' } }), /body\.spec: 缺必填欄位 title/);
+    assert.match(err('proposeFeature', { spec: { ...CALC, colour: 'red' } }), /body\.spec: 不認識的欄位 colour/);
+    assert.equal(err('proposeFeature', { spec: CALC, gherkin: CALC_GHERKIN }), undefined);
+    assert.match(err('proposeBundle', { bundle: { release: 'v1', nodes: [{ ...I1, kind: 'integ' }] } }), /body\.bundle\.nodes\[0\]\.kind/);
+    assert.match(err('proposeBundle', { bundle: { release: 'v1', nodes: [] } }), /body\.bundle\.nodes: 項目數 < 1/);
+    assert.equal(err('proposeBundle', { bundle: { release: 'v1', goal: 'g', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }, { ...I1, gherkin_text: I1_GHERKIN }] } }), undefined);
+
+    const h = await callTool('dp_health', {}, { cwd: tempDir(), env: {} });
+    assert.ok(!h.isError, h.content[0].text);
+    assert.equal(JSON.parse(h.content[0].text).ok, true);
   });
 
   test('matchRoute / buildArgs:路徑參數、405、query 轉型、body 檢查', () => {

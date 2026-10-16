@@ -150,13 +150,18 @@ const MACHINE = {
   removeAccount: (a, params) => removeAccount(params.account),
 };
 
+/** 活著嗎:版本與登記了幾個專案(hub 的 GET /api/v1/health 與 MCP 的 dp_health 共用)。 */
+export const health = () => ({ ok: true, version: VERSION, projects: Object.keys(loadProjects()).length });
+
 /**
- * 執行一個路由(stream 與 meta 由傳輸層自己處理)。args 已經檢查過(api.buildArgs)。
+ * 執行一個路由(stream 與 openapi 由傳輸層自己處理)。args 已經檢查過(api.buildArgs)。
  * 回 { status, body };失敗時 body = { error: { message, status } }。
  */
 export async function execRoute(route, params, args) {
   const err = (status, message) => ({ status, body: { error: { message, status } } });
   try {
+    // v4.7.3:health 在 MCP 也列成工具(dp_health),以前只有 hub 會處理,從 MCP 呼叫一律失敗
+    if (route.id === 'health') return { status: 200, body: health() };
     if (route.kind === 'machine') {
       const body = await MACHINE[route.id](args, params);
       if (route.write) clearCache();

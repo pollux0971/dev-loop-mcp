@@ -13,7 +13,7 @@ import { buildArgs, matchRoute, openapi } from './api.mjs';
 import { renderDashboard } from './dashboard.mjs';
 import { VERSION, accountRows } from './ops.mjs';
 import { loadProjects } from './projects.mjs';
-import { cachedOp, clearCache, execRoute, findProject, overview, projectOp } from './service.mjs';
+import { cachedOp, clearCache, execRoute, findProject, health, overview, projectOp } from './service.mjs';
 import { DpError } from './util.mjs';
 
 export const hubTokenFile = () => join(configDir(), 'hub-token');
@@ -143,7 +143,7 @@ export async function handleApi(req, res, url, { port }) {
   if (!m) return error(404, `沒有這個端點:${req.method} ${url.pathname}(GET /api/v1/openapi.json 看全部)`);
   if (m.methodNotAllowed) { res.setHeader('allow', m.methodNotAllowed.join(', ')); return error(405, `${url.pathname} 只接受 ${m.methodNotAllowed.join(' / ')}`); }
   const { route, params } = m;
-  if (route.id === 'health') return send(200, { ok: true, version: VERSION, projects: Object.keys(loadProjects()).length });
+  if (route.id === 'health') return send(200, health());
   if (route.id === 'openapi') {
     const spec = openapi(VERSION);
     spec.servers = [{ url: `http://127.0.0.1:${port}` }];

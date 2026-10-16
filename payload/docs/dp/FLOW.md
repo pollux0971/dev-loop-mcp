@@ -1,4 +1,4 @@
-# dp 的流程(v4.7.2)
+# dp 的流程(v4.7.3)
 
 > 這份是 `node tools/dp.mjs api flow` 從 `tools/lib/flow.mjs` 產生的,不要手改。同一份也在 `GET /api/v1/flow`、MCP 的 `dp_flow` 工具與 prompts。
 

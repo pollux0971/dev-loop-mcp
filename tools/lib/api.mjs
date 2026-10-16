@@ -7,11 +7,76 @@
 //   stream   Server-Sent Events(text/event-stream)
 //   meta     health、openapi
 import { validate } from './schema.mjs';
+import { nodeSchema } from './schemas.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const bool = (description) => ({ type: 'boolean', description });
 const int = (description, extra = {}) => ({ type: 'integer', description, ...extra });
 const obj = (properties, required = [], description) => ({ type: 'object', properties, required, additionalProperties: false, ...(description ? { description } : {}) });
+
+// v4.7.3 提案的欄位:型別直接取 schemas.mjs 的 nodeSchema(格式只定義在那一處),這裡只補說明。
+// 只看得到 MCP 的 AI 讀不到 docs/dp/INTAKE.md;以前 spec / bundle 只寫 type: object,它猜不出格式,第一次呼叫就被擋。
+const NODE_DOCS = {
+  id: '節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps)',
+  kind: 'phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔)',
+  title: '短標題',
+  intent: '這個節點要做到什麼(300 字內)',
+  owns: '這個節點可以寫的檔(glob,例 src/notes/**);寫到範圍外會被退回',
+  gherkin: 'gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設)',
+  accept: '驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試)',
+  standalone: '這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸',
+  depends_on: '要先完成的節點 id',
+  parent: 'worker 提出的子節點才用:父節點 id(要跟 relation 一起寫)',
+  relation: 'prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫',
+  tier: 'strict = 機器驗收全過也一定給 Critic 或你看;standard(預設)',
+  pipeline: '要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize)',
+  release: '屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉',
+  tests: '這個節點的測試檔(glob,選填;沒寫就從 owns 推)',
+  characterize: '既有專案(brownfield)才用:targets 要改的既有檔、tests 釘住現況的測試檔、cmd 在現在的程式上必須綠的指令、skip 不釘的理由。通常不用寫,提案會自動算',
+};
+
+/** 型別照抄 schema,補上說明;只有 enum 沒有 type 的補 type: string(有些工具呼叫格式要求每個欄位都有 type)。 */
+function described(schema, docs = {}) {
+  const typed = (s) => {
+    if (!s || typeof s !== 'object') return s;
+    const out = { ...(s.enum && !s.type ? { type: 'string' } : {}), ...s };
+    if (out.items) out.items = typed(out.items);
+    if (out.properties) out.properties = Object.fromEntries(Object.entries(out.properties).map(([k, v]) => [k, typed(v)]));
+    return out;
+  };
+  return Object.fromEntries(Object.entries(schema.properties).map(([k, s]) => [k, { ...typed(s), ...(docs[k] ? { description: docs[k] } : {}) }]));
+}
+
+const NODE_FIELDS = described(nodeSchema, NODE_DOCS);
+// kind 不用填(預設 phase);其他必填照 nodeSchema
+const SPEC_REQUIRED = nodeSchema.required.filter((k) => k !== 'kind');
+const FEATURE_SPEC = {
+  type: 'object', required: SPEC_REQUIRED, additionalProperties: false, properties: NODE_FIELDS,
+  description: '一個節點的規格(欄位同 dag.json 的節點)。例:{"id":"notes/v1","title":"記一筆筆記","intent":"notes add 存一筆、notes list 列出來","owns":["src/notes/**"]}',
+};
+const BUNDLE = {
+  type: 'object', required: ['release', 'nodes'], additionalProperties: false,
+  description: '一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。'
+    + '例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["src/notes/**"],"gherkin_text":"Feature: …"},'
+    + '{"id":"I1","kind":"integration","title":"…","intent":"…","depends_on":["notes/v1"],"gherkin_text":"Feature: …\\n  @e2e\\n  Scenario: …"}]}',
+  properties: {
+    release: str('版本(例 v1)', { pattern: '^[\\w.-]+$' }),
+    goal: str('這一版使用者能做什麼(一句話,會出現在要使用者批准的問題裡)'),
+    roadmap: str('路線圖全文(選填,Markdown;存成 docs/ROADMAP.md,每版一行「- v1: …」)'),
+    no_integration_reason: str('這一版真的不需要整合點的理由(選填;沒有整合點又沒寫會被拒絕)'),
+    nodes: {
+      type: 'array', minItems: 1, description: '這一版的節點(順序 = 加進 DAG 的順序)',
+      items: {
+        type: 'object', required: SPEC_REQUIRED, additionalProperties: false,
+        properties: {
+          ...NODE_FIELDS,
+          gherkin_text: str('這個節點的 gherkin 全文(phase 與 integration 要有這個或 gherkin_file,除非 gherkin 指的檔已經存在)'),
+          gherkin_file: str('或:專案裡 gherkin 檔的相對路徑(讀它的內容)'),
+        },
+      },
+    },
+  },
+};
 
 const VERBATIM = str('使用者這一輪的原話(照抄)。會記進帳本、成為下一張工單的指引;對得上 hook 簽章過的原話時,事件會記下那句話的 hash');
 const NAME = { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$' };
@@ -152,12 +217,12 @@ export const ROUTES = [
   {
     method: 'POST', path: '/api/v1/projects/{project}/proposals/feature', id: 'proposeFeature', tag: 'decisions', kind: 'op', op: 'propose_feature', write: true, ok: 201,
     summary: '提一個新節點(提案;使用者說好之後再 decide node:<proposal_id> yes)',
-    body: obj({ spec: { type: 'object', description: 'id、title、intent、owns、depends_on、accept…(見 docs/dp/INTAKE.md)' }, gherkin: str('Gherkin 全文(選填)') }, ['spec']),
+    body: obj({ spec: FEATURE_SPEC, gherkin: str('Gherkin 全文(phase 與 integration 要附,除非 spec.gherkin 指的檔已經存在;integration 至少一個 @e2e 場景)') }, ['spec']),
   },
   {
     method: 'POST', path: '/api/v1/projects/{project}/proposals/bundle', id: 'proposeBundle', tag: 'decisions', kind: 'op', op: 'propose_bundle', write: true, ok: 201,
     summary: '一次提一整個版本(多個節點 + gherkin + 整合點 + 路線圖)',
-    body: obj({ bundle: { type: 'object', description: '{ release, goal, roadmap?, nodes: [...] }' } }, ['bundle']),
+    body: obj({ bundle: BUNDLE }, ['bundle']),
   },
   {
     method: 'POST', path: '/api/v1/projects/{project}/halt', id: 'halt', tag: 'loop', kind: 'op', op: 'halt', write: true,
