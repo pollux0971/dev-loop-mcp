@@ -250,6 +250,8 @@ To change the level, the daily budget or the number of workers, say so to Front.
 
 ![Existing project: wordfreq's top/v1 went characterize → test → dev; the Harness column shows the gate failing until dlm's files were committed, then passing](docs/images/brownfield.png)
 
+<sub>Screenshot from 4.7.3, before the rename: the logo and the labels in it still say dp.</sub>
+
 ### 8. Subscription accounts
 
 If you have several Claude Max / Pro or ChatGPT (Codex) plans, dlm can rotate through them and switch when one hits its limit.
@@ -339,6 +341,8 @@ At the top: role status lights, the cost bar, and **▶ Replay**, which plays on
 Left: the planning record with Front. You see each proposal's nodes, write-sets, gherkin files and options, and your exact words when you approved or tried something. Right: version progress from `docs/ROADMAP.md`. The top-right shows Greenfield / Brownfield. For brownfield projects it also shows the test baseline and whether AS-IS is written.
 
 ![Planning for an existing project: language, test command, baseline and AS-IS at the top; v0 (as it was) and v1 on the roadmap](docs/images/brownfield-planning.png)
+
+<sub>Screenshot from 4.7.3, before the rename: the logo and the labels in it still say dp.</sub>
 
 ### Pipeline
 

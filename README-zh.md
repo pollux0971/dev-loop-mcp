@@ -247,6 +247,8 @@ L2 時,ABSTAIN 交給 **Critic**:一個讀規格、檢查結果、diff,但不讀
 
 ![既有專案:wordfreq 的 top/v1 走 characterize → test → dev;Harness 欄看得到 dlm 的檔 commit 之前 gate 一直失敗,之後通過](docs/images/brownfield.png)
 
+<sub>4.7.3 的截圖(改名之前),畫面上的 logo 與標籤還寫著 dp。</sub>
+
 ### 8. 訂閱帳號
 
 手上有好幾個 Claude Max / Pro 或 ChatGPT(Codex)方案,dlm 可以輪流用,一個額度用完就換下一個。
@@ -336,6 +338,8 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 左邊是你和 Front 的規劃紀錄:每份提案的節點、write-set、gherkin 檔、選項,和你批准、試用時的原話。右邊是 `docs/ROADMAP.md` 的版本進度。右上角顯示 Greenfield / Brownfield;既有專案另外顯示測試基線和 AS-IS 寫了沒。
 
 ![既有專案的規劃頁:上方是語言、測試指令、基線與 AS-IS;路線圖有 v0(原本的樣子)和 v1](docs/images/brownfield-planning.png)
+
+<sub>4.7.3 的截圖(改名之前),畫面上的 logo 與標籤還寫著 dp。</sub>
 
 ### 管線
 
