@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { confirmE2e, decide } from '../tools/lib/inbox.mjs';
-import { proposeBundle, proposeFeature } from '../tools/lib/intake.mjs';
+import { applyApprovedProposals, proposeBundle, proposeFeature } from '../tools/lib/intake.mjs';
 import { readEvents } from '../tools/lib/ledger.mjs';
 import { Ctx, haltWorkers, tick } from '../tools/lib/orchestrator.mjs';
 import { pendingFeatures } from '../tools/lib/pending.mjs';
@@ -218,6 +218,32 @@ test('整合點的驗收在派測試棒之前就是綠的:不派測試棒(記 no
   confirmE2e(proj, 'I1', false, '還不行');
   const s2 = await tickUntil(proj, (st) => [...st.dispatches.values()].filter((d) => d.node_id === 'I1').length > 1);
   assert.equal([...s2.dispatches.values()].filter((d) => d.node_id === 'I1').at(-1).leg, 'test', '重做時派測試棒');
+});
+
+test('提案的 parent / relation 生效:prereq 讓父節點等它、followup 等父節點;父節點已完成就不能當 prereq', async () => {
+  const proj = makeProject();
+  addNode(proj, CALC, CALC_GHERKIN);
+  applyApprovedProposals(proj);
+  const fix = { id: 'calcfix/v1', title: '修 calc', intent: '修掉 calc 的 bug', owns: ['packages/calcfix/**'], accept: 'node --test packages/calcfix/src/calcfix.test.mjs', parent: 'calc/v1', relation: 'prereq' };
+  const p = proposeFeature(proj, fix, CALC_GHERKIN.replace('calc', 'calcfix'));
+  assert.match(readEvents(proj).filter((e) => e.type === 'decision_request').at(-1).question, /calc\/v1 會等它完成/);
+  decide(proj, `node:${p.id}`, 'yes', '好');
+  applyApprovedProposals(proj);
+  let dag = JSON.parse(readFileSync(join(proj, 'dag.json'), 'utf8'));
+  assert.ok(dag.nodes.find((n) => n.id === 'calc/v1').depends_on.includes('calcfix/v1'), 'prereq:父節點的 depends_on 加上它');
+  const after = { id: 'calcdoc/v1', title: '文件', intent: '寫說明', owns: ['packages/calcdoc/**'], accept: 'node --test packages/calcdoc/src/calcdoc.test.mjs', parent: 'calc/v1', relation: 'followup' };
+  const p2 = proposeFeature(proj, after, CALC_GHERKIN.replace('calc', 'calcdoc'));
+  decide(proj, `node:${p2.id}`, 'yes', '好');
+  applyApprovedProposals(proj);
+  dag = JSON.parse(readFileSync(join(proj, 'dag.json'), 'utf8'));
+  assert.ok(dag.nodes.find((n) => n.id === 'calcdoc/v1').depends_on.includes('calc/v1'), 'followup:等父節點');
+  const cyc = { ...fix, id: 'calcloop/v1', owns: ['packages/calcloop/**'], parent: 'calcdoc/v1', depends_on: ['calcdoc/v1'] };
+  assert.throws(() => proposeFeature(proj, cyc, CALC_GHERKIN), /依賴有環/, 'prereq 造成環要擋');
+
+  const done = makeProject();
+  addNode(done, CALC, CALC_GHERKIN);
+  await tickUntil(done, (st) => st.nodes.get('calc/v1')?.status === 'done');
+  assert.throws(() => proposeFeature(done, fix, CALC_GHERKIN.replace('calc', 'calcfix')), /calc\/v1 已經完成了,不能再讓它等/);
 });
 
 test('整合點的 gherkin 沿用能力的句子(一字不差)→ 提案帶提醒;句子不同就沒有', () => {

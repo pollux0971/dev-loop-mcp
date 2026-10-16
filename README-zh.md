@@ -7,7 +7,7 @@
 
 ![dp hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.7.3 · Node ≥ 20 · 零依賴 · 185 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.7.3 · Node ≥ 20 · 零依賴 · 186 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**。從 4.7.2 起叫 dev-paradigm-mcp,因為主要入口改成 MCP server。指令還是 `dp`,MCP 工具還是 `dp_` 開頭。
 
@@ -402,7 +402,7 @@ node tools/dp.mjs hub                 # 所有專案;點一個進它的主控台
 
 ### 自動測試
 
-`npm test`:**185 個,全部通過。** 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
+`npm test`:**186 個,全部通過。** 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
 
 ### 實跑,2026-10-16
 

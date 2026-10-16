@@ -28,9 +28,40 @@ function nextProposalId(root) {
   return `p-${String(n + 1).padStart(3, '0')}`;
 }
 
+/**
+ * v4.7.3 提案裡的 parent / relation 跟 worker 提的子節點一樣生效:prereq = 父節點要等這個節點(父節點的 depends_on 加上它),
+ * followup = 這個節點等父節點。以前提案只記下這兩個欄位、不接依賴:AI 對使用者說「I3 會等修好再讓你試」,實際上 I3 不會等。
+ * 實跑:minilang 試用發現 expr 的遞迴深度 bug,Front 提 expr/v4(parent I3、prereq)。回傳新的 dag(不改傳進來的)。
+ */
+export function wireParents(dag, fresh) {
+  const next = { ...dag, nodes: dag.nodes.map((n) => ({ ...n, ...(n.depends_on ? { depends_on: [...n.depends_on] } : {}) })) };
+  const byId = new Map(next.nodes.map((n) => [n.id, n]));
+  for (const f of fresh) {
+    if (!f.parent || !f.relation) continue;
+    const child = byId.get(f.id);
+    const parent = byId.get(f.parent);
+    if (!child || !parent) continue; // parent 不存在:validateDag 會指出
+    if (f.relation === 'prereq') parent.depends_on = [...new Set([...(parent.depends_on ?? []), child.id])];
+    else child.depends_on = [...new Set([...(child.depends_on ?? []), parent.id])];
+  }
+  return next;
+}
+
+/** prereq 的父節點已經完成就不能再等它(要改它就另提新節點或新版本)。 */
+function checkParents(root, nodes) {
+  const dag = loadDag(root);
+  const state = replay(readEvents(root), dag);
+  for (const n of nodes) {
+    if (n.relation === 'prereq' && n.parent && state.nodes.get(n.parent)?.status === 'done') {
+      throw new DpError(`${n.id} 是 ${n.parent} 的 prereq,但 ${n.parent} 已經完成了,不能再讓它等;要改它就另提新節點(不寫 parent)`);
+    }
+  }
+}
+
 function checkNodes(root, nodes) {
   const dag = loadDag(root);
-  const next = { ...dag, nodes: [...dag.nodes, ...nodes] };
+  checkParents(root, nodes);
+  const next = wireParents({ ...dag, nodes: [...dag.nodes, ...nodes] }, nodes);
   const problems = validateDag(next, contractMajor(root));
   if (problems.length) throw new DpError(`提案不合法:\n  - ${problems.join('\n  - ')}`);
 }
@@ -212,13 +243,14 @@ function normalizeFeature(root, spec, gherkinText) {
 }
 
 const chNote = (n) => (n.characterize?.targets?.length && !n.characterize.skip ? `;先釘住 ${n.characterize.targets.length} 個既有檔的現有行為` : '');
+const parentNote = (n) => (n.parent && n.relation ? (n.relation === 'prereq' ? `;${n.parent} 會等它完成` : `;等 ${n.parent} 完成才開工`) : '');
 
 export function proposeFeature(root, spec, gherkinText, { supersedes } = {}) {
   const sup = supersedeRefs(root, supersedes);
   const node = normalizeFeature(root, spec, gherkinText);
   checkNodes(root, [node]);
   return propose(root, { kind: 'feature', nodes: [node], files: gherkinText ? { [node.gherkin]: gherkinText } : {} },
-    `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}`,
+    `新增 ${node.id}(${node.title}):${node.intent}${chNote(node)}${parentNote(node)}`,
     {
       warnings: [...layoutWarnings(root, [node]), ...gherkinOverlapWarnings(root, [node], gherkinText ? { [node.gherkin]: gherkinText } : {}),
         ...pendingOverlapWarnings(root, [node], sup)],
@@ -292,7 +324,7 @@ export function applyProposal(root, id) {
     if (!existsSync(join(root, file)) || (proposal.overwrite ?? []).includes(file)) atomicWrite(join(root, file), text.endsWith('\n') ? text : `${text}\n`);
     touched.push(file);
   }
-  const next = { ...dag, nodes: [...dag.nodes, ...fresh] };
+  const next = wireParents({ ...dag, nodes: [...dag.nodes, ...fresh] }, fresh);
   saveDag(root, next);
   for (const n of fresh) {
     append(root, 'orchestrator', 'node_added', { node_id: n.id, approved_by: `decision:node:${id}#${answer.seq}`, spec_sha: sha256(stableJson(n)).slice(0, 12) });

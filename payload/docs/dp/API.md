@@ -380,8 +380,8 @@ operationId `proposeFeature` · MCP `dp_propose_feature` · `dp op propose_featu
 | `spec.accept` | body | string |  | 驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試) |
 | `spec.standalone` | body | string |  | 這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸 |
 | `spec.depends_on` | body | string[] |  | 要先完成的節點 id |
-| `spec.parent` | body | string |  | worker 提出的子節點才用:父節點 id(要跟 relation 一起寫) |
-| `spec.relation` | body | `prereq` \| `followup` |  | prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫 |
+| `spec.parent` | body | string |  | 父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq |
+| `spec.relation` | body | `prereq` \| `followup` |  | prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫 |
 | `spec.tier` | body | `strict` \| `standard` \| `loose` |  | strict = 機器驗收全過也一定給 Critic 或你看;standard(預設) |
 | `spec.pipeline` | body | `characterize` \| `test` \| `dev` \| `integrate` \| `test-fix`[] |  | 要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize) |
 | `spec.release` | body | string |  | 屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉 |
@@ -418,8 +418,8 @@ operationId `proposeBundle` · MCP `dp_propose_bundle` · `dp op propose_bundle`
 | `bundle.nodes[].accept` | body | string |  | 驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試) |
 | `bundle.nodes[].standalone` | body | string |  | 這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸 |
 | `bundle.nodes[].depends_on` | body | string[] |  | 要先完成的節點 id |
-| `bundle.nodes[].parent` | body | string |  | worker 提出的子節點才用:父節點 id(要跟 relation 一起寫) |
-| `bundle.nodes[].relation` | body | `prereq` \| `followup` |  | prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫 |
+| `bundle.nodes[].parent` | body | string |  | 父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq |
+| `bundle.nodes[].relation` | body | `prereq` \| `followup` |  | prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫 |
 | `bundle.nodes[].tier` | body | `strict` \| `standard` \| `loose` |  | strict = 機器驗收全過也一定給 Critic 或你看;standard(預設) |
 | `bundle.nodes[].pipeline` | body | `characterize` \| `test` \| `dev` \| `integrate` \| `test-fix`[] |  | 要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize) |
 | `bundle.nodes[].release` | body | string |  | 屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉 |

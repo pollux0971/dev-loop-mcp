@@ -3040,7 +3040,7 @@
                       "parent": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "worker 提出的子節點才用:父節點 id(要跟 relation 一起寫)"
+                        "description": "父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq"
                       },
                       "relation": {
                         "type": "string",
@@ -3048,7 +3048,7 @@
                           "prereq",
                           "followup"
                         ],
-                        "description": "prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫"
+                        "description": "prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫"
                       },
                       "tier": {
                         "type": "string",
@@ -3327,7 +3327,7 @@
                             "parent": {
                               "type": "string",
                               "minLength": 1,
-                              "description": "worker 提出的子節點才用:父節點 id(要跟 relation 一起寫)"
+                              "description": "父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq"
                             },
                             "relation": {
                               "type": "string",
@@ -3335,7 +3335,7 @@
                                 "prereq",
                                 "followup"
                               ],
-                              "description": "prereq(父節點要等它)或 followup(在父節點之後);有 parent 才寫"
+                              "description": "prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫"
                             },
                             "tier": {
                               "type": "string",

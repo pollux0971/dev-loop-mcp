@@ -73,7 +73,11 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   已經是綠的(能力節點已經做到)就不派 worker,記一筆 `note` 說明、測試棒記為完成(`leg_done`,dispatch_id 是 `precheck-<節點>`),下一輪派整合棒。
   以前要派一棒、worker 回報卡住、問使用者、使用者選 skip:今天實跑出現 4 次(todo-cli I1、wordfreq I1、minilang I1 重做、minilang I3),
   minilang I3 的 worker 直接建議「把 I3 當作已滿足」。重做(試用失敗後,帶 findings)照樣派測試棒,讓它補測試。
-- 新測試 14 個,加上 PR #1 的 1 個。`npm test` 185 個全部通過(4.7.2 是 171 個)。
+- **提案的 `parent` / `relation` 真的接上依賴**:跟 worker 提的子節點一樣,`prereq` = 父節點要等它(套用提案時把它加進父節點的 `depends_on`),
+  `followup` = 它等父節點。父節點已經完成的不能當 prereq(要改它就另提新節點);接上之後有環照樣擋。決定請求的問題寫明「I3 會等它完成」。
+  以前提案只記下這兩個欄位:實跑(minilang)試用發現 expr 的遞迴深度 bug,Front 提 `expr/v4`(parent I3、prereq)並告訴使用者「修好之後 I3 才會再讓你試」,
+  實際上 I3 不會等。欄位說明也改了(以前寫「只給 worker 提的子節點用」)。
+- 新測試 15 個,加上 PR #1 的 1 個。`npm test` 186 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 
