@@ -1,0 +1,22 @@
+# dp init 只建立一次、dp upgrade 永遠不覆蓋的檔(這些是你的專案內容,不是範式)
+AGENTS.md
+AUTONOMY.md
+CLAUDE.md
+dp.config.json
+# 你可能已經有自己的 Claude Code 設定;dp 的 hooks 只在第一次安裝時寫入,之後請自己合併(見 docs/dp/SECURITY.md)
+.claude/settings.json
+dag.json
+package.json
+tsconfig.json
+cucumber.js
+vitest.config.ts
+vitest.scripts.config.ts
+stryker.config.json
+contracts/**
+features/**
+docs/adr/**
+docs/integration/**
+scripts/boundaries.owners.json
+scripts/boundaries.allow.json
+scripts/gates.config.json
+gitignore

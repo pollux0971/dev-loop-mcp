@@ -1,0 +1,4 @@
+{
+  "missing-id.json": "缺必填欄位 id",
+  "bad-kind.json": "不在 enum"
+}

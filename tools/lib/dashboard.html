@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+/* dp 主控台:唯讀。資料全部來自帳本重播(跟 dp status 同一份);不連任何外部資源。 */
+:root{
+  --bg:#121216; --s1:#1a1a1f; --s2:#202026; --s3:#27272e; --s4:#30303a;
+  --line:rgba(255,255,255,.09);
+  --text:#e6e3ec; --dim:#a8a4b2; --faint:#76727f;
+  --orch:#ffce86; --work:#7fd4ec; --fix:#f5a6c1; --ver:#a9d9c6; --you:#cdb4ff;
+  --pass:#8ee0aa; --fail:#ffb2bb; --gate:#ffd98a; --sys:#aec3ca;
+  --sans:'Outfit','Noto Sans TC','PingFang TC',system-ui,sans-serif;
+  --mono:'JetBrains Mono','SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;
+  --r-xl:24px; --r-lg:18px; --r-pill:999px;
+  --e1:0 1px 2px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.28); --e2:0 3px 8px rgba(0,0,0,.42); --e3:0 10px 30px rgba(0,0,0,.55);
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:14.5px;line-height:1.55;overflow:hidden;
+  background-image:radial-gradient(1100px 520px at 78% -15%,rgba(127,212,236,.06),transparent 60%)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--work);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--s4);border-radius:8px}::-webkit-scrollbar-track{background:transparent}
+
+.app{display:grid;grid-template-columns:64px 1fr;height:100vh;padding:10px;gap:10px;transition:grid-template-columns .26s cubic-bezier(.2,0,0,1)}
+.app.rail-open{grid-template-columns:208px 1fr}
+.rail{display:flex;flex-direction:column;gap:4px;background:var(--s1);border-radius:var(--r-xl);padding:12px 8px;box-shadow:var(--e1);overflow:hidden}
+.rail .top{display:flex;align-items:center;gap:9px;margin-bottom:10px;padding:0 4px}
+.rail .logo{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--work);width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;background:var(--s3);border-radius:13px;cursor:pointer}
+.rail .wordmark{font-weight:700;letter-spacing:0;font-size:13px;white-space:nowrap;opacity:0;transition:opacity .2s}
+.app.rail-open .wordmark{opacity:1}
+.rail button.nav{display:flex;align-items:center;gap:12px;width:100%;padding:5px 4px;border-radius:14px;color:var(--dim);white-space:nowrap}
+.rail button.nav .ic{width:40px;height:32px;flex:0 0 40px;display:grid;place-items:center;border-radius:var(--r-pill);font-size:16px;transition:background .15s}
+.rail button.nav:hover .ic{background:var(--s3)}
+.rail button.nav .lb{font-size:13.5px;opacity:0;transition:opacity .2s}
+.app.rail-open button.nav .lb{opacity:1}
+.rail button.nav.on{color:var(--text)}
+.rail button.nav.on .ic{background:rgba(127,212,236,.18);color:var(--work)}
+.rail .grow{flex:1}
+.rail .foot{font-family:var(--mono);font-size:9.5px;color:var(--faint);display:flex;align-items:center;gap:9px;padding:6px 4px;white-space:nowrap}
+.rail .foot .fx{width:40px;flex:0 0 40px;display:grid;place-items:center}
+.rail .foot .fl{opacity:0;transition:opacity .2s}
+.app.rail-open .foot .fl{opacity:1}
+
+.main{display:flex;flex-direction:column;min-width:0;background:var(--s1);border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--e2)}
+.header{display:flex;align-items:center;gap:16px;padding:13px 20px;background:var(--s2);flex:0 0 auto}
+.story{display:flex;flex-direction:column;min-width:0}
+.story .sid{font-family:var(--mono);font-size:12.5px;color:var(--work);display:flex;align-items:center;gap:8px}
+.story .obj{color:var(--dim);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px}
+.hgrow{flex:1}
+.stat{font-family:var(--mono);font-size:11px;color:var(--faint);text-align:right;line-height:1.45;white-space:nowrap}
+.stat b{color:var(--text);font-size:13px}
+.stat .leg{letter-spacing:.6px;text-transform:uppercase}
+.mode{display:flex;background:var(--s3);border-radius:var(--r-pill);padding:3px;font-family:var(--mono);font-size:12px;flex:0 0 auto}
+.mode button{padding:6px 13px;border-radius:var(--r-pill);color:var(--dim);letter-spacing:.4px;transition:.15s;white-space:nowrap}
+.mode button.on{background:var(--s4);color:var(--text)}
+.mode button:disabled{opacity:.35;cursor:default}
+.pmode button:disabled{opacity:1;cursor:default} .pmode button:disabled:not(.on){opacity:.4}
+.pmode button.on.bf{background:rgba(255,217,138,.16);color:var(--gate)}
+.bf-banner{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:0 0 12px;padding:9px 14px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--s2);font-family:var(--mono);font-size:12px;color:var(--dim)}
+.bf-banner .k{color:var(--gate);font-weight:600} .bf-banner .ok{color:var(--pass)} .bf-banner .warn{color:var(--gate)}
+.chip.pin{border-color:rgba(255,217,138,.4);color:var(--gate)} .chip.pin-skip{color:var(--dim)}
+
+.topbar{display:flex;align-items:center;gap:12px;padding:7px 16px;background:var(--s2);border-top:1px solid var(--s3);font-size:12px;flex-shrink:0;flex-wrap:wrap}
+.topbar .lbl{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.5px}
+.lamps{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lamp{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--r-pill);background:var(--s3);font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.lamp .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex-shrink:0}
+.lamp.active{color:var(--gate)} .lamp.active .dot{background:var(--gate);animation:breathe 1.3s ease-in-out infinite}
+.lamp.done{color:var(--pass)} .lamp.done .dot{background:var(--pass)}
+.lamp.wait{color:var(--fix)} .lamp.wait .dot{background:var(--fix)}
+@keyframes breathe{0%,100%{opacity:.35}50%{opacity:1}}
+.costbar{margin-left:auto;display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px}
+.costbar .track{width:120px;height:7px;border-radius:4px;background:var(--s3);overflow:hidden}
+.costbar .fill{height:100%;background:linear-gradient(90deg,var(--pass),var(--gate));transition:width .4s}
+.costbar .fill.warn{background:linear-gradient(90deg,var(--gate),var(--fail))}
+.costbar .amt{color:var(--dim)} .costbar .cap{color:var(--faint)}
+
+.page{display:none;flex:1;min-height:0;flex-direction:column}
+.page.on{display:flex}
+.panes{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1.1fr 1fr 200px;gap:10px;padding:10px}
+.pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg);border-radius:20px;overflow:hidden}
+.pane-head{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:11px 14px;background:var(--s2);min-height:47px}
+.av{width:25px;height:25px;border-radius:9px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:12px;color:#16131a;flex:0 0 25px}
+.p-orch .av{background:var(--orch)} .p-ver .av{background:var(--ver)} .p-spine .av{background:var(--sys)}
+.pane-head .nm{font-weight:600;font-size:14.5px;white-space:nowrap}
+.p-orch .nm{color:var(--orch)} .p-ver .nm{color:var(--ver)} .p-spine .nm{color:var(--sys)}
+.pane-head .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-left:auto;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 8px}
+.dot.live{background:var(--work);box-shadow:0 0 8px var(--work);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.p-spine{background:linear-gradient(180deg,rgba(174,195,202,.06),var(--bg))}
+
+.tabs{display:flex;gap:2px;margin-left:2px;margin-bottom:-11px;align-self:flex-end}
+.tabs button{font-family:var(--mono);font-size:12.5px;padding:7px 13px 9px;border-radius:12px 12px 0 0;color:var(--faint);position:relative;letter-spacing:.3px}
+.tabs button.on{color:var(--text);background:var(--bg);box-shadow:inset 0 2px 0 var(--work)}
+.tabs button.t-fix.on{box-shadow:inset 0 2px 0 var(--fix)}
+.tabs button .blink{position:absolute;top:7px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--fix);box-shadow:0 0 6px var(--fix);animation:pulse 1.2s infinite}
+
+.stream{flex:1;overflow-y:auto;padding:12px 14px;font-family:var(--mono);font-size:12.4px;line-height:1.7;min-height:0}
+.ln{display:block;white-space:pre-wrap;word-break:break-word;margin:2px 0}
+.ln .who{font-weight:600;margin-right:8px}
+.w-orch{color:var(--orch)} .w-work{color:var(--work)} .w-fix{color:var(--fix)} .w-ver{color:var(--ver)} .w-you{color:var(--you)} .w-sys{color:var(--faint)} .w-crit{color:var(--ver)}
+.ln .hl{color:var(--work)} .ln .ok{color:var(--pass)} .ln .bad{color:var(--fail)} .ln .warn{color:var(--gate)}
+.ln.dim{color:var(--faint)}
+.ln.tool{color:var(--dim)} .ln.tool .cmd{color:#a9e6f6}
+.ln.sub{padding-left:18px;color:var(--dim)} .ln.sub::before{content:"↳ ";color:var(--faint);margin-left:-18px}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.empty-pane{color:var(--faint);font-size:12px;padding:6px 0}
+
+.card{margin:6px 0 9px;background:var(--s2);border-radius:var(--r-lg);box-shadow:var(--e1);padding:11px 13px 11px 15px;font-family:var(--sans);position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--orch)}
+.card.rep::before{background:var(--work)} .card.rep.fix::before{background:var(--fix)} .card.crit::before{background:var(--ver)} .card.bad::before{background:var(--fail)}
+.card h4{font-size:11.5px;font-family:var(--mono);letter-spacing:.5px;color:var(--dim);text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.card h4 .r{margin-left:auto;text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400}
+.card .row{display:flex;gap:8px;font-size:13px;margin:4px 0}
+.card .row .k{font-family:var(--mono);font-size:10.5px;color:var(--faint);text-transform:uppercase;flex:0 0 76px;padding-top:2px;letter-spacing:.4px}
+.card .row .v{flex:1;min-width:0;word-break:break-word}
+.card p{font-size:13px;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:var(--mono);font-size:11px;padding:2px 10px;border-radius:var(--r-pill);background:var(--s4);color:var(--dim);white-space:nowrap}
+.chip.no{color:var(--fail);background:rgba(255,178,187,.12)}
+.chip.more{color:var(--faint);background:transparent;border:1px dashed var(--s4);cursor:pointer}
+
+.claim{display:flex;gap:8px;font-family:var(--mono);font-size:11.8px;line-height:1.6;margin:5px 0;color:var(--dim)}
+.claim .ci{flex:0 0 14px;text-align:center}
+.claim.ok .ci{color:var(--pass)} .claim.unv .ci{color:var(--gate)} .claim.bad .ci{color:var(--fail)}
+.claim .ct{flex:1;min-width:0;word-break:break-word}
+.claim .ct .t{color:var(--text);font-family:var(--sans);font-size:12.8px}
+.claim .ct .cmd{color:#a9e6f6}
+.claim .ct .tail{display:block;color:var(--faint);white-space:pre-wrap}
+
+.think{margin:4px 0 6px;border-radius:12px;background:rgba(174,195,202,.07);padding:8px 11px 20px;color:#bcd0c4;cursor:pointer;
+  opacity:.6;max-height:5.2em;overflow:hidden;position:relative;transition:opacity .2s;font-family:var(--sans);font-size:12.8px;white-space:pre-wrap;word-break:break-word}
+.think::after{content:"⌄ 展開";position:absolute;right:10px;bottom:4px;font-size:10px;color:var(--faint);background:var(--bg);padding:1px 7px;border-radius:8px}
+.think:hover{opacity:.85}
+.think.open{opacity:1;max-height:none}
+.think.open::after{content:"⌃ 收合"}
+
+.todo{flex:0 0 auto;border-top:1px solid var(--line);background:var(--s2);padding:9px 13px 11px;max-height:190px;overflow-y:auto}
+.todo .th{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+.todo .th .ct{margin-left:auto;color:var(--dim)}
+.todo .ti{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:3px 0;color:var(--dim)}
+.todo .ti .box{width:15px;height:15px;flex:0 0 15px;border-radius:5px;border:1.6px solid var(--faint);display:grid;place-items:center;font-size:10px;color:transparent}
+.todo .ti.doing .box{border-color:var(--work);box-shadow:0 0 7px rgba(127,212,236,.5)}
+.todo .ti.doing{color:var(--text)}
+.todo .ti.done .box{background:var(--pass);border-color:var(--pass);color:#0c1a10}
+.todo .ti.done{color:var(--faint)}
+.todo .ti.done .tt{text-decoration:line-through}
+.todo .ti.fail .box{border-color:var(--fail);color:var(--fail)}
+.todo .ti .tt{flex:1}
+.todo .ti .tm{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+.vrow{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;font-family:var(--mono);font-size:11.5px;margin:4px 0}
+.vrow .ck{color:var(--dim);flex:0 0 auto}
+.vrow .dt{color:var(--faint);flex:1 1 100%;min-width:0;word-break:break-word;font-size:11px;padding-left:4px}
+.vrow .dt:empty{display:none}
+.out{font-family:var(--mono);font-size:9.5px;padding:1px 7px;border-radius:var(--r-pill);flex:0 0 auto;letter-spacing:.3px}
+.out.PASS,.out.NO_OBJECTION{background:rgba(142,224,170,.14);color:var(--pass)}
+.out.FAIL{background:rgba(255,178,187,.14);color:var(--fail)}
+.out.ABSTAIN{background:rgba(255,217,138,.12);color:var(--gate)}
+.out.SKIPPED{background:var(--s3);color:var(--faint)}
+.stamp{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;padding:3px 10px;border-radius:var(--r-pill)}
+.stamp.pass{background:rgba(142,224,170,.15);color:var(--pass)}
+.stamp.fail{background:rgba(255,107,107,.15);color:var(--fail)}
+.stamp.ask{background:rgba(255,217,138,.13);color:var(--gate)}
+.stamp.pending{background:var(--s3);color:var(--faint)}
+.vblock{border-bottom:1px solid rgba(255,255,255,.05);padding:6px 0 8px}
+
+.spine-stream{flex:1;overflow-y:auto;padding:10px 11px;font-family:var(--mono);font-size:11.3px;line-height:1.65;min-height:0}
+.sp{display:flex;gap:7px;padding:6px 0;color:var(--dim);border-bottom:1px solid rgba(255,255,255,.04)}
+.playing .stream > :last-child,.playing .spine-stream > :last-child{animation:rise .3s ease}
+.sp .ico{flex:0 0 14px;text-align:center}
+.sp .tx{flex:1;word-break:break-word}
+.sp .tx b{color:var(--sys);font-weight:600}
+.sp.ok .ico{color:var(--pass)} .sp.bad .ico{color:var(--fail)} .sp.gate .ico{color:var(--gate)}
+.sp .res{color:var(--pass)} .sp .res.bad{color:var(--fail)} .sp .res.warn{color:var(--gate)}
+
+.ascii{font-family:var(--mono);font-size:10.8px;line-height:1.5;white-space:pre;color:var(--dim);background:var(--s1);border-radius:10px;padding:10px 12px;overflow-x:auto;margin:8px 14px 12px;flex:0 0 auto}
+.ascii .hl{color:var(--work)} .ascii .ok{color:var(--pass)} .ascii .bad{color:var(--fail)} .ascii .warn{color:var(--gate)}
+.route{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:10.8px;white-space:normal}
+.route th,.route td{border:1px dashed rgba(255,255,255,.14);padding:2px 8px;text-align:left;vertical-align:top}
+.route th{color:var(--faint);font-weight:500}
+.route td.hl{color:var(--dim)} .route tr.cur td.hl{color:var(--work);font-weight:600}
+.route tr:not(:first-child){cursor:pointer} .route tr:not(:first-child):hover td{background:var(--s2)}
+.ascii-h{font-family:var(--mono);font-size:10.5px;color:var(--orch);padding:0 14px;flex:0 0 auto}
+.ascii-h span{color:var(--faint)}
+
+.inputbar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s2)}
+.owner{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.4px;padding:7px 13px;border-radius:var(--r-pill);background:rgba(142,224,170,.12);color:var(--pass);white-space:nowrap}
+.owner .odot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.owner.ask{background:rgba(255,217,138,.14);color:var(--gate)}
+.owner.ask .odot{animation:pulse 1.4s infinite}
+.field{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:var(--s3);border-radius:var(--r-pill);padding:4px 6px 4px 18px}
+.field .q{flex:1;min-width:0;font-size:13px;color:var(--dim);padding:8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field .q code{font-family:var(--mono);color:#a9e6f6;font-size:12.5px}
+.send{background:var(--work);color:#0c1418;font-weight:600;font-size:13px;padding:8px 16px;border-radius:var(--r-pill);white-space:nowrap}
+.send:hover{filter:brightness(1.1)}
+.send.ghost{background:var(--s4);color:var(--dim)}
+
+.acct-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.acct-form input,.acct-form select{background:var(--s3);color:var(--text);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:12px;min-width:0}
+.acct-form input{width:140px}
+.acct-role{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.acct-role:last-child{border-bottom:0}
+.acct-role .rn{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--work)}
+.acct-chk{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;color:var(--dim);margin-right:12px;cursor:pointer}
+.acct-msg{font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;padding:8px 12px;border-radius:8px;background:var(--s2);color:var(--dim);margin-bottom:14px}
+.acct-msg.bad{color:var(--fail)} .acct-msg.ok{color:var(--pass)}
+.acct-note{font-size:12px;color:var(--faint)}
+.acct-note code,.route code{font-family:var(--mono);color:#a9e6f6}
+.mini{font-size:11px;padding:3px 10px}
+.pg-wrap{flex:1;min-height:0;overflow-y:auto;padding:22px 26px}
+.pg-title{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+.pg-title h2{font-size:21px;font-weight:700;letter-spacing:.2px}
+.pg-title .tag{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.pg-sub{color:var(--dim);font-size:13.5px;margin-bottom:20px;max-width:680px}
+.sect{margin-bottom:22px}
+.sect h3{font-family:var(--mono);font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.panel{background:var(--bg);border-radius:var(--r-lg);padding:16px 18px}
+.wave{display:flex;gap:7px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--dim);flex-wrap:wrap}
+.wave .wv{padding:3px 10px;border-radius:var(--r-pill);background:var(--s3)}
+.wave .wv.now{background:var(--work);color:#0a1a1f;font-weight:600}
+.wave .wv.done{background:rgba(142,224,170,.14);color:var(--pass)}
+.lanes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.lane{background:var(--bg);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:7px;min-height:120px}
+.lane h4{font-family:var(--mono);font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;display:flex}
+.lane h4 span{margin-left:auto}
+.scard{background:var(--s2);border-radius:9px;padding:8px 10px;font-size:12px;cursor:pointer;border-left:3px solid var(--faint)}
+.scard:hover{background:var(--s3)}
+.scard .sc-id{font-family:var(--mono);font-size:11px;color:var(--work)}
+.scard .sc-t{color:var(--dim);font-size:11.5px;margin-top:2px}
+.scard .sc-m{color:var(--faint);font-size:10.5px;margin-top:3px;font-family:var(--mono)}
+.scard .sc-why{font-size:10.5px;color:var(--fail);margin-top:3px;font-family:var(--mono)}
+.scard.run{border-left-color:var(--work)} .scard.rev{border-left-color:var(--ver)} .scard.blok{border-left-color:var(--fail)} .scard.done{border-left-color:var(--pass)}
+.ask-row{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:9px 0;border-bottom:1px solid var(--s2)}
+.ask-row .ar-ref{font-family:var(--mono);font-size:11px;color:var(--work);flex:0 0 130px}
+.ask-row .ar-q{flex:1;min-width:0}
+.ask-row .ar-q small{display:block;color:var(--faint);font-size:11px}
+.ask-row code{font-family:var(--mono);font-size:11px;color:#a9e6f6;background:var(--s3);padding:3px 9px;border-radius:var(--r-pill);white-space:nowrap}
+.tl-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12.5px;cursor:default}
+.tl-row.has{cursor:pointer}
+.tl-row .seq{font-family:var(--mono);font-size:10.5px;color:var(--faint);flex:0 0 40px}
+.tl-row .ts{font-family:var(--mono);font-size:10.5px;color:var(--faint);flex:0 0 82px}
+.tl-row .ac{font-family:var(--mono);font-size:10.5px;flex:0 0 86px}
+.tl-row .tx{flex:1;min-width:0;word-break:break-word}
+.tl-row pre{display:none;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11.5px;color:var(--dim);background:var(--s1);border-radius:8px;padding:8px 10px;margin-top:6px}
+.tl-row.open pre{display:block}
+.t-accept .tx,.t-e2e_confirm .tx{color:var(--pass)} .t-reject .tx,.t-block .tx,.t-worker_blocked .tx,.t-worker_failed .tx{color:var(--fail)} .t-decision_request .tx,.t-e2e_request .tx,.t-halt .tx{color:var(--gate)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.filters .chip{cursor:pointer}
+.filters .chip.on{background:var(--work);color:#0a1a1f}
+.bar{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:12px}
+.bar .bl{flex:0 0 110px;font-family:var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .bt{flex:1;height:8px;border-radius:4px;background:var(--s3);overflow:hidden}
+.bar .bt i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--work),var(--you))}
+.bar .bv{flex:0 0 60px;text-align:right;font-family:var(--mono);color:var(--dim)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:20px}
+.kpi{background:var(--bg);border-radius:14px;padding:12px 14px}
+.kpi span{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.5px;text-transform:uppercase}
+.kpi b{display:block;font-size:22px;font-weight:600;margin-top:2px}
+.banner{margin:10px 10px 0;border-radius:14px;padding:8px 14px;background:rgba(255,217,138,.1);color:var(--gate);font-size:13px;flex:0 0 auto}
+
+/* 規劃頁:左邊是你和 Front 的規劃對話(帳本重播),右邊是路線圖進度 */
+.ps-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;flex:1;min-height:0;padding:10px}
+.ps-chat{display:flex;flex-direction:column;background:var(--bg);border-radius:var(--r-lg);overflow:hidden;min-height:0}
+.ps-chat .pch{padding:13px 16px;background:var(--s2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.ps-chat .pch .av{background:var(--you)}
+.ps-chat .pch .nm{color:var(--you);font-weight:600}
+.ps-chat .pch .ph{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-left:auto}
+.ps-stream{flex:1;overflow-y:auto;padding:18px 18px 8px;font-size:14px;min-height:0}
+.ps-msg{margin-bottom:14px;max-width:88%}
+.ps-msg.me{margin-left:auto}
+.ps-msg .b{padding:11px 15px;border-radius:16px;background:var(--s2);color:var(--text);line-height:1.62;white-space:pre-wrap;word-break:break-word}
+.ps-msg.me .b{background:rgba(205,180,255,.16);color:#ece4ff;border-bottom-right-radius:5px}
+.ps-msg.ps-b .b{border-bottom-left-radius:5px}
+.ps-msg.stuck .b{border-left:3px solid var(--gate)}
+.ps-msg .lbl{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin:0 0 5px 4px}
+.ps-msg.me .lbl{text-align:right;padding-right:4px;color:var(--gate)}
+.ps-msg .opts{display:flex;flex-direction:column;gap:6px;margin-top:10px;white-space:normal}
+.gopt{display:flex;align-items:center;gap:11px;text-align:left;padding:9px 13px;border-radius:12px;background:var(--s3);border:1px solid var(--line)}
+.gopt.picked{border-color:var(--you);background:rgba(205,180,255,.1)}
+.gopt .gk{font-family:var(--mono);font-size:11px;color:var(--faint);flex:0 0 auto}
+.gopt .gt{flex:1;font-size:13px}
+.gopt .gr{font-family:var(--mono);font-size:10px;color:var(--you)}
+.pnode{margin-top:10px;background:var(--s3);border-radius:12px;padding:9px 12px;white-space:normal}
+.pnode .pid{font-family:var(--mono);font-size:11.5px;color:var(--work)}
+.pnode .pid span{color:var(--faint);margin-left:6px}
+.pnode .pin{font-size:12.5px;color:var(--dim);margin-top:3px}
+.pnode .chips{margin-top:6px}
+.gk-file{margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--faint);cursor:pointer;white-space:normal}
+.gk-file:hover{color:var(--text)}
+.gk-file pre{display:none;margin-top:6px;white-space:pre-wrap;color:var(--dim);background:var(--s1);border-radius:8px;padding:9px 11px;font-size:11.2px;line-height:1.55;max-height:360px;overflow:auto}
+.gk-file.open pre{display:block}
+.sysln{text-align:center;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin:-4px 0 14px}
+.sysln b{color:var(--pass);font-weight:500}
+.ps-free{display:flex;gap:9px;padding:11px 14px;background:var(--s2);align-items:center}
+.ps-free .hint{flex:1;min-width:0;background:var(--s3);border-radius:var(--r-pill);color:var(--faint);font-size:13px;padding:10px 16px}
+.stepper{background:var(--bg);border-radius:var(--r-lg);padding:20px 18px;overflow-y:auto;min-height:0}
+.stepper .sh{font-family:var(--mono);font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.stepper .sh .md{margin-left:auto;font-size:10.5px;padding:3px 9px;border-radius:var(--r-pill);background:rgba(205,180,255,.16);color:var(--you);text-transform:none}
+.step{display:flex;gap:13px;position:relative;padding-bottom:20px;cursor:default}
+.step:last-child{padding-bottom:0}
+.step .sline{position:absolute;left:13px;top:26px;bottom:0;width:2px;background:var(--s4)}
+.step:last-child .sline{display:none}
+.step .snode{width:28px;height:28px;flex:0 0 28px;border-radius:50%;border:2px solid var(--s4);background:var(--bg);display:grid;place-items:center;font-family:var(--mono);font-size:11px;color:var(--faint);z-index:1}
+.step .ct{padding-top:3px;min-width:0}
+.step .ct .nm{font-size:13.5px;color:var(--dim);font-weight:500}
+.step .ct .ds{font-size:11.5px;color:var(--faint);margin-top:2px;line-height:1.5}
+.step .ct .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+.step .ct .sub span{padding:1px 7px;border-radius:var(--r-pill);background:var(--s3)}
+.step .ct .sub span.ok{color:var(--pass);background:rgba(142,224,170,.1)}
+.step .ct .sub span.now{color:var(--you);background:rgba(205,180,255,.14)}
+.step.active .snode{border-color:var(--you);color:var(--you);box-shadow:0 0 0 5px rgba(205,180,255,.12)}
+.step.active .ct .nm{color:var(--text)}
+.step.done .snode{background:var(--you);border-color:var(--you);color:#1a1226}
+.step.done .sline{background:var(--you)}
+.step.done .ct .nm{color:var(--dim)}
+.step.click{cursor:pointer}.step.click:hover .ct .nm{color:var(--text)}
+@media (max-width:1180px){.panes{grid-template-columns:1fr 1fr}.p-spine{grid-column:span 2;max-height:260px}}
+@media (max-width:760px){
+  body{overflow:auto}
+  .app{display:block;height:auto;padding:6px}
+  .rail{flex-direction:row;padding:6px;margin-bottom:6px;border-radius:18px;align-items:center}
+  .rail .top{margin:0}.rail .wordmark,.rail .foot,.rail .grow{display:none}
+  .rail button.nav{width:auto;padding:0}.rail button.nav .lb{display:none}
+  .header{flex-wrap:wrap;padding:12px 14px;gap:10px}.story .obj{max-width:none;white-space:normal}
+  .stat{text-align:left}
+  .panes{display:flex;flex-direction:column}
+  .pane{min-height:260px;max-height:520px}.p-spine{max-height:300px}
+  .lanes{grid-template-columns:1fr}
+  .ps-grid{display:flex;flex-direction:column}.ps-chat{max-height:none}.ps-stream{max-height:none;overflow:visible}.ps-msg{max-width:96%}
+  .pg-wrap{padding:16px}
+  .inputbar{flex-wrap:wrap}.field{flex-basis:100%;border-radius:18px;flex-wrap:wrap;padding:8px 10px 8px 14px}.field .q{white-space:normal}
+  .costbar{margin-left:0}
+  .ask-row{flex-wrap:wrap}.ask-row .ar-ref{flex-basis:100%}
+  .tl-row .ac{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script type="application/json" id="dp-data">__DATA__</script>
+<script>
+(function(){
+'use strict';
+var LIVE = __LIVE__;
+var TOKEN = "__TOKEN__";
+var HUB = "__HUB__";
+var data = JSON.parse(document.getElementById('dp-data').textContent);
+var ui = { acct:{ form:{ name:'', cli:'claude', plan:'' }, roles:null, login:null, msg:null, busy:false }, view:'console', node:null, pinned:false, tab:null, cursor:null, playing:null, railOpen:false, tlNode:null, tlAll:false, more:{} };
+try { var saved = JSON.parse(localStorage.getItem('dp-console') || '{}'); ui.railOpen = !!saved.railOpen; ui.view = saved.view || 'console'; } catch (e) {}
+function save(){ try { localStorage.setItem('dp-console', JSON.stringify({ railOpen: ui.railOpen, view: ui.view })); } catch (e) {} }
+
+var STATUS = { done:'完成', 'in-progress':'施工中', review:'驗收中', todo:'未開始', blocked:'卡住', stale:'需重驗' };
+var LEG = { characterize:'釘現況', test:'測試棒', dev:'實作棒', integrate:'整合棒', 'test-fix':'修測試' };
+var ACTOR = { orchestrator:['orch','w-orch'], verifier:['verifier','w-ver'], critic:['critic','w-crit'], user:['你','w-you'], 'dp-cli':['dp','w-sys'] };
+var QUIET = { inbox_viewed:1, launched:1, cost:1 };
+
+/* ── helpers ─────────────────────────────── */
+function el(tag, attrs, kids){
+  var e = document.createElement(tag);
+  if (attrs) for (var k in attrs) {
+    var v = attrs[k]; if (v == null || v === false) continue;
+    if (k === 'text') e.textContent = v; else if (k === 'cls') e.className = v; else if (k === 'style') e.style.cssText = v;
+    else if (k.slice(0,2) === 'on') e[k] = v; else e.setAttribute(k, v);
+  }
+  add(e, kids); return e;
+}
+function add(e, kids){ (kids || []).forEach(function(c){ if (c == null || c === false) return; if (Array.isArray(c)) add(e, c); else e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); }); return e; }
+function span(cls, text){ return el('span', { cls: cls, text: text }); }
+function money(x){ return '$' + (x || 0).toFixed(2); }
+function when(ts){ return ts ? ts.slice(5,16).replace('T',' ') : ''; }
+function short(s, n){ s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function nodeById(id){ for (var i = 0; i < data.nodes.length; i++) if (data.nodes[i].id === id) return data.nodes[i]; return null; }
+function nodeEvents(id){ return data.timeline.filter(function(e){ return e.node === id; }); }
+function cursorOk(e){ return ui.cursor == null || e.seq <= ui.cursor; }
+function visible(id){ return nodeEvents(id).filter(cursorOk); }
+function dispatchesOf(id){ return data.dispatches.filter(function(d){ return d.node === id && cursorOk(d); }); }
+
+function defaultNode(){
+  if (data.in_progress.length) return data.in_progress[0].id;
+  if (data.review.length) return data.review[0].id;
+  if (data.e2e.length) return data.e2e[0].id;
+  for (var i = data.timeline.length - 1; i >= 0; i--) { var e = data.timeline[i]; if (e.node && nodeById(e.node) && !QUIET[e.type]) return e.node; }
+  return data.nodes.length ? data.nodes[0].id : null;
+}
+
+/* 重播:這個節點的事件一筆一筆出現 */
+function play(){
+  var evs = nodeEvents(ui.node);
+  if (!evs.length) return;
+  stop();
+  var i = 0; ui.cursor = evs[0].seq; ui.tab = null; render();
+  ui.playing = setInterval(function(){
+    i++;
+    if (i >= evs.length) { stop(); ui.cursor = null; render(); return; }
+    ui.cursor = evs[i].seq; ui.tab = null; render();
+  }, 650);
+}
+function stop(){ if (ui.playing) clearInterval(ui.playing); ui.playing = null; }
+
+/* ── 版面 ─────────────────────────────── */
+function render(){
+  if (!ui.node || !nodeById(ui.node)) ui.node = defaultNode();
+  var app = document.getElementById('app');
+  app.className = 'app' + (ui.railOpen ? ' rail-open' : '') + (ui.playing ? ' playing' : '');
+  app.textContent = '';
+  app.appendChild(rail());
+  var main = el('div', { cls:'main' });
+  app.appendChild(main);
+  if (ui.view === 'console') renderConsole(main);
+  else if (ui.view === 'planning') renderPlanning(main);
+  else if (ui.view === 'pipeline') renderPipeline(main);
+  else if (ui.view === 'timeline') renderTimeline(main);
+  else if (ui.view === 'accounts') renderAccounts(main);
+  else renderCost(main);
+  main.appendChild(inputbar());
+  Array.prototype.forEach.call(document.querySelectorAll('[data-autoscroll]'), function(s){ s.scrollTop = s.scrollHeight; });
+}
+
+function rail(){
+  var waiting = data.decisions.length + data.e2e.length;
+  var navs = [['console','▣','主控台'],['planning','✎','規劃'],['pipeline','▦','管線'],['timeline','≡','時間軸'],['cost','$','花費'],['accounts','◎','帳號']];
+  return el('nav', { cls:'rail' }, [
+    el('div', { cls:'top' }, [
+      el('div', { cls:'logo', title:'展開 / 收起', onclick:function(){ ui.railOpen = !ui.railOpen; save(); render(); }, text:'dp' }),
+      span('wordmark', 'dev-paradigm-mcp')
+    ]),
+    HUB ? el('button', { cls:'nav', title:'所有專案(dp hub)', onclick:function(){ location.href = HUB; } }, [span('ic', '⌂'), span('lb', '所有專案')]) : null,
+    navs.map(function(n){
+      return el('button', { cls:'nav' + (ui.view === n[0] ? ' on' : ''), title:n[2], onclick:function(){ ui.view = n[0]; save(); render(); } }, [
+        span('ic', n[1]), span('lb', n[2] + (n[0] === 'pipeline' && waiting ? ' · ' + waiting : ''))
+      ]);
+    }),
+    el('div', { cls:'grow' }),
+    el('div', { cls:'foot' }, [
+      el('span', { cls:'fx' }, [el('span', { cls:'dot' + (LIVE && !data.halted ? ' live' : '') })]),
+      span('fl', LIVE ? (data.halted ? '停機中' : '即時 · 每 ' + LIVE / 1000 + 's') : '快照 ' + when(data.generated_at))
+    ])
+  ]);
+}
+
+function topbar(n){
+  var evs = visible(n.id), last = evs[evs.length - 1];
+  var roles = [['你',['user']],['Orchestrator',['orchestrator']],['Worker',[]],['Verifier',['verifier']],['Critic',['critic']]];
+  var openDispatch = data.in_progress.concat(data.review).some(function(x){ return x.id === n.id && x.dispatch; });
+  var lamps = roles.map(function(r){
+    var acted = r[0] === 'Worker' ? evs.some(function(e){ return e.type === 'worker_done' || e.type === 'worker_blocked'; }) : evs.some(function(e){ return r[1].indexOf(e.actor) >= 0; });
+    var active = false;
+    if (last) {
+      if (r[0] === 'Worker') active = (ui.cursor == null && openDispatch && n.status === 'in-progress') || (ui.cursor != null && (last.type === 'dispatch' || last.type === 'launched' || last.type === 'worker_done'));
+      else active = r[1].indexOf(last.actor) >= 0 && last.type !== 'launched';
+    }
+    var waitYou = r[0] === '你' && (data.e2e.some(function(x){ return x.id === n.id; }) || data.decisions.length);
+    return el('span', { cls:'lamp' + (active ? ' active' : waitYou && ui.cursor == null ? ' wait' : acted ? ' done' : '') }, [span('dot'), r[0]]);
+  });
+  var b = data.budget || {}, pct = b.daily_usd ? Math.min(100, 100 * (b.today_usd || 0) / b.daily_usd) : 0;
+  return el('div', { cls:'topbar' }, [
+    span('lbl', 'ROLES'), el('div', { cls:'lamps' }, lamps),
+    el('div', { cls:'costbar' }, [
+      span('amt', '節點 ' + money(n.cost_usd) + ' · 全部 ' + money(data.cost.total_usd)),
+      el('span', { cls:'track', title:'今天 ' + money(b.today_usd) + ' / 每日上限 ' + money(b.daily_usd) }, [el('span', { cls:'fill' + (pct > 80 ? ' warn' : ''), style:'display:block;width:' + Math.max(2, pct) + '%' })]),
+      span('cap', '今天 ' + money(b.today_usd) + ' / ' + money(b.daily_usd))
+    ])
+  ]);
+}
+
+function header(n){
+  var ds = dispatchesOf(n.id), cur = ds[ds.length - 1];
+  var idx = data.nodes.indexOf(n);
+  var legColor = cur && cur.leg === 'test-fix' ? 'var(--fix)' : 'var(--work)';
+  var total = nodeEvents(n.id).length, shown = visible(n.id).length;
+  return el('div', { cls:'header' }, [
+    el('div', { cls:'story' }, [
+      el('div', { cls:'sid' }, [n.id, span('stamp ' + stampCls(n.status), STATUS[n.status] || n.status)]),
+      el('div', { cls:'obj', title:n.title, text:n.title + (n.release ? ' · ' + n.release : '') })
+    ]),
+    el('div', { cls:'hgrow' }),
+    el('div', { cls:'stat' }, [
+      'attempt ', el('b', { text: cur ? String(cur.attempt) : '0' }), '/' + ((data.caps && data.caps.attempts) || 3),
+      ' · 派工 ', el('b', { text:String(ds.length) }), ' · 事件 ', el('b', { text:String(shown) }), '/' + total,
+      el('br'), el('span', { cls:'leg', style:'color:' + legColor, text: cur ? (LEG[cur.leg] || cur.leg) + ' · ' + cur.leg : n.kind })
+    ]),
+    el('div', { cls:'mode' }, [
+      el('button', { title:'上一個節點', disabled: idx <= 0 ? 'disabled' : null, onclick:function(){ stop(); ui.cursor = null; ui.node = data.nodes[idx - 1].id; ui.pinned = true; ui.tab = null; render(); }, text:'‹' }),
+      el('button', { cls: ui.cursor == null ? 'on' : '', onclick:function(){ stop(); ui.cursor = null; ui.tab = null; render(); }, text: LIVE ? '即時' : '最新' }),
+      el('button', { cls: ui.cursor != null ? 'on' : '', onclick:function(){ if (ui.playing) { stop(); render(); } else play(); }, text: ui.playing ? '❚❚ 暫停' : '▶ 重播' }),
+      el('button', { title:'下一個節點', disabled: idx >= data.nodes.length - 1 ? 'disabled' : null, onclick:function(){ stop(); ui.cursor = null; ui.node = data.nodes[idx + 1].id; ui.pinned = true; ui.tab = null; render(); }, text:'›' })
+    ])
+  ]);
+}
+function stampCls(st){ return st === 'done' ? 'pass' : st === 'blocked' ? 'fail' : st === 'todo' ? 'pending' : 'ask'; }
+
+/* ── 主控台:四欄 ───────────────────────── */
+function renderConsole(main){
+  var n = nodeById(ui.node);
+  if (!n) { main.appendChild(el('div', { cls:'pg-wrap' }, [el('div', { cls:'pg-sub', text:'dag.json 還沒有任何節點。在 Front 說你想做什麼,intake 會把第一版放進來。' })])); return; }
+  main.appendChild(header(n));
+  main.appendChild(topbar(n));
+  if (data.halted) main.appendChild(el('div', { cls:'banner', text:'停機中:' + data.halted.reason + '(在 Front 說「繼續」或 dp resume)' }));
+  var page = el('div', { cls:'page on' });
+  main.appendChild(page);
+  page.appendChild(el('div', { cls:'panes' }, [orchPane(n), workerPane(n), verifierPane(n), spinePane(n)]));
+}
+
+function ln(whoKey, parts, cls){
+  var w = ACTOR[whoKey] || [whoKey, 'w-work'];
+  return el('span', { cls:'ln' + (cls ? ' ' + cls : '') }, [span('who ' + w[1], w[0]), parts]);
+}
+
+function orchPane(n){
+  var evs = visible(n.id), ds = dispatchesOf(n.id), cur = ds[ds.length - 1];
+  var s = el('div', { cls:'stream', 'data-autoscroll':'1' });
+  var contractShown = {};
+  evs.forEach(function(e){
+    var r = e.raw || {};
+    switch (e.type) {
+      case 'node_added': s.appendChild(ln('orchestrator', ['▸ 新增節點 ', span('hl', n.id), span('w-sys', '  (你批准的提案)')])); break;
+      case 'dispatch': {
+        s.appendChild(ln('orchestrator', ['▸ 派工 ', span('hl', r.dispatch_id), ' → [' + r.leg + '] 第 ' + r.attempt + ' 次']));
+        var d = data.dispatches.filter(function(x){ return x.id === r.dispatch_id; })[0];
+        if (d && d.envelope && (d === cur || !contractShown[d.leg])) { contractShown[d.leg] = 1; if (d === cur) s.appendChild(contract(d)); }
+        break;
+      }
+      case 'leg_done': s.appendChild(ln('orchestrator', ['✓ ' + (LEG[r.leg] || r.leg) + '完成'], '')); break;
+      case 'reject': s.appendChild(ln('orchestrator', [span('bad', '✗ 退回'), ':' + (r.reason || '')])); break;
+      case 'block': s.appendChild(ln('orchestrator', [span('bad', '■ 封鎖'), ':' + (r.reason || '')])); break;
+      case 'unblock': s.appendChild(ln('orchestrator', [span('warn', '↻ 解除封鎖'), ' ' + short(e.detail || '', 160)])); break;
+      case 'worker_blocked': s.appendChild(ln('orchestrator', [span('warn', '⚑ worker 回報卡住'), ',轉交 Critic / 你'])); break;
+      case 'accept': s.appendChild(ln('orchestrator', [span('ok', '⇢ 合併進主線'), ' @' + String(r.merge_sha || '').slice(0, 7)])); break;
+      case 'e2e_request': s.appendChild(ln('orchestrator', [span('warn', '☞ 請你親手試用'), ' 整合點'])); break;
+      case 'e2e_confirm': s.appendChild(ln('user', [e.text.replace(/^使用者/, ''), e.detail ? span('w-sys', '  「' + short(e.detail.replace(/^原話:/, ''), 80) + '」') : null])); break;
+      case 'decision_request': s.appendChild(ln('dp-cli', [span('warn', '? '), short(e.text.replace(/^請求決定 \S+:/, ''), 160)])); break;
+      case 'decision': s.appendChild(ln(e.actor === 'user' ? 'user' : e.actor, ['決定 ' + (r.ref || '') + ' = ', span('ok', r.choice || ''), e.detail ? span('w-sys', '  「' + short(e.detail.replace(/^原話:/, ''), 80) + '」') : null])); break;
+    }
+  });
+  if (!evs.length) s.appendChild(el('div', { cls:'empty-pane', text: ui.cursor == null ? '這個節點還沒有事件:等依賴完成後背景迴圈會派工。' : '' }));
+  if (cur && cur.envelope && !s.querySelector('.card')) s.appendChild(contract(cur));
+  var pane = el('section', { cls:'pane p-orch' }, [
+    el('div', { cls:'pane-head' }, [span('av', 'O'), span('nm', 'Orchestrator'), span('sub', 'routes · dispatches'), el('span', { cls:'dot' + (LIVE && n.status === 'in-progress' && ui.cursor == null ? ' live' : '') })]),
+    s,
+    el('div', { cls:'ascii-h' }, ['orch ', span('', '路由表 · 全部節點')]),
+    routeTable()
+  ]);
+  return pane;
+}
+
+function contract(d){
+  var env = d.envelope, key = 'forb-' + d.id, all = !!ui.more[key];
+  var forb = all ? env.forbidden : env.forbidden.slice(0, 4);
+  return el('div', { cls:'card' }, [
+    el('h4', { text:'contract · ' + d.id }),
+    env.objective ? el('div', { cls:'row' }, [span('k', 'objective'), el('div', { cls:'v', text:env.objective })]) : null,
+    el('div', { cls:'row' }, [span('k', 'write-set'), el('div', { cls:'v' }, [el('div', { cls:'chips' }, env.allowed.map(function(p){ return span('chip', p); }))])]),
+    env.forbidden.length ? el('div', { cls:'row' }, [span('k', 'forbidden'), el('div', { cls:'v' }, [el('div', { cls:'chips' }, [
+      forb.map(function(p){ return span('chip no', p); }),
+      env.forbidden.length > 4 ? el('span', { cls:'chip more', text: all ? '收合' : '+' + (env.forbidden.length - 4), onclick:function(){ ui.more[key] = !all; render(); } }) : null
+    ])])]) : null,
+    env.acceptance.length ? el('div', { cls:'row' }, [span('k', 'accept'), el('div', { cls:'v' }, env.acceptance.map(function(c){ return el('div', { style:'font-family:var(--mono);font-size:11.5px;color:#a9e6f6', text:'$ ' + c }); }))]) : null,
+    env.done_when ? el('div', { cls:'row' }, [span('k', 'done when'), el('div', { cls:'v', style:'color:var(--dim)', text:env.done_when })]) : null
+  ]);
+}
+
+function routeTable(){
+  var t = el('table', { cls:'route' });
+  t.appendChild(el('tr', {}, [el('th', { text:'node' }), el('th', { text:'狀態' }), el('th', { text:'下一步' })]));
+  data.nodes.forEach(function(n){
+    var next = n.status === 'done' ? (n.e2e === 'ok' ? '合併 · 試用 ✓' : '合併') : n.status === 'blocked' ? (n.reason || '卡住') :
+      n.status === 'todo' ? (n.depends_on.length ? '等 ' + n.depends_on.join(', ') : '可派') : (n.e2e === 'pending' ? '等你試用' : (STATUS[n.status] || n.status));
+    var cls = n.status === 'done' ? 'ok' : n.status === 'blocked' ? 'bad' : n.status === 'todo' ? '' : 'warn';
+    t.appendChild(el('tr', { cls: n.id === ui.node ? 'cur' : '', onclick:function(){ goNode(n.id); } }, [
+      el('td', { cls:'hl', text:n.id }), el('td', { cls:cls, text:STATUS[n.status] || n.status }), el('td', { text:short(next, 28) })
+    ]));
+  });
+  return el('div', { cls:'ascii' }, [t]);
+}
+
+function workerPane(n){
+  var ds = dispatchesOf(n.id), cur = ds[ds.length - 1];
+  var legs = n.pipeline.slice();
+  ds.forEach(function(d){ if (legs.indexOf(d.leg) < 0) legs.push(d.leg); });
+  var tab = ui.tab || (cur ? cur.leg : legs[0]);
+  var evs = visible(n.id);
+  var tabs = el('div', { cls:'tabs' }, legs.map(function(l){
+    var hasFail = ds.some(function(d){ return d.leg === l && evs.some(function(e){ return e.raw && e.raw.dispatch_id === d.id && e.type === 'reject'; }); });
+    return el('button', { cls:(l === tab ? 'on' : '') + (l === 'test-fix' ? ' t-fix' : ''), onclick:function(){ ui.tab = l; render(); } }, [
+      LEG[l] ? l : l, hasFail && l !== tab ? span('blink') : null
+    ]);
+  }));
+  var s = el('div', { cls:'stream', 'data-autoscroll':'1' });
+  var mine = ds.filter(function(d){ return d.leg === tab; });
+  if (!mine.length) s.appendChild(el('div', { cls:'empty-pane', text:(LEG[tab] || tab) + '還沒派工。' }));
+  mine.forEach(function(d){
+    var dEvs = evs.filter(function(e){ return e.raw && e.raw.dispatch_id === d.id; });
+    var fix = d.leg === 'test-fix';
+    s.appendChild(el('span', { cls:'ln' }, [span('who ' + (fix ? 'w-fix' : 'w-work'), 'worker'), '▸ ', span('hl', d.id), ' · attempt ' + d.attempt + ' · ' + when(d.ts)]));
+    var done = dEvs.filter(function(e){ return e.type === 'worker_done' || e.type === 'worker_blocked' || e.type === 'worker_failed'; })[0];
+    if (!done) { s.appendChild(el('span', { cls:'ln dim', text: dEvs.some(function(e){ return e.type === 'launched'; }) ? '  ⋯ 施工中(headless,在沒有 .git 的副本裡)' : '  ⋯ 等待啟動' })); return; }
+    var rep = d.report;
+    if (rep) {
+      var card = el('div', { cls:'card rep' + (fix ? ' fix' : '') + (rep.kind === 'escalation' ? ' bad' : '') }, [
+        el('h4', {}, [rep.kind === 'escalation' ? '交件 · 回報卡住' : '交件報告', el('span', { cls:'r', text: done.raw && done.raw.commit ? '@' + done.raw.commit.slice(0, 7) : '' })]),
+        rep.summary ? el('div', { cls:'think', onclick:function(){ this.classList.toggle('open'); }, text:rep.summary }) : null,
+        rep.claims.map(function(c){
+          var ok = !c.unverified && c.exit === 0, bad = !c.unverified && c.exit != null && c.exit !== 0;
+          return el('div', { cls:'claim ' + (c.unverified ? 'unv' : ok ? 'ok' : bad ? 'bad' : '') }, [
+            span('ci', c.unverified ? '⚠' : ok ? '✓' : bad ? '✗' : '·'),
+            el('div', { cls:'ct' }, [
+              el('div', { cls:'t', text:c.text }),
+              c.cmd ? el('div', {}, ['$ ', span('cmd', c.cmd), c.exit != null ? span(c.exit === 0 ? 'ok' : 'bad', '  → exit ' + c.exit) : null]) : null,
+              c.tail ? span('tail', c.tail) : null,
+              c.unverified && c.why ? span('tail', '未驗證:' + c.why) : null
+            ])
+          ]);
+        })
+      ]);
+      s.appendChild(card);
+    } else s.appendChild(el('span', { cls:'ln', text:'  ' + done.text }));
+    dEvs.forEach(function(e){
+      if (e.type === 'reject') s.appendChild(el('span', { cls:'ln sub' }, [span('bad', '退回:'), (e.raw.findings || []).map(function(f){ return '[' + f.check + '] ' + f.detail; }).join(';') || e.raw.reason]));
+      if (e.type === 'gates') s.appendChild(el('span', { cls:'ln sub' }, ['全 gate ', span(e.raw.ok ? 'ok' : 'bad', e.raw.ok ? '綠' : '紅')]));
+    });
+  });
+  return el('section', { cls:'pane p-work' }, [
+    el('div', { cls:'pane-head', style:'padding-bottom:0' }, [tabs, span('sub', 'worker · ' + (cur ? 'cycle ' + ds.filter(function(d){ return d.leg === tab; }).length : 'idle')), el('span', { cls:'dot' + (LIVE && n.status === 'in-progress' && ui.cursor == null ? ' live' : '') })]),
+    s,
+    todo(n, ds, evs)
+  ]);
+}
+
+function todo(n, ds, evs){
+  var items = [];
+  var cur = ds[ds.length - 1];
+  var doneLegs = {};
+  evs.forEach(function(e){ if (e.type === 'leg_done' && e.raw.leg) doneLegs[e.raw.leg] = 1; });
+  var accepted = evs.some(function(e){ return e.type === 'accept'; });
+  n.pipeline.forEach(function(l){
+    var tries = ds.filter(function(d){ return d.leg === l; }).length;
+    var st = doneLegs[l] || accepted ? 'done' : cur && cur.leg === l ? 'doing' : '';
+    items.push([st, (LEG[l] || l) + '(' + l + ')' + (l === 'characterize' ? ':為既有程式寫測試,在現在的程式上必須綠' + (n.characterize ? '(' + n.characterize.join(', ') + ')' : '') : l === 'test' ? ':寫測試,必須紅' : l === 'dev' ? ':寫實作,必須綠' : l === 'integrate' ? ':接通真實資料流' : ''), tries ? tries + ' 次' : '']);
+  });
+  var gates = evs.filter(function(e){ return e.type === 'gates'; }), lastGate = gates[gates.length - 1];
+  items.push([accepted ? 'done' : lastGate && !lastGate.raw.ok ? 'fail' : lastGate ? 'doing' : '', '機器驗證 + 全 gate 綠', gates.length ? gates.length + ' 次' : '']);
+  items.push([accepted ? 'done' : '', '合併進主線', '']);
+  if (n.kind === 'integration') {
+    var conf = evs.some(function(e){ return e.type === 'e2e_confirm'; }), req = evs.some(function(e){ return e.type === 'e2e_request'; });
+    items.push([conf ? 'done' : req ? 'doing' : '', '你親手試用 @e2e 場景', '']);
+  }
+  var doneN = items.filter(function(i){ return i[0] === 'done'; }).length;
+  return el('div', { cls:'todo' }, [
+    el('div', { cls:'th' }, ['to-do · ' + n.id, span('ct', doneN + '/' + items.length)]),
+    items.map(function(i){ return el('div', { cls:'ti ' + i[0] }, [span('box', i[0] === 'done' ? '✓' : i[0] === 'fail' ? '✗' : ''), span('tt', i[1]), span('tm', i[2])]); })
+  ]);
+}
+
+function verifierPane(n){
+  var evs = visible(n.id);
+  var s = el('div', { cls:'stream', 'data-autoscroll':'1' });
+  var lastCritic = null;
+  evs.forEach(function(e){
+    if (e.type === 'verify') {
+      var res = e.raw.results || [];
+      var f = res.filter(function(r){ return r.outcome === 'FAIL'; }).length, a = res.filter(function(r){ return r.outcome === 'ABSTAIN'; }).length;
+      s.appendChild(el('div', { cls:'vblock' }, [
+        el('span', { cls:'ln' }, [span('who w-ver', 'verifier'), '▸ ', span('hl', e.raw.dispatch_id), ' · ', span(f ? 'bad' : a ? 'warn' : 'ok', f ? 'FAIL ' + f : a ? 'ABSTAIN ' + a : '全過'), span('w-sys', ' / ' + res.length + ' 項')]),
+        res.map(function(r){ return el('div', { cls:'vrow' }, [span('out ' + r.outcome, r.outcome === 'NO_OBJECTION' ? 'NO OBJ' : r.outcome), span('ck', r.check), span('dt', r.detail ? short(r.detail, 220) : '')]); })
+      ]));
+    } else if (e.type === 'critic') {
+      lastCritic = e;
+      var v = e.raw.verdict;
+      s.appendChild(el('div', { cls:'card crit' }, [
+        el('h4', {}, ['critic · ' + (e.raw.ref || ''), el('span', { cls:'r' }, [span('stamp ' + (v === 'PASS' ? 'pass' : v === 'FAIL' ? 'fail' : 'ask'), v === 'ASK_USER' ? '問你' : v)])]),
+        e.detail ? el('div', { cls:'think', onclick:function(){ this.classList.toggle('open'); }, text:e.detail }) : null
+      ]));
+    } else if (e.type === 'gates') {
+      s.appendChild(el('span', { cls:'ln' }, [span('who w-sys', 'gates'), (e.raw.results || []).map(function(r){ return r.known_red ? span('warn', '≈ ' + r.name + '(' + r.known_red + ' 個基線本來就紅)  ') : span(r.exit === 0 ? 'ok' : 'bad', (r.exit === 0 ? '✓ ' : '✗ ') + r.name + '  '); })]));
+    }
+  });
+  if (!s.childNodes.length) s.appendChild(el('div', { cls:'empty-pane', text:'還沒有交件可驗。' }));
+  var v = lastCritic && lastCritic.raw.verdict;
+  var st = v ? span('stamp ' + (v === 'PASS' ? 'pass' : v === 'FAIL' ? 'fail' : 'ask'), 'critic ' + v) : span('stamp pending', 'critic —');
+  return el('section', { cls:'pane p-ver' }, [
+    el('div', { cls:'pane-head' }, [span('av', 'V'), span('nm', 'Verifier · Critic'), el('span', { style:'margin-left:auto' }, [st])]),
+    s
+  ]);
+}
+
+function spinePane(n){
+  var evs = visible(n.id);
+  var s = el('div', { cls:'spine-stream', 'data-autoscroll':'1' });
+  function sp(cls, ico, kids){ s.appendChild(el('div', { cls:'sp ' + cls }, [span('ico', ico), el('span', { cls:'tx' }, kids)])); }
+  evs.forEach(function(e){
+    var r = e.raw || {};
+    switch (e.type) {
+      case 'dispatch': sp('', '▸', [el('b', { text:'worktree' }), ' ' + r.dispatch_id + ' ', span('res', 'ready')]); break;
+      case 'launched': sp('ok', '⚙', [el('b', { text:'launch' }), ' worker ', span('res', 'ok')]); break;
+      case 'worker_done': sp('ok', '⇡', [el('b', { text:'commit' }), ' @' + String(r.commit || '').slice(0, 7), ' ', span('res', 'ok')]); break;
+      case 'worker_blocked': sp('gate', '⚑', [el('b', { text:'worker' }), ' blocked ', span('res warn', 'escalate')]); break;
+      case 'worker_failed': sp('bad', '×', [el('b', { text:'worker' }), ' failed ', span('res bad', 'fail')]); break;
+      case 'verify': {
+        var res = r.results || [], f = res.filter(function(x){ return x.outcome === 'FAIL'; }).length;
+        sp(f ? 'bad' : 'ok', f ? '×' : '✓', [el('b', { text:'verifier' }), ' ' + (res.length - f) + '/' + res.length + ' ', span('res' + (f ? ' bad' : ''), f ? 'fail' : 'ok')]); break;
+      }
+      case 'gates': sp(r.ok ? 'gate' : 'bad', '◆', [el('b', { text:'merge-tree gates' }), ' ', span('res' + (r.ok ? '' : ' bad'), r.ok ? 'pass' : 'fail')]); break;
+      case 'accept': sp('ok', '⇢', [el('b', { text:'merge' }), ' @' + String(r.merge_sha || '').slice(0, 7), ' ', span('res', 'ok')]); break;
+      case 'reject': sp('bad', '↩', [el('b', { text:'reject' }), ' ' + short(r.reason || '', 40)]); break;
+      case 'block': sp('bad', '■', [el('b', { text:'block' }), ' ' + short(r.reason || '', 40)]); break;
+      case 'cost': sp('', '$', [el('b', { text:r.role || 'cost' }), ' ' + money(r.usd)]); break;
+      case 'e2e_confirm': sp('ok', '☑', [el('b', { text:'e2e' }), ' 你確認 ', span('res', 'ok')]); break;
+    }
+  });
+  if (!s.childNodes.length) s.appendChild(el('div', { cls:'empty-pane', text:'—' }));
+  return el('section', { cls:'pane p-spine' }, [
+    el('div', { cls:'pane-head' }, [span('av', 'H'), span('nm', 'Harness'), span('sub', 'dp script')]),
+    s
+  ]);
+}
+
+/* ── 底部:要你決定的事(唯讀:只顯示該說什麼 / 該打什麼) ── */
+function inputbar(){
+  var q = data.decisions[0], e2e = data.e2e[0], waiting = data.decisions.length + data.e2e.length, cmd = null, text;
+  if (q) { cmd = 'dp decide ' + q.ref + ' ' + (q.recommendation || '<選項>'); text = [q.question + (q.recommendation ? '(建議 ' + q.recommendation + ')' : '') + '  ', el('code', { text:cmd })]; }
+  else if (e2e) { cmd = 'dp confirm ' + e2e.id + ' yes'; text = ['親手試用 ' + e2e.id + ':' + e2e.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') + '  ', el('code', { text:cmd })]; }
+  else text = [data.halted ? '停機中:' + data.halted.reason : '沒有要你決定的事。背景迴圈會自己推進;要新功能就在 Front 說。'];
+  var btn = cmd ? el('button', { cls:'send', onclick:function(){
+    var b = this; try { navigator.clipboard.writeText(cmd).then(function(){ b.textContent = '已複製'; setTimeout(function(){ b.textContent = '複製指令'; }, 1500); }); } catch (err) {}
+  }, text:'複製指令' }) : el('span', { cls:'send ghost', text:'唯讀' });
+  return el('div', { cls:'inputbar' }, [
+    el('span', { cls:'owner' + (waiting ? ' ask' : '') }, [span('odot'), waiting ? '要你決定 · ' + waiting : 'FRONT']),
+    el('div', { cls:'field' }, [el('div', { cls:'q', title: q ? q.question : '' }, text), btn])
+  ]);
+}
+
+/* ── 管線頁 ─────────────────────────────── */
+function pageShell(main, title, tag, sub){
+  var wrap = el('div', { cls:'pg-wrap' }, [el('div', { cls:'pg-title' }, [el('h2', { text:title }), span('tag', tag)]), sub ? el('div', { cls:'pg-sub', text:sub }) : null]);
+  main.appendChild(el('div', { cls:'header' }, [el('div', { cls:'story' }, [el('div', { cls:'sid', text:data.project }), el('div', { cls:'obj', text:'帳本 #' + data.ledger_seq + (data.mode && data.mode.mode === 'brownfield' ? ' · 既有專案' : '') + ' · 自治 L' + data.autonomy + ' · ' + data.counts.done + '/' + data.counts.nodes + ' 完成' })])]));
+  if (data.halted) main.appendChild(el('div', { cls:'banner', text:'停機中:' + data.halted.reason }));
+  main.appendChild(el('div', { cls:'page on' }, [wrap]));
+  return wrap;
+}
+function goNode(id){ stop(); ui.cursor = null; ui.node = id; ui.pinned = true; ui.tab = null; ui.view = 'console'; save(); render(); }
+
+function renderPipeline(main){
+  var wrap = pageShell(main, '管線', 'dag.json + ledger', '一版一版長大:每一版的能力節點做完,最後一個整合點你親手試過,下一版才開工。點任一張卡回主控台看它。');
+  var rels = [];
+  data.nodes.forEach(function(n){ var r = n.release || '—'; if (rels.indexOf(r) < 0) rels.push(r); });
+  var wave = el('div', { cls:'wave' }, ['版本']);
+  rels.forEach(function(r){
+    var ns = data.nodes.filter(function(n){ return (n.release || '—') === r; }), done = ns.every(function(n){ return n.status === 'done'; });
+    var now = !done && ns.some(function(n){ return n.status !== 'todo'; });
+    wave.appendChild(span('wv' + (done ? ' done' : now ? ' now' : ''), r + ' ' + ns.filter(function(n){ return n.status === 'done'; }).length + '/' + ns.length));
+  });
+  wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'路線' }), el('div', { cls:'panel' }, [wave])]));
+
+  var waiting = data.decisions.length + data.e2e.length;
+  var askPanel = el('div', { cls:'panel' });
+  if (!waiting) askPanel.appendChild(el('div', { cls:'empty-pane', text:'沒有。' }));
+  data.decisions.forEach(function(q){
+    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', q.ref), el('div', { cls:'ar-q' }, [q.question, el('small', { text:(q.options || []).map(function(o){ return o.key + '=' + o.label; }).join(' · ') + (q.reason ? ' · ' + q.reason : '') })]), el('code', { text:'dp decide ' + q.ref + ' ' + (q.recommendation || '<選項>') })]));
+  });
+  data.e2e.forEach(function(x){
+    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', x.id), el('div', { cls:'ar-q' }, ['親手試用', el('small', { text:x.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') })]), el('code', { text:'dp confirm ' + x.id + ' yes' })]));
+  });
+  wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'要你決定 · ' + waiting }), askPanel]));
+
+  var lanes = [['todo','未開始',''],['in-progress','施工中','run'],['review','驗收中','rev'],['blocked','卡住','blok'],['done','完成','done']];
+  var box = el('div', { cls:'lanes' });
+  lanes.forEach(function(l){
+    var ns = data.nodes.filter(function(n){ return n.status === l[0] || (l[0] === 'todo' && n.status === 'stale'); });
+    box.appendChild(el('div', { cls:'lane' }, [el('h4', {}, [l[1], el('span', { text:String(ns.length) })]), ns.map(function(n){
+      return el('div', { cls:'scard ' + l[2], onclick:function(){ goNode(n.id); } }, [
+        el('div', { cls:'sc-id', text:n.id + (n.release ? ' · ' + n.release : '') }),
+        el('div', { cls:'sc-t', text:n.title }),
+        el('div', { cls:'sc-m', text:n.kind + ' · 派工 ' + n.dispatches + (n.rejects ? ' · 退回 ' + n.rejects : '') + (n.cost_usd ? ' · ' + money(n.cost_usd) : '') + (n.e2e === 'ok' ? ' · 試用 ✓' : n.e2e === 'pending' ? ' · 待試用' : '') }),
+        n.reason ? el('div', { cls:'sc-why', text:n.reason }) : null
+      ]);
+    })]));
+  });
+  wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'節點' }), box]));
+}
+
+/* ── 規劃頁 ─────────────────────────────── */
+var TALK = { decision_request:1, decision:1, e2e_request:1, e2e_confirm:1, halt:1, resume:1, node_added:1 };
+function proposalOf(ref){ var id = String(ref || '').replace(/^node:/, ''); return data.proposals.filter(function(p){ return p.id === id; })[0] || null; }
+function kindOf(ref){ ref = String(ref || ''); return ref.indexOf('node:') === 0 ? 'proposal' : ref.indexOf('accept:') === 0 ? 'accept' : 'stuck'; }
+
+function releaseState(rel){
+  if (data.mode && data.mode.mode === 'brownfield' && rel === 'v0') return { st:'done', ns:[], sub:[['ok', '既有程式'], [data.mode.asis ? 'ok' : 'now', data.mode.asis ? 'AS-IS ✓' : 'AS-IS 還沒寫'], [data.mode.baseline ? 'ok' : 'now', data.mode.baseline ? '基線 ✓' : '基線還沒記']] };
+  var ns = data.nodes.filter(function(n){ return rel === '(未分版)' ? !n.release : n.release === rel; });
+  var pending = data.decisions.some(function(d){ var p = proposalOf(d.ref); return p && p.release === rel; });
+  if (!ns.length) return { st: pending ? 'active' : '', ns: ns, sub: pending ? [['now', '提案等你批准']] : [] };
+  var done = ns.filter(function(n){ return n.status === 'done'; }).length;
+  var integ = ns.filter(function(n){ return n.kind === 'integration'; })[0];
+  var tried = integ && integ.e2e === 'ok';
+  var sub = [['ok', '已批准'], [done === ns.length ? 'ok' : 'now', '節點 ' + done + '/' + ns.length]];
+  if (integ) sub.push([tried ? 'ok' : integ.e2e === 'pending' ? 'now' : '', tried ? '你試用 ✓' : integ.e2e === 'pending' ? '等你試用' : '試用']);
+  return { st: done === ns.length && (!integ || tried) ? 'done' : 'active', ns: ns, sub: sub };
+}
+
+/* greenfield / brownfield:唯讀的切換外觀(要改在 dp setup) */
+function modeToggle(){
+  var m = (data.mode && data.mode.mode) || 'greenfield';
+  return el('div', { cls:'mode pmode', title:'專案模式(dp setup 設定;這頁只讀)' }, [
+    el('button', { cls: m === 'greenfield' ? 'on' : '', disabled:'disabled', text:'Greenfield' }),
+    el('button', { cls: m === 'brownfield' ? 'on bf' : '', disabled:'disabled', text:'Brownfield' })
+  ]);
+}
+function brownfieldBanner(){
+  var m = data.mode;
+  if (!m || m.mode !== 'brownfield') return null;
+  var items = [span('k', '既有專案'), span('', (m.language || '') + (m.test_cmd ? ' · 測試 ' + m.test_cmd : ''))];
+  if (!m.baseline) items.push(span('warn', '還沒記測試基線(dp onboard)'));
+  else {
+    var red = m.baseline.gates.filter(function(g){ return g.exit !== 0; });
+    items.push(red.length ? span('warn', '基線 ' + m.baseline.main_sha + ':' + red.map(function(g){ return g.name + (g.failing == null ? ' 紅(看不出哪些)' : ' ' + g.failing + ' 個本來就紅'); }).join('、'))
+      : span('ok', '基線 ' + m.baseline.main_sha + ':全綠'));
+  }
+  items.push(m.asis ? span('ok', 'docs/AS-IS.md ✓') : span('warn', '還沒有 docs/AS-IS.md(請 Front 做 brownfield-onboard)'));
+  return el('div', { cls:'bf-banner' }, items);
+}
+
+function renderPlanning(main){
+  main.appendChild(el('div', { cls:'header' }, [
+    el('div', { cls:'story' }, [el('div', { cls:'sid', text:'PLANNING · intake' }), el('div', { cls:'obj', text:'你和 Front 一起把需求變成路線圖、gherkin 與 DAG 節點的紀錄' })]),
+    el('div', { cls:'hgrow' }),
+    modeToggle(),
+    el('div', { cls:'mode' }, [
+      el('button', { cls: !ui.psAll ? 'on' : '', onclick:function(){ ui.psAll = false; render(); }, text:'只看規劃' }),
+      el('button', { cls: ui.psAll ? 'on' : '', onclick:function(){ ui.psAll = true; render(); }, text:'含施工卡點' })
+    ])
+  ]));
+  var grid = el('div', { cls:'ps-grid' });
+  var bf = brownfieldBanner();
+  main.appendChild(el('div', { cls:'page on' }, bf ? [bf, grid] : [grid]));
+
+  // 左:對話
+  var st = el('div', { cls:'ps-stream', 'data-autoscroll':'1' });
+  var reqByRef = {};
+  data.timeline.forEach(function(e){
+    if (!TALK[e.type]) return;
+    var r = e.raw || {};
+    if (e.type === 'decision_request') {
+      var k = kindOf(r.ref);
+      if (k !== 'proposal' && !ui.psAll) return;
+      reqByRef[r.ref] = r;
+      var p = k === 'proposal' ? proposalOf(r.ref) : null;
+      var body = el('div', { cls:'b' }, [r.question || e.text]);
+      if (p) {
+        p.nodes.forEach(function(n){
+          body.appendChild(el('div', { cls:'pnode' }, [
+            el('div', { cls:'pid' }, [n.id, span('', n.kind + (n.depends_on.length ? ' · ← ' + n.depends_on.join(', ') : ''))]),
+            el('div', { cls:'pin', text:(n.title ? n.title + ':' : '') + (n.intent || '') }),
+            el('div', { cls:'chips' }, n.owns.map(function(o){ return span('chip', o); })),
+            n.characterize ? el('div', { cls:'chips' }, n.characterize.skip ? [span('chip pin-skip', '不釘現況:' + n.characterize.skip)]
+              : [span('chip pin', '先釘住現有行為')].concat(n.characterize.targets.map(function(t){ return span('chip pin', t); }))) : null
+          ]));
+        });
+        p.gherkin.forEach(function(g){
+          body.appendChild(el('div', { cls:'gk-file', onclick:function(ev){ if (ev.target.tagName !== 'PRE') this.classList.toggle('open'); } }, ['▸ ' + g.path + ' · ' + g.scenarios + ' 個場景', el('pre', { text:g.text })]));
+        });
+      }
+      if (r.options && r.options.length) {
+        var answer = null;
+        for (var i = 0; i < data.timeline.length; i++) { var x = data.timeline[i]; if (x.type === 'decision' && x.raw && x.raw.ref === r.ref && x.seq > e.seq) { answer = x.raw.choice; break; } }
+        body.appendChild(el('div', { cls:'opts' }, r.options.map(function(o){
+          return el('div', { cls:'gopt' + (answer === o.key ? ' picked' : '') }, [span('gk', o.key), span('gt', o.label), r.recommendation === o.key ? span('gr', '建議') : null]);
+        })));
+      }
+      var open = r.options && r.options.length && !data.timeline.some(function(x){ return x.type === 'decision' && x.raw && x.raw.ref === r.ref && x.seq > e.seq; });
+      st.appendChild(el('div', { cls:'ps-msg ps-b' + (k === 'stuck' || open ? ' stuck' : '') }, [
+        el('div', { cls:'lbl', text:(k === 'proposal' ? 'Front · 提案 ' + (p ? p.id + ' · ' + (p.release || '') : '') : k === 'accept' ? 'dp · 等你決定合併' : 'dp · 卡點') + ' · ' + when(e.ts) }), body
+      ]));
+    } else if (e.type === 'decision') {
+      var k2 = kindOf(r.ref);
+      if (k2 !== 'proposal' && !ui.psAll) return;
+      if (e.actor !== 'user') { st.appendChild(el('div', { cls:'sysln', text:e.text })); return; }
+      st.appendChild(el('div', { cls:'ps-msg me' }, [el('div', { cls:'lbl', text:'你 · ' + (r.choice || '') + ' · ' + when(e.ts) }), el('div', { cls:'b', text:r.verbatim || r.choice || '' })]));
+    } else if (e.type === 'node_added') {
+      st.appendChild(el('div', { cls:'sysln' }, ['dp ▸ 寫進 DAG:', el('b', { text:e.node || '' })]));
+    } else if (e.type === 'e2e_request') {
+      var n = nodeById(e.node);
+      st.appendChild(el('div', { cls:'ps-msg ps-b' }, [el('div', { cls:'lbl', text:'Front · 請你試用 ' + e.node + ' · ' + when(e.ts) }),
+        el('div', { cls:'b' }, [(n ? n.title + ' 已經合併,請親手跑一次這些場景:' : '請親手試用:'),
+          el('div', { cls:'opts' }, (r.scenarios || []).map(function(sc){ return el('div', { cls:'gopt' }, [span('gk', '@e2e'), span('gt', sc.name || (sc.file + ':' + sc.line))]); }))])]));
+    } else if (e.type === 'e2e_confirm') {
+      st.appendChild(el('div', { cls:'ps-msg me' }, [el('div', { cls:'lbl', text:'你 · 試用 ' + (r.ok === false ? '不通過' : '通過') + ' · ' + when(e.ts) }), el('div', { cls:'b', text:r.verbatim || (r.ok ? 'yes' : 'no') })]));
+    } else if (e.type === 'halt' || e.type === 'resume') {
+      st.appendChild(el('div', { cls:'sysln', text:'dp ▸ ' + e.text }));
+    }
+  });
+  if (!st.childNodes.length) st.appendChild(el('div', { cls:'empty-pane', text:'還沒有規劃紀錄。在 Front(Claude Code 的 /inbox 視窗)說你想做什麼,intake 會先畫路線圖、再寫 gherkin 給你批准。' }));
+  var q = data.decisions[0];
+  grid.appendChild(el('div', { cls:'ps-chat' }, [
+    el('div', { cls:'pch' }, [span('av', 'F'), span('nm', 'Front · intake'), span('ph', 'idea → 路線圖 → gherkin → DAG')]),
+    st,
+    el('div', { cls:'ps-free' }, [el('div', { cls:'hint', text: q ? '等你回答:' + short(q.question, 60) + '(在 Front 回答)' : '要新功能或改需求,在 Front 說;這頁只讀。' })])
+  ]));
+
+  // 右:路線圖進度
+  var rels = data.roadmap.length ? data.roadmap.map(function(x){ return { release:x.release, text:x.text.replace(/[((](已完成|這一版|進行中)[))]/g, '').trim() }; }) : [];
+  data.nodes.forEach(function(n){ var rl = n.release || '(未分版)'; if (!rels.some(function(x){ return x.release === rl; })) rels.push({ release:rl, text:'' }); });
+  var stp = el('div', { cls:'stepper' }, [el('div', { cls:'sh' }, ['路線圖', span('md', data.roadmap.length ? 'docs/ROADMAP.md' : '來自 dag.json')])]);
+  if (!rels.length) stp.appendChild(el('div', { cls:'empty-pane', text:'還沒有路線圖。' }));
+  var prevDone = true;
+  rels.forEach(function(x, i){
+    var rs = releaseState(x.release), cls = rs.st;
+    var first = rs.ns[rs.ns.length - 1] || rs.ns[0];
+    stp.appendChild(el('div', { cls:'step ' + cls + (first ? ' click' : ''), onclick: first ? function(){ goNode(first.id); } : null }, [
+      span('sline'), el('span', { cls:'snode', text: cls === 'done' ? '✓' : String(i + 1) }),
+      el('div', { cls:'ct' }, [
+        el('div', { cls:'nm', text:x.release + (x.text ? ' · ' + x.text : '') }),
+        rs.ns.length ? el('div', { cls:'ds', text:rs.ns.map(function(n){ return n.id; }).join(' → ') }) : (cls === '' ? el('div', { cls:'ds', text: prevDone ? '下一版:還沒提案(在 Front 說「開始 ' + x.release + '」)' : '等上一版試用通過' }) : null),
+        rs.sub.length ? el('div', { cls:'sub' }, rs.sub.map(function(s2){ return span(s2[0], s2[1]); })) : null
+      ])
+    ]));
+    prevDone = cls === 'done';
+  });
+  grid.appendChild(stp);
+}
+
+/* ── 時間軸頁 ─────────────────────────────── */
+function renderTimeline(main){
+  var wrap = pageShell(main, '時間軸', 'ledger/events.jsonl', '帳本只增不改;這裡是它的原樣重播。點有 ▸ 的列看退回理由、Critic 說明、驗證與 gate 結果。');
+  var f = el('div', { cls:'filters' });
+  [null].concat(data.nodes.map(function(n){ return n.id; })).forEach(function(id){
+    f.appendChild(el('span', { cls:'chip' + (ui.tlNode === id ? ' on' : ''), text: id || '全部', onclick:function(){ ui.tlNode = id; render(); } }));
+  });
+  f.appendChild(el('span', { cls:'chip' + (ui.tlAll ? ' on' : ''), text:'含花費 / 啟動 / 看收件匣', onclick:function(){ ui.tlAll = !ui.tlAll; render(); } }));
+  wrap.appendChild(f);
+  var list = el('div', { cls:'panel' });
+  var evs = data.timeline.filter(function(e){ return (ui.tlAll || !QUIET[e.type]) && (!ui.tlNode || e.node === ui.tlNode); }).slice().reverse();
+  var lim = ui.more.tl || 150;
+  evs.slice(0, lim).forEach(function(e){
+    var w = ACTOR[e.actor] || [e.actor, 'w-work'];
+    var row = el('div', { cls:'tl-row t-' + e.type + (e.detail ? ' has' : ''), onclick: e.detail ? function(){ this.classList.toggle('open'); } : null }, [
+      span('seq', '#' + e.seq), span('ts', when(e.ts)), span('ac ' + w[1], w[0]),
+      el('div', { cls:'tx' }, [e.text + (e.detail ? '  ▸' : ''), e.detail ? el('pre', { text:e.detail }) : null])
+    ]);
+    list.appendChild(row);
+  });
+  if (evs.length > lim) list.appendChild(el('button', { cls:'send ghost', style:'margin-top:10px', text:'再看 150 筆(共 ' + evs.length + ')', onclick:function(){ ui.more.tl = lim + 150; render(); } }));
+  wrap.appendChild(list);
+}
+
+/* ── 花費頁 ─────────────────────────────── */
+function renderCost(main){
+  var wrap = pageShell(main, '花費', 'cost events', '每一筆都是帳本裡的 cost 事件(worker 與 Critic;Verifier 小模型沒記帳)。');
+  var b = data.budget || {};
+  wrap.appendChild(el('div', { cls:'kpis' }, [
+    ['總花費', money(data.cost.total_usd)], ['今天', money(b.today_usd)], ['每日上限', money(b.daily_usd)], ['完成節點', data.counts.done + ' / ' + data.counts.nodes],
+    ['平均每節點', money(data.counts.done ? data.cost.total_usd / data.counts.done : 0)]
+  ].map(function(k){ return el('div', { cls:'kpi' }, [span('', k[0]), el('b', { text:k[1] })]); })));
+  function bars(title, obj){
+    var keys = Object.keys(obj).sort(function(a, c){ return obj[c] - obj[a]; }), m = Math.max.apply(null, keys.map(function(k){ return obj[k]; }).concat([0.01]));
+    var p = el('div', { cls:'panel' });
+    if (!keys.length) p.appendChild(el('div', { cls:'empty-pane', text:'沒有紀錄。' }));
+    keys.forEach(function(k){ p.appendChild(el('div', { cls:'bar' }, [span('bl', k), el('span', { cls:'bt' }, [el('i', { style:'width:' + Math.max(2, 100 * obj[k] / m) + '%' })]), span('bv', money(obj[k]))])); });
+    wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:title }), p]));
+  }
+  bars('依角色', data.cost.by_role);
+  bars('依節點', data.cost.by_node);
+  var acc = data.accounts || [];
+  if (acc.length) {
+    var t = el('table', { cls:'route' });
+    t.appendChild(el('tr', {}, ['帳號', 'CLI · 方案', '角色', '近5小時', '近7天', '花費', '狀態'].map(function(h){ return el('th', { text:h }); })));
+    acc.forEach(function(a){
+      t.appendChild(el('tr', {}, [
+        el('td', { cls:'hl', text:a.name }), el('td', { text:(a.cli || '?') + (a.plan ? ' · ' + a.plan : '') }), el('td', { text:a.roles.join('、') || '—' }),
+        el('td', { text:a.dispatches_5h + ' 次' }), el('td', { text:a.dispatches_7d + ' 次' }), el('td', { text:money(a.usd_total) }),
+        el('td', { cls: !a.registered ? 'bad' : a.limited_until ? 'warn' : 'ok', text: !a.registered ? '這台電腦沒有' : a.limited_until ? '冷卻到 ' + when(a.limited_until) : '可用' })
+      ]));
+    });
+    wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'訂閱帳號' }), el('div', { cls:'ascii' }, [t])]));
+  }
+}
+
+/* ── 帳號頁(v4.6) ─────────────────────────────── */
+var ROLE_LABEL = { worker:'Worker(施工)', critic:'Critic(L2 審查)', verifier:'Verifier(小模型檢查)' };
+function acctApi(body, done){
+  ui.acct.busy = true;
+  fetch('api/account', { method:'POST', headers:{ 'content-type':'application/json', 'x-dp-token':TOKEN }, body:JSON.stringify(body) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ ui.acct.busy = false; done(j); })
+    .catch(function(e){ ui.acct.busy = false; done({ ok:false, out:String(e) }); });
+}
+function acctRefresh(){
+  return fetch('data.json', { cache:'no-store' }).then(function(r){ return r.json(); }).then(function(nd){ data = nd; });
+}
+function acctLoadLogin(){
+  if (!LIVE || ui.acct.login === 'loading') return;
+  ui.acct.login = 'loading';
+  acctApi({ action:'list' }, function(j){
+    var m = {};
+    try { JSON.parse(j.out).accounts.forEach(function(a){ m[a.name] = a.login; }); } catch (e) {}
+    ui.acct.login = m; if (ui.view === 'accounts') render();
+  });
+}
+function acctDo(body, okMsg){
+  acctApi(body, function(j){
+    ui.acct.msg = { ok:j.ok, text:j.out || (j.ok ? okMsg : '失敗') };
+    // 存好的那個角色改回顯示設定檔的值;其他角色還沒存的勾選不動
+    if (body.action === 'use' && ui.acct.roles) delete ui.acct.roles[body.role];
+    acctRefresh().then(function(){ if (body.action !== 'use') ui.acct.login = null; render(); });
+  });
+}
+function renderAccounts(main){
+  var cfg = data.account_config || { clis:[], registry:[], roles:{} };
+  var wrap = pageShell(main, '帳號', 'dp account', LIVE ? '在這台電腦登記訂閱帳號,設定每個角色輪流用哪幾個。改的是 dp.config.json(會 commit)與這台電腦的帳號清單,跟在終端機打 dp account 一樣。' :
+    '這是快照,不能改。要在頁面上設定,請跑 node tools/dp.mjs dashboard --serve。');
+  if (LIVE && ui.acct.login == null) acctLoadLogin();
+  if (ui.acct.msg) wrap.appendChild(el('div', { cls:'acct-msg ' + (ui.acct.msg.ok ? 'ok' : 'bad'), text:ui.acct.msg.text }));
+  var usage = {}; (data.accounts || []).forEach(function(a){ usage[a.name] = a; });
+  var roleOf = {}; Object.keys(cfg.roles).forEach(function(r){ cfg.roles[r].accounts.forEach(function(n){ (roleOf[n] = roleOf[n] || []).push(r); }); });
+
+  // 帳號清單
+  var p1 = el('div', { cls:'panel' });
+  if (!cfg.registry.length) p1.appendChild(el('div', { cls:'acct-note', text:'還沒登記帳號。從下面新增第一個。' }));
+  else {
+    var t = el('table', { cls:'route' });
+    t.appendChild(el('tr', {}, ['帳號', 'CLI · 方案', '登入', '角色', '近5小時', '狀態', ''].map(function(h){ return el('th', { text:h }); })));
+    cfg.registry.forEach(function(a){
+      var u = usage[a.name] || {}, lg = ui.acct.login && ui.acct.login !== 'loading' ? ui.acct.login[a.name] : null;
+      var loginCell = !LIVE ? el('td', { text:'—' }) : !lg ? el('td', { text:'檢查中…' }) : lg.ok ? el('td', { cls:'ok', text:lg.detail || '已登入' }) :
+        el('td', { cls:'bad' }, ['沒登入:在終端機跑 ', el('code', { text:'node tools/dp.mjs account login ' + a.name })]);
+      t.appendChild(el('tr', {}, [
+        el('td', { cls:'hl', text:a.name }), el('td', { text:a.cli + (a.plan ? ' · ' + a.plan : '') }), loginCell,
+        el('td', { text:(roleOf[a.name] || []).join('、') || '—' }), el('td', { text:(u.dispatches_5h || 0) + ' 次' }),
+        el('td', { cls:u.limited_until ? 'warn' : 'ok', text:u.limited_until ? '冷卻到 ' + when(u.limited_until) : '可用' }),
+        el('td', {}, [LIVE ? el('button', { cls:'send ghost mini', text:'移除', disabled:ui.acct.busy ? 'disabled' : null, onclick:function(){
+          if (!confirm('移除帳號 ' + a.name + '?dp 建的登入目錄(裡面是這個帳號的登入憑證)會一起刪掉。')) return;
+          acctDo({ action:'rm', name:a.name }, '已移除');
+        } }) : null])
+      ]));
+    });
+    p1.appendChild(el('div', { cls:'ascii', style:'margin:0' }, [t]));
+  }
+  if (LIVE) {
+    var f = ui.acct.form;
+    var inp = function(key, ph){ return el('input', { placeholder:ph, value:f[key], oninput:function(){ f[key] = this.value; } }); };
+    var sel = el('select', { onchange:function(){ f.cli = this.value; } }, cfg.clis.map(function(c){ return el('option', { value:c.key, selected:c.key === f.cli ? 'selected' : null, text:c.label }); }));
+    p1.appendChild(el('div', { cls:'acct-form', style:'margin-top:14px' }, [
+      inp('name', '名稱,例 max-a'), sel, inp('plan', '方案(選填),例 max'),
+      el('button', { cls:'send mini', text:'新增帳號', disabled:ui.acct.busy ? 'disabled' : null, onclick:function(){
+        acctDo({ action:'add', name:f.name.trim(), cli:f.cli, plan:f.plan.trim() }, '已新增');
+        f.name = ''; f.plan = '';
+      } })
+    ]));
+    p1.appendChild(el('div', { cls:'acct-note', style:'margin-top:8px' }, ['新增後要登入一次(會開瀏覽器,所以要在你自己的終端機跑):', el('code', { text:'node tools/dp.mjs account login <名稱>' })]));
+  }
+  wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'這台電腦的帳號' }), p1]));
+
+  // 角色
+  ui.acct.roles = ui.acct.roles || {};
+  Object.keys(cfg.roles).forEach(function(r){ if (!ui.acct.roles[r]) ui.acct.roles[r] = { accounts:cfg.roles[r].accounts.slice(), model:cfg.roles[r].model || '' }; });
+  var p2 = el('div', { cls:'panel' });
+  Object.keys(cfg.roles).forEach(function(r){
+    var cur = cfg.roles[r], ed = ui.acct.roles[r];
+    var names = cfg.registry.map(function(a){ return a.name; });
+    cur.accounts.forEach(function(n){ if (names.indexOf(n) < 0) names.push(n); });
+    var chks = names.map(function(n){
+      var on = ed.accounts.indexOf(n) >= 0, missing = !cfg.registry.some(function(a){ return a.name === n; });
+      return el('label', { cls:'acct-chk' }, [
+        el('input', { type:'checkbox', checked:on ? 'checked' : null, disabled:!LIVE ? 'disabled' : null, onchange:function(){
+          var i = ed.accounts.indexOf(n); if (this.checked && i < 0) ed.accounts.push(n); if (!this.checked && i >= 0) ed.accounts.splice(i, 1);
+          render();
+        } }), (on ? (ed.accounts.indexOf(n) + 1) + '. ' : '') + n + (missing ? '(這台電腦沒有)' : '')
+      ]);
+    });
+    var changed = ed.accounts.join(',') !== cur.accounts.join(',') || ed.model !== (cur.model || '');
+    var note = cur.custom_cmd ? '這個角色有自己寫的 cmd:照你的指令跑,只帶上帳號的登入目錄。' :
+      cur.accounts.length ? '用帳號那個 CLI 的預設指令。' : r === 'verifier' && cur.backend === 'none' ? '目前沒開 Verifier。' : '目前沒用帳號(照 cmd 跑)。';
+    p2.appendChild(el('div', { cls:'acct-role' }, [
+      el('div', {}, [span('rn', ROLE_LABEL[r] || r), ' ', span('acct-note', note)]),
+      el('div', {}, names.length ? chks : [span('acct-note', '先在上面新增帳號。')]),
+      el('div', { cls:'acct-form' }, [
+        el('input', { placeholder:r === 'verifier' ? '模型(選填,預設 haiku)' : '模型(選填,例 sonnet、opus)', value:ed.model, disabled:!LIVE ? 'disabled' : null, oninput:function(){ ed.model = this.value; } }),
+        LIVE ? el('button', { cls:'send mini' + (changed ? '' : ' ghost'), text:'儲存', disabled:ui.acct.busy ? 'disabled' : null, onclick:function(){
+          acctDo({ action:'use', role:r, accounts:ed.accounts, model:ed.model.trim() }, '已儲存');
+        } }) : null,
+        span('acct-note', ed.accounts.length > 1 ? '照勾選順序;每一棒挑近 5 小時用得最少、沒在冷卻的,額度用完自動換下一個。' : '')
+      ])
+    ]));
+  });
+  wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'每個角色用哪些帳號' }), p2]));
+}
+
+render();
+if (LIVE) setInterval(function(){
+  if (ui.playing) return;
+  // 帳號頁正在打字時不重畫(會把輸入框清掉)
+  if (ui.view === 'accounts' && document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName)) return;
+  fetch('data.json', { cache:'no-store' }).then(function(r){ return r.json(); }).then(function(nd){
+    if (nd.ledger_seq === data.ledger_seq && JSON.stringify(nd.in_progress) === JSON.stringify(data.in_progress)) return;
+    data = nd;
+    if (!ui.pinned) ui.node = null;
+    if (ui.cursor == null) render();
+  }).catch(function(){});
+}, LIVE);
+})();
+</script>
+</body>
+</html>

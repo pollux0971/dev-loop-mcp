@@ -1,0 +1,33 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "check:dp": "node tools/dp.mjs check",
+    "gates": "node tools/dp.mjs gates",
+    "test": "vitest run",
+    "test:scripts": "vitest run --config vitest.scripts.config.ts",
+    "typecheck": "tsc --noEmit",
+    "accept": "NODE_OPTIONS=--import=tsx cucumber-js",
+    "accept:integration": "NODE_OPTIONS=--import=tsx cucumber-js docs/integration --tags 'not @manual'",
+    "accept:dry": "tsx scripts/check-dry-run.ts --tags 'not @manual'",
+    "standalone": "tsx scripts/check-standalone.ts",
+    "boundaries": "tsx scripts/check-boundaries.ts",
+    "check:steps": "tsx scripts/check-step-dup.ts",
+    "check:gherkin-dup": "tsx scripts/check-gherkin-dup.ts",
+    "check:module-cast": "tsx scripts/check-module-cast.ts",
+    "mutate": "tsx scripts/mutate-with-lock.ts"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.3.0",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "~4.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "~4.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+.dp/
+*.tmp-*
+.mutate.lock
+.stryker-tmp/
+reports/
+coverage/

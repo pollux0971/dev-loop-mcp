@@ -1,0 +1,15 @@
+{
+  "cucumberCwd": ".",
+  "phaseCoverage": {
+    "runTimeoutMs": 600000
+  },
+  "gherkinDup": {
+    "allow": [
+      {
+        "scenario": "Every standalone entry point still runs",
+        "onlyUnder": "docs/integration/",
+        "reason": "每個整合點各自重跑一次 standalone 回歸(docs/integration/i1.feature.template 的 @regression 場景,每個 IN 檔都會有一份同名的)"
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "owners": [
+    ["contracts/", "contracts"],
+    ["packages/contracts/", "contracts"],
+    ["scripts/", "infra"],
+    ["tools/", "infra"],
+    ["features/steps/", "steps"]
+  ],
+  "glue": ["infra", "steps"],
+  "aliases": [["@contracts/", "packages/contracts/src/"]],
+  "scanDirs": ["packages", "apps", "scripts"],
+  "contractsOwner": "contracts"
+}

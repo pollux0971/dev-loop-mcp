@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import { after, describe, test } from 'node:test';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { dashboardData, renderDashboard, serveDashboard } from '../tools/lib/dashboard.mjs';
+import { readEvents } from '../tools/lib/ledger.mjs';
+import { CALC, CALC_GHERKIN, REPO, addNode, cleanup, makeProject, tickUntil } from './helpers.mjs';
+import { proposeFeature } from '../tools/lib/intake.mjs';
+import { run } from '../tools/lib/util.mjs';
+
+after(cleanup);
+
+describe('dp dashboard(唯讀主控台)', () => {
+  test('等你的決定、節點狀態、花費都從帳本重播出來;不寫任何事件', async () => {
+    const proj = makeProject();
+    addNode(proj, CALC, CALC_GHERKIN);
+    await tickUntil(proj, (s) => s.nodes.get('calc/v1')?.status === 'done');
+    proposeFeature(proj, { ...CALC, id: 'calc/v2', title: '減法', depends_on: ['calc/v1'] }, CALC_GHERKIN.replace('adds', 'subtracts'));
+    const before = readEvents(proj).length;
+
+    const d = dashboardData(proj);
+    assert.equal(readEvents(proj).length, before, 'dashboard 不能寫事件');
+    assert.equal(d.counts.done, 1);
+    assert.equal(d.decisions.length, 1);
+    assert.match(d.decisions[0].question, /減法|calc\/v2/);
+    const calc = d.nodes.find((n) => n.id === 'calc/v1');
+    assert.equal(calc.status, 'done');
+    assert.ok(calc.dispatches >= 1);
+    assert.ok(d.timeline.some((e) => e.type === 'accept' && e.node === 'calc/v1'));
+    assert.ok(d.timeline.filter((e) => e.type === 'verify').every((e) => e.node === 'calc/v1'), 'verify 事件要對回節點');
+    const ds = d.dispatches.filter((x) => x.node === 'calc/v1');
+    assert.ok(ds.length >= 1, '每次派工都列出來');
+    assert.ok(ds.every((x) => x.envelope && x.envelope.allowed.length), '工單的 write-set 讀得到');
+    assert.ok(ds.some((x) => x.report), '交件報告讀得到');
+    const pv2 = d.proposals.find((p) => p.nodes.some((n) => n.id === 'calc/v2'));
+    assert.ok(pv2, '規劃頁讀得到提案');
+    assert.equal(pv2.gherkin[0].scenarios, 1);
+    assert.ok(d.timeline.some((e) => e.type === 'decision' && e.raw.verbatim === '好,加進去'), '你的原話要留著');
+  });
+
+  test('資料裡的 </script> 關不掉 script 標籤', () => {
+    const html = renderDashboard({ project: 'x', nodes: [], timeline: [{ text: '</script><script>alert(1)</script>' }] });
+    const body = html.split('id="dp-data">')[1].split('</script>')[0];
+    assert.ok(!body.includes('<'), '嵌入的 JSON 不應含 <');
+    assert.deepEqual(JSON.parse(body).timeline[0].text, '</script><script>alert(1)</script>');
+  });
+
+  test('dp dashboard 寫出 .dp/dashboard.html;--serve 只回 GET', async () => {
+    const proj = makeProject();
+    const r = run(`node ${join(REPO, 'tools', 'dp.mjs')} dashboard`, { cwd: proj });
+    assert.equal(r.code, 0, r.stderr);
+    const out = join(proj, '.dp', 'dashboard.html');
+    assert.ok(existsSync(out));
+    assert.match(readFileSync(out, 'utf8'), /id="dp-data"/);
+    assert.equal(run('git status --porcelain', { cwd: proj }).stdout.trim(), '', '.dp/ 不進 git');
+
+    const server = await serveDashboard(proj, { port: 0, log: () => {} });
+    try {
+      const base = `http://127.0.0.1:${server.address().port}`;
+      const data = await (await fetch(`${base}/data.json`)).json();
+      assert.equal(data.ledger_seq, dashboardData(proj).ledger_seq);
+      assert.match(await (await fetch(`${base}/`)).text(), /var LIVE = 5000;/);
+      assert.equal((await fetch(`${base}/`, { method: 'POST' })).status, 405);
+      assert.equal((await fetch(`${base}/../dp.config.json`)).status, 404);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('不認得的旗標直接拒絕', () => {
+    const proj = makeProject();
+    const r = run(`node ${join(REPO, 'tools', 'dp.mjs')} dashboard --open`, { cwd: proj });
+    assert.notEqual(r.code, 0);
+    assert.ok(!existsSync(join(proj, '.dp', 'dashboard.html')));
+  });
+});

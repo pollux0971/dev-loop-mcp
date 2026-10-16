@@ -1,0 +1,13 @@
+{
+  "$comment": "示範契約:換成你的真契約後刪掉(連同 fixtures/*/example/)。",
+  "title": "Item",
+  "type": "object",
+  "required": ["id", "kind", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9-]{3,40}$" },
+    "kind": { "enum": ["note", "task"] },
+    "createdAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "maxItems": 20 }
+  }
+}

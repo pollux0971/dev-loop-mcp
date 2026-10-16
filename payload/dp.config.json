@@ -1,0 +1,55 @@
+{
+  "$comment": "worker.cmd 範例(依你的 CLI 版本確認旗標):Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DP_PROMPT\"。verifier 範例:backend cmd、cmd claude -p --model haiku --tools \"\" --no-session-persistence(dp setup 會幫你填)。worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dp/SECURITY.md)。詳見 docs/dp/AGENTS-SETUP.md",
+  "main_branch": "main",
+  "platform": "claude",
+  "caps": {
+    "parallel": 3,
+    "unmerged": 3,
+    "drift": 20,
+    "attempts": 3,
+    "lease_minutes": 90
+  },
+  "gates": {
+    "chain": [
+      "check:dp",
+      "typecheck",
+      "test",
+      "accept"
+    ],
+    "timeout_minutes": 30,
+    "install": "auto"
+  },
+  "autonomy": {
+    "level": 1
+  },
+  "budget": {
+    "daily_usd": 5
+  },
+  "auth": {
+    "window_minutes": 30
+  },
+  "agents": {
+    "worker": {
+      "cmd": null,
+      "timeout_minutes": 90
+    },
+    "critic": {
+      "cmd": null
+    },
+    "verifier": {
+      "backend": "none",
+      "cmd": null,
+      "runs": 2,
+      "max_input_chars": 6000
+    }
+  },
+  "verify": {
+    "dry_run_cmd": "npm run --silent accept:dry -- -- {gherkin}",
+    "mutation": {
+      "cmd": "npx stryker run --mutate {files} --reporters json,clear-text",
+      "report": "reports/mutation/mutation.json",
+      "min": 50,
+      "min_strict": 70
+    }
+  }
+}
