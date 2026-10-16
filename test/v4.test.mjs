@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { decide } from '../tools/lib/inbox.mjs';
+import { confirmE2e, decide } from '../tools/lib/inbox.mjs';
 import { proposeBundle, proposeFeature } from '../tools/lib/intake.mjs';
 import { readEvents } from '../tools/lib/ledger.mjs';
 import { Ctx, haltWorkers, tick } from '../tools/lib/orchestrator.mjs';
@@ -177,7 +177,8 @@ test('新專案的節點把程式放在 packages/ 與 apps/ 以外 → 提案照
 });
 
 test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「跳過測試棒」,選了記 leg_done;整合棒零變動也能過;合併後請使用者試用', async () => {
-  const proj = makeProject({ mode: 'already-green' });
+  // 這裡測「派出去之後才發現綠、worker 回報卡住」的路徑,所以關掉派工前的檢查(下一個測試測它)
+  const proj = makeProject({ mode: 'already-green', config: { integration: { precheck_green: false } } });
   addNode(proj, CALC, CALC_GHERKIN);
   await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
   // 能力節點那邊已經把整合點要的入口做好了(實測:只看得到 MCP 的 AI 把命令列入口放在能力節點裡)
@@ -197,6 +198,26 @@ test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「�
   assert.ok(integ, '接著跑整合棒並合併');
   assert.ok(integ.verify.results.some((r) => r.check === 'paths' && r.outcome === 'PASS' && /沒有檔案變動/.test(r.detail)), '整合棒零變動不算失敗');
   assert.ok(s.nodes.get('I1').e2e?.requestedSeq, '合併後請使用者試用');
+});
+
+test('整合點的驗收在派測試棒之前就是綠的:不派測試棒(記 note 與 leg_done)、接著派整合棒、合併後請使用者試用;重做時照樣派', async () => {
+  const proj = makeProject({ mode: 'already-green' });
+  addNode(proj, CALC, CALC_GHERKIN);
+  await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
+  sh(proj, `mkdir -p packages/app && echo "console.log('ok');" > packages/app/main.mjs && git add -A && git -c user.name=t -c user.email=t@t commit -qm app`);
+  addNode(proj, I1, I1_GHERKIN);
+  const s = await tickUntil(proj, (st) => st.nodes.get('I1')?.status === 'done');
+  const ev = readEvents(proj);
+  assert.ok(ev.some((e) => e.type === 'note' && e.node_id === 'I1' && /派測試棒之前就是綠的/.test(e.text)), '記下為什麼不派');
+  assert.ok(ev.some((e) => e.type === 'leg_done' && e.node_id === 'I1' && e.leg === 'test' && e.dispatch_id === 'precheck-I1'));
+  const legs = [...s.dispatches.values()].filter((d) => d.node_id === 'I1').map((d) => d.leg);
+  assert.deepEqual(legs, ['integrate'], '測試棒沒有派 worker');
+  assert.ok(!ev.some((e) => e.type === 'decision_request' && e.ref.startsWith('escalation:')), '不用問使用者');
+  assert.ok(s.nodes.get('I1').e2e?.requestedSeq, '合併後照樣請使用者試用');
+  // 試用失敗 → 重做帶 findings:測試棒照樣派(可能要補測試)
+  confirmE2e(proj, 'I1', false, '還不行');
+  const s2 = await tickUntil(proj, (st) => [...st.dispatches.values()].filter((d) => d.node_id === 'I1').length > 1);
+  assert.equal([...s2.dispatches.values()].filter((d) => d.node_id === 'I1').at(-1).leg, 'test', '重做時派測試棒');
 });
 
 test('整合點的 gherkin 沿用能力的句子(一字不差)→ 提案帶提醒;句子不同就沒有', () => {

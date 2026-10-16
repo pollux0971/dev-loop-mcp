@@ -69,7 +69,11 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   `node --import tsx` 在 repo 以外解不到 tsx,子程序一啟動就失敗。測試棒的「紅」看起來像還沒實作(stdout 是空的),
   dp 照樣收下,實作棒怎麼改都綠不了,回報測試寫錯。現在 `runCommand(cmd, { cwd })` 把 `--import tsx` 換成 tsx 的絕對位置,README 寫明一律用它。
   實跑:minilang 的 I2。
-- 新測試 13 個,加上 PR #1 的 1 個。`npm test` 184 個全部通過(4.7.2 是 171 個)。
+- **整合點的測試棒派出去之前先檢查驗收**(`integration.precheck_green`,預設開):第一次派、而且不是重做時,先在那棵樹上跑一次整合點的驗收;
+  已經是綠的(能力節點已經做到)就不派 worker,記一筆 `note` 說明、測試棒記為完成(`leg_done`,dispatch_id 是 `precheck-<節點>`),下一輪派整合棒。
+  以前要派一棒、worker 回報卡住、問使用者、使用者選 skip:今天實跑出現 4 次(todo-cli I1、wordfreq I1、minilang I1 重做、minilang I3),
+  minilang I3 的 worker 直接建議「把 I3 當作已滿足」。重做(試用失敗後,帶 findings)照樣派測試棒,讓它補測試。
+- 新測試 14 個,加上 PR #1 的 1 個。`npm test` 185 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

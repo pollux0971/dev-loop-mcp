@@ -48,7 +48,9 @@ export const DEFAULTS = {
   budget: { daily_usd: 5 },
   // v4:版本整合關卡(見 AUTONOMY.md、WORKFLOW.md)。每個版本最後一個整合點 I<n>;下一版的節點依賴它,
   // gate_next_version = true 時,要等整合點合併而且你試用確認(dp confirm)過,下一版才開工。
-  integration: { gate_next_version: true },
+  // v4.7.3 precheck_green:整合點的測試棒派出去之前先在那棵樹上跑一次驗收;已經是綠的(能力節點已經做到)就不派,
+  // 測試棒記為完成、接著派整合棒(省一棒和一次「卡住」的詢問)。false = 照舊派,卡住時再讓使用者選 skip
+  integration: { gate_next_version: true, precheck_green: true },
   // v4:有新的待決事項時執行(環境變數 DP_NOTIFY_TEXT)。例:macOS `osascript -e "display notification \"$DP_NOTIFY_TEXT\" with title \"dp\""`
   notify: { cmd: null },
   agents: {

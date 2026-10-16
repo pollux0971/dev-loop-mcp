@@ -126,7 +126,7 @@ export const configSchema = {
     integration: {
       type: 'object',
       additionalProperties: false,
-      properties: { gate_next_version: { type: 'boolean' } },
+      properties: { gate_next_version: { type: 'boolean' }, precheck_green: { type: 'boolean' } },
     },
     // v4:有新的待決事項時執行的指令(環境變數 DP_NOTIFY_TEXT 是內容)。null = 不通知
     notify: {

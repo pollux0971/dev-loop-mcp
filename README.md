@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dp plans the work as a DAG, send
 
 ![dp hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.7.3 · Node ≥ 20 · zero dependencies · 184 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.7.3 · Node ≥ 20 · zero dependencies · 185 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**. Since 4.7.2 it is called dev-paradigm-mcp, because the MCP server is now the main way in. The command is still `dp`, and the MCP tools still start with `dp_`.
 >
@@ -193,7 +193,7 @@ Before merging, dp builds a temporary tree of **main + the branch** and runs the
 
 When something is wrong, the work goes back to **the leg that caused it**. A wrong test goes back to the test leg instead of the dev leg retrying until it's stuck. After 3 failed attempts a node is blocked and you are asked.
 
-Sometimes an integration point is already done before it starts, because the capabilities already wired everything up. Then its test leg can't honestly start red. When that test leg gets stuck, dp re-runs the acceptance itself. If it passes, you get one extra choice, **skip**, which moves on to the integrate leg. An integrate leg with nothing to change is fine, as long as the acceptance passes.
+Sometimes an integration point is already done before it starts, because the capabilities already wired everything up. Then its test leg can't honestly start red. Before sending that test leg, dp runs the acceptance itself; if it already passes, dp doesn't send a worker, records why, and moves on to the integrate leg (`integration.precheck_green`, on by default). If a test leg still gets stuck that way later (for example, a redo after a failed trial), dp re-runs the acceptance and offers one extra choice, **skip**. An integrate leg with nothing to change is fine, as long as the acceptance passes.
 
 ### 4. Small model reviews big model
 
@@ -405,7 +405,7 @@ More: [`payload/docs/dp/AGENTS-SETUP.md`](payload/docs/dp/AGENTS-SETUP.md), [`pa
 
 ### Automated tests
 
-`npm test`: **184 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
+`npm test`: **185 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
 
 ### Real run, 2026-10-16
 

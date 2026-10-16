@@ -953,6 +953,25 @@ export function integrationAlreadyGreen(ctx, d, node) {
     removeTree(scratch);
   }
 }
+/**
+ * v4.7.3 派整合點的測試棒之前先檢查:驗收在這棵樹(主線 + 分支)上已經是綠的 → 測試棒不可能誠實地先紅,派了只會卡住、問使用者、再跳過。
+ * 只在第一次派這個節點、而且不是重做(沒有 findings,例如試用失敗後重做,測試棒可能要補測試)時檢查。
+ * 實跑:todo-cli I1、wordfreq I1、minilang I3 都是測試棒卡住 → 使用者選 skip;minilang I3 的 worker 直接建議「把 I3 當作已滿足」。
+ */
+function integrationGreenBeforeTest(ctx, node, cand, wt) {
+  if (cand.leg !== 'test' || node.kind !== 'integration' || !node.accept) return null;
+  if (ctx.config.integration?.precheck_green === false) return null;
+  if (cand.findings?.length || [...ctx.state.dispatches.values()].some((x) => x.node_id === node.id)) return null;
+  const scratch = scratchCopy(ctx.root, wt, `precheck-${slug(node.id)}`);
+  try {
+    linkDeps(ctx.root, scratch);
+    const res = hostExecutor(scratch).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
+    return res.code === 0 ? { cmd: node.accept } : null;
+  } finally {
+    removeTree(scratch);
+  }
+}
+
 const SKIP_TEST_LEG = { key: 'skip', label: '驗收已經是綠的(dp 重跑過):跳過測試棒,接著跑整合棒' };
 const skipReason = (g) => `dp 在這一棒的樹上重跑 ${g.cmd},exit 0:整合點的驗收在動手前就是綠的(能力節點已經做到),測試棒做不出誠實的紅燈`;
 
@@ -1048,6 +1067,16 @@ export async function dispatchPhase(ctx) {
           });
           continue;
         }
+      }
+      const green = integrationGreenBeforeTest(ctx, node, cand, wt);
+      if (green) {
+        ctx.append('orchestrator', 'note', {
+          node_id: id,
+          text: `${id} 的驗收在派測試棒之前就是綠的(${green.cmd} → exit 0):能力節點已經做到,測試棒做不出誠實的紅燈,不派;測試棒記為完成,接著派整合棒`,
+        });
+        ctx.append('orchestrator', 'leg_done', { dispatch_id: `precheck-${slug(id)}`, node_id: id, leg: 'test' });
+        ctx.log(`  ${id}:驗收已經是綠的,不派測試棒,下一輪派整合棒`);
+        continue;
       }
       const base = headSha(wt);
       const envelope = buildEnvelope(ctx, node, cand, { dispatchId, branch, base });
