@@ -37,7 +37,15 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   (能力節點一開始就綠,代表 gherkin 沒寫到新東西,該改規格)。實跑:todo-cli 的 I1。
 - **整合點的 gherkin 沿用能力的句子會被提醒**:跟這份提案裡其他節點、主線 `features/` 底下已有的 gherkin 比,一字不差的句子列出幾句、舉一句例子,
   說明為什麼測試棒會做不出紅燈、該怎麼寫。intake skill 本來就有這條規則,現在也寫進 `dp_propose_bundle` 的說明。
-- 新測試 7 個。`npm test` 178 個全部通過。
+- **既有專案(已經有 git)裝 dp 後,dp 的檔沒進 git → 每個實作棒都過不了全 gate**:`dp init --existing`(和 MCP 的 `dp_init_project` existing)
+  只在自己建 git 時 commit;已經有 git 的專案什麼都不 commit,之後 setup、onboard 也只 commit 自己寫的那幾個檔,`tools/`、`AGENTS.md`、`.claude/` 一直是 untracked。
+  合併前的全 gate 在從 git 建的「main + 分支」臨時樹裡跑 `node tools/dp.mjs check`,找不到 dp,exit 1、沒有輸出;實作棒連續 3 次被退回後封鎖。
+  doctor 只看 tracked 的檔,說「乾淨」。測試裡的既有專案一直是 init 之後手動 `git add -A && git commit`,所以沒抓到。實跑:wordfreq 的 top/v1。
+  現在:init 在已經有 git 的專案把 dp 的檔 commit(`dp init --existing`,只 commit 這些路徑,使用者 staged 的東西不動;`--no-commit` 可以不 commit),
+  既有的 `.gitignore` 補上 `.dp/` 與 `*.tmp-*`;**`dp upgrade` 會把 dp 的檔 commit**,連同 dp 規劃的檔裡還沒進 git 的(修好 4.7.3 以前裝的專案;
+  MCP 是 `dp_upgrade_project`)。以前升級完留在工作目錄,tick 拒絕執行,從 MCP 升級的 AI 沒有 git 可用,只能請使用者自己 commit(實測漏了 `.dp-install.json`)。
+  doctor 多一項「dp 的檔」:沒進 git 就 ✗,修法是 `dp upgrade`。
+- 新測試 9 個。`npm test` 179 個全部通過。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

@@ -40,12 +40,50 @@ describe('dp init / upgrade', () => {
     writeFileSync(join(proj, 'prompts/worker.md'), 'old version');
     manifest.files['prompts/worker.md'] = sha256('old version');
     writeJson(join(proj, '.dp-install.json'), manifest);
-    assert.deepEqual(upgrade(proj).update, ['prompts/worker.md']);
+    sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm old');
+    assert.deepEqual(upgrade(proj, { dryRun: true }).commit, undefined, 'dry-run 不寫也不 commit');
+    const up = upgrade(proj);
+    assert.deepEqual(up.update, ['prompts/worker.md']);
+    assert.ok(up.commit, '升級完就 commit(tick 才不會因為有未 commit 的變更停下來)');
+    assert.equal(sh(proj, 'git status --porcelain'), '');
+    assert.match(sh(proj, 'git log -1 --format=%s'), /^dp upgrade /);
     // 使用者自己改過 → 衝突
     writeFileSync(join(proj, 'prompts/critic.md'), '我改過的 critic');
     writeFileSync(join(proj, 'docs/dp/VERIFIER.md'), 'changed too');
     assert.throws(() => upgrade(proj), (e) => /prompts\/critic\.md/.test(e.message) && /docs\/dp\/VERIFIER\.md/.test(e.message));
     assert.equal(readFileSync(join(proj, 'prompts/critic.md'), 'utf8'), '我改過的 critic', '衝突時不覆蓋');
+  });
+  test('已經有 git 的既有專案:init --existing 把 dp 的檔 commit、.gitignore 補 .dp/,不碰使用者 staged 的東西;沒 commit 的舊專案 doctor 指出、upgrade 補上', async () => {
+    const dir = tempDir();
+    put(join(dir, 'app.py'), 'print(1)\n');
+    put(join(dir, '.gitignore'), '__pycache__/\n');
+    sh(dir, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm legacy');
+    put(join(dir, 'notes.txt'), 'mine, staged but not committed\n');
+    sh(dir, 'git add notes.txt');
+    const r = init(dir, { existing: true });
+    assert.equal(r.git, 'existing');
+    assert.ok(r.committed, 'dp 的檔 commit 了');
+    const tracked = sh(dir, 'git ls-tree -r --name-only HEAD');
+    for (const f of ['tools/dp.mjs', '.dp-install.json', 'dag.json', 'dp.config.json', 'AGENTS.md', 'STATUS.md']) assert.match(tracked, new RegExp(`^${f.replace('.', '\\.')}$`, 'm'), f);
+    assert.doesNotMatch(tracked, /^notes\.txt$/m, '使用者 staged 的東西不會被 dp 的 commit 帶走');
+    assert.match(sh(dir, 'git status --porcelain'), /^A  notes\.txt$/m, '還在 staged');
+    assert.match(readFileSync(join(dir, '.gitignore'), 'utf8'), /^__pycache__\/\n# dp[^\n]*\n\.dp\/\n/);
+    assert.match(sh(dir, 'git log -1 --format=%s'), /^dp init --existing$/);
+
+    // 4.7.3 以前的樣子:裝了但沒 commit
+    const old = tempDir();
+    put(join(old, 'app.py'), 'print(1)\n');
+    sh(old, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm legacy');
+    init(old, { existing: true, commit: false });
+    const { doctor } = await import('../tools/lib/doctor.mjs');
+    const before = (await doctor(old)).results.find((x) => x.name === 'dp 的檔');
+    assert.equal(before.status, 'fail');
+    assert.match(before.detail, /tools\/dp\.mjs/);
+    assert.match(before.fix, /upgrade/);
+    const up = upgrade(old);
+    assert.ok(up.commit, '同版本也會把沒進 git 的 dp 檔 commit');
+    assert.match(sh(old, 'git ls-files'), /^tools\/dp\.mjs$/m);
+    assert.equal((await doctor(old)).results.find((x) => x.name === 'dp 的檔').status, 'ok');
   });
   test('init 產生的新專案:placeholder 已填、產生檔一致', () => {
     const proj = join(tempDir(), 'p');

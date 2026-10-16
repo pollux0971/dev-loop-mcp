@@ -41,6 +41,20 @@ function checkGit(root, config) {
   return ok('git', `在 ${branch},乾淨`);
 }
 
+/**
+ * v4.7.3 dp 自己的檔有沒有進 git。合併前的全 gate 在 main + 分支 的臨時樹(從 git 來)跑 node tools/dp.mjs check;
+ * dp 的檔沒 commit,臨時樹裡就沒有 dp,實作棒每次都紅、三次後封鎖。4.7.3 以前 dp init --existing 裝進已經有 git 的專案就是這樣(實測)。
+ */
+function checkDpTracked(root) {
+  if (run('git rev-parse --is-inside-work-tree', { cwd: root }).code !== 0) return [];
+  const key = ['tools/dp.mjs', '.dp-install.json', 'dag.json', 'dp.config.json', 'AGENTS.md'].filter((f) => existsSync(join(root, f)));
+  const tracked = new Set(run(`git ls-files -- ${key.map((f) => `'${f}'`).join(' ')}`, { cwd: root }).stdout.split('\n').map((l) => l.trim()).filter(Boolean));
+  const missing = key.filter((f) => !tracked.has(f));
+  if (!missing.length) return [ok('dp 的檔', '都在 git 裡')];
+  return [fail('dp 的檔', `還沒進 git:${missing.join('、')}(合併前的全 gate 在從 git 建的臨時樹裡跑,找不到 dp 會每次都紅)`,
+    'node tools/dp.mjs upgrade(會把 dp 的檔一起 commit;MCP 是 dp_upgrade_project)')];
+}
+
 async function checkWorker(root, config) {
   const cmd = config.agents.worker.cmd;
   if (!cmd && config.agents.worker.accounts?.length) return ok('worker 指令', `用帳號的預設指令(${config.agents.worker.accounts.join(', ')})`);
@@ -174,6 +188,7 @@ export async function doctor(root) {
     return summarizeDoctor(results);
   }
   results.push(checkGit(root, config));
+  results.push(...checkDpTracked(root));
   results.push(await checkWorker(root, config));
   results.push(...checkAccounts(config));
   results.push(checkSandbox(config));

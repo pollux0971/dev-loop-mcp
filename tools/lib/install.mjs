@@ -10,7 +10,7 @@ import { loadDag } from './dag.mjs';
 import { readEvents } from './ledger.mjs';
 import { renderAll, writeRendered } from './render.mjs';
 import { replay } from './state.mjs';
-import { DpError, atomicWrite, listFiles, matchAny, readJson, run, sha256, writeJson } from './util.mjs';
+import { DpError, atomicWrite, listFiles, matchAny, readJson, run, runArgv, sha256, writeJson } from './util.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MANIFEST = '.dp-install.json';
@@ -79,7 +79,42 @@ function write(target, actions, removals, profile = 'full') {
   writeJson(join(target, MANIFEST), { version: readVersion(), ...(profile !== 'full' ? { profile } : {}), files });
 }
 
-export function init(target, { name, existing = false } = {}) {
+/** dp 在 .gitignore 裡需要的行(既有專案自己的 .gitignore 不會被範本覆蓋,缺的補在最後)。 */
+const DP_IGNORES = ['.dp/', '*.tmp-*'];
+function ensureIgnores(dir) {
+  const p = join(dir, '.gitignore');
+  const cur = existsSync(p) ? readFileSync(p, 'utf8') : '';
+  const have = new Set(cur.split('\n').map((l) => l.trim()));
+  const missing = DP_IGNORES.filter((l) => !have.has(l));
+  if (!missing.length) return false;
+  atomicWrite(p, `${cur}${cur && !cur.endsWith('\n') ? '\n' : ''}# dp(dev-paradigm-mcp)\n${missing.join('\n')}\n`);
+  return true;
+}
+
+const RENDERED = ['STATUS.md', 'DECISIONS.md', 'standalone.json'];
+
+/**
+ * 把 dp 的檔 commit 起來:這次寫到的、加上 dp 規劃的檔裡還沒進 git 的(安裝清單、產生檔、.gitignore 也算)。
+ * 只 commit 這些路徑(git commit -- <路徑>),不碰使用者 staged 的其他東西。不是 git repo 就不做。
+ * v4.7.3 實測:既有專案(已經有 git)裝 dp 後,tools/、AGENTS.md、.claude/ 都沒進 git;合併前的全 gate 在 main + 分支 的臨時樹
+ * 跑 node tools/dp.mjs check,找不到 dp,實作棒每次都紅,三次後封鎖。
+ */
+export function commitDpFiles(dir, message, { touched = [], profile = 'full' } = {}) {
+  if (!existsSync(join(dir, '.git'))) return null;
+  const g = (args) => runArgv('git', args, { cwd: dir });
+  const tracked = new Set(g(['ls-files', '-z']).stdout.split('\0').filter(Boolean));
+  const planned = [...plannedFiles(null, { profile }).map((f) => f.dest), MANIFEST, ...RENDERED, '.gitignore'];
+  const paths = [...new Set([...touched, ...planned.filter((f) => existsSync(join(dir, f)) && !tracked.has(f))])]
+    .filter((f) => existsSync(join(dir, f)) || tracked.has(f));
+  if (!paths.length) return null;
+  g(['add', '-A', '--', ...paths]);
+  if (g(['diff', '--cached', '--quiet', '--', ...paths]).code === 0) return null;
+  const r = g(['-c', 'user.name=dp', '-c', 'user.email=dp@localhost', 'commit', '--quiet', '-m', message, '--', ...paths]);
+  if (r.code !== 0) throw new DpError(`commit dp 的檔失敗:${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+  return g(['rev-parse', 'HEAD']).stdout.trim();
+}
+
+export function init(target, { name, existing = false, commit = true } = {}) {
   const dir = resolve(target);
   const entries = existsSync(dir) ? readdirSync(dir).filter((e) => e !== '.git') : [];
   if (entries.length && !existing) throw new DpError(`${dir} 不是空目錄。既有專案請加 --existing(只補缺的檔,衝突就一個都不寫)`);
@@ -93,20 +128,31 @@ export function init(target, { name, existing = false } = {}) {
   const events = readEvents(dir);
   writeRendered(dir, renderAll(dir, dag, replay(events, dag), events));
   let git = 'existing';
+  let committed = null;
   if (!existsSync(join(dir, '.git'))) {
     run('git init --quiet -b main', { cwd: dir });
     run('git add -A && git -c user.name=dp -c user.email=dp@localhost commit --quiet -m "dp init"', { cwd: dir });
     git = 'initialized';
+  } else {
+    // v4.7.3:已經有 git 的專案以前什麼都不 commit(見 commitDpFiles)。.gitignore 補上 .dp/,不然 dp 的工作目錄整個出現在 git status
+    const ignores = ensureIgnores(dir);
+    const created = actions.filter((a) => a.op === 'create').map((a) => a.dest);
+    if (commit) committed = commitDpFiles(dir, 'dp init --existing', { touched: [...created, MANIFEST, ...RENDERED, ...(ignores ? ['.gitignore'] : [])], profile });
   }
   return {
     profile,
     created: actions.filter((a) => a.op === 'create').map((a) => a.dest),
     kept: actions.filter((a) => a.op === 'keep').map((a) => a.dest),
     git,
+    committed,
   };
 }
 
-export function upgrade(target, { dryRun = false } = {}) {
+/**
+ * 升級 dp 管理的檔。v4.7.3:寫完就把 dp 的檔 commit(commitDpFiles)。以前留在工作目錄,tick 看到有未 commit 的變更就拒絕執行;
+ * 從 MCP 升級的 AI 沒有 git 可用,只能請使用者自己去終端機 commit(實測)。commit=false 可以不 commit。
+ */
+export function upgrade(target, { dryRun = false, commit = true } = {}) {
   const dir = resolve(target);
   const manifest = readJson(join(dir, MANIFEST), null);
   if (!manifest) throw new DpError(`${dir} 沒有 ${MANIFEST};不是 dp 裝的專案,請先 dp init --existing`);
@@ -119,6 +165,9 @@ export function upgrade(target, { dryRun = false } = {}) {
     create: actions.filter((a) => a.op === 'create').map((a) => a.dest),
     remove: removals,
   };
-  if (!dryRun) write(dir, actions, removals, profile);
+  if (dryRun) return summary;
+  write(dir, actions, removals, profile);
+  // 順便把 dp 的檔裡還沒進 git 的也 commit(4.7.3 以前裝進既有專案的,tools/ 等都沒 commit;dp doctor 會指到這裡)
+  summary.commit = commit ? commitDpFiles(dir, `dp upgrade ${summary.from} → ${summary.to}`, { touched: [...summary.update, ...summary.create, ...summary.remove, MANIFEST], profile }) : null;
   return summary;
 }

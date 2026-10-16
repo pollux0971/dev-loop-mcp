@@ -47,7 +47,9 @@ async function existingPython(mode = 'good') {
   for (const [f, t] of Object.entries(FILES)) { mkdirSync(dirname(join(proj, f)), { recursive: true }); writeFileSync(join(proj, f), t); }
   sh(proj, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm "existing project"');
   const r = init(proj, { name: 'budget', existing: true });
-  sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm "dp init"');
+  // v4.7.3:已經有 git 的專案,init 自己把 dp 的檔 commit(以前這裡要手動 commit,真的使用者不會知道要這樣做)
+  assert.ok(r.committed, 'init 把 dp 的檔 commit 了');
+  assert.equal(sh(proj, 'git status --porcelain --untracked-files=no'), '');
   const asked = [];
   const answers = { platform: '2', worker_cmd: `FAKE_MODE=${mode} node ${FAKE_BF}` };
   await setup(proj, { ask: async (q) => { asked.push(q.id); return answers[q.id] ?? ''; }, detect: { claude: false }, log: quiet });

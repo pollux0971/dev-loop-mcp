@@ -38,7 +38,7 @@ const HELP = `dp —— dev-paradigm-mcp v${VERSION}
        或:dp init <dir> → cd <dir> → dp setup → dp doctor → 在 Claude Code 打 /inbox
 
 安裝與設定
-  dp init <dir> [--name X] [--existing]     建新專案(或 --existing 補進既有專案)
+  dp init <dir> [--name X] [--existing] [--no-commit]   建新專案(或 --existing 補進既有專案;已經有 git 時會把 dp 的檔 commit)
   dp setup [--yes] [--answers file.json]     互動問答:選 AI、Verifier、自治等級,寫好設定並 commit
   dp doctor [--json]                         健康檢查:每一項 ✓ / ⚠ / ✗,不對的附修法
   dp upgrade [--dry-run]                     升級 dp 管理的檔(衝突就一個都不寫)
@@ -151,7 +151,7 @@ async function main() {
 
 // v4:每個指令認得的旗標。v3 的 `dp run --help` 把 --help 當成未知旗標忽略,直接在背景啟動了迴圈(實測)。
 const FLAGS = {
-  init: ['name', 'existing'], setup: ['yes', 'answers'], doctor: ['json'], upgrade: ['dry-run'],
+  init: ['name', 'existing', 'no-commit'], setup: ['yes', 'answers'], doctor: ['json'], upgrade: ['dry-run'],
   tick: [], run: ['interval', 'max-ticks', 'until-idle', 'daemon', 'stop'],
   status: ['json'], dashboard: ['out', 'serve', 'interval'], inbox: ['no-mark'], show: [], decide: ['verbatim', 'as'], confirm: ['verbatim'],
   halt: ['reason', 'keep-workers'], resume: ['verbatim'], unblock: ['verbatim'],
@@ -184,8 +184,8 @@ async function dispatchCommand(cmd, rest) {
       console.log(HELP);
       return 0;
     case 'init': {
-      const r = init(need({ dir: pos[0] }, 'dir', 'dp init <dir>'), { name: flags.name, existing: !!flags.existing });
-      console.log(`建立 ${r.created.length} 個檔${r.kept.length ? `,保留你既有的 ${r.kept.length} 個` : ''};git ${r.git}`);
+      const r = init(need({ dir: pos[0] }, 'dir', 'dp init <dir>'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'] });
+      console.log(`建立 ${r.created.length} 個檔${r.kept.length ? `,保留你既有的 ${r.kept.length} 個` : ''};git ${r.git}${r.committed ? `,已 commit ${r.committed.slice(0, 8)}` : ''}`);
       try { const p = addProject(pos[0]); console.log(`已登記到這台電腦的專案清單:${p.name}(dp project list)`); } catch { /* 登記失敗不影響 init */ }
       console.log(`下一步:cd ${pos[0]} && node tools/dp.mjs setup(一題一題帶你設定,大約兩分鐘)`);
       return 0;
@@ -226,6 +226,7 @@ async function dispatchCommand(cmd, rest) {
       const r = upgrade(root, { dryRun: !!flags['dry-run'] });
       console.log(`${r.from} → ${r.to}:更新 ${r.update.length}、新增 ${r.create.length}、移除 ${r.remove.length}${flags['dry-run'] ? '(dry-run,沒寫)' : ''}`);
       for (const k of ['update', 'create', 'remove']) for (const f of r[k]) console.log(`  ${k} ${f}`);
+      if (r.commit) console.log(`已 commit ${r.commit.slice(0, 8)}`);
       return 0;
     }
     case 'tick': {
