@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dp plans the work as a DAG, send
 
 ![dp hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.7.3 · Node ≥ 20 · zero dependencies · 182 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.7.3 · Node ≥ 20 · zero dependencies · 183 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**. Since 4.7.2 it is called dev-paradigm-mcp, because the MCP server is now the main way in. The command is still `dp`, and the MCP tools still start with `dp_`.
 >
@@ -405,7 +405,7 @@ More: [`payload/docs/dp/AGENTS-SETUP.md`](payload/docs/dp/AGENTS-SETUP.md), [`pa
 
 ### Automated tests
 
-`npm test`: **182 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
+`npm test`: **183 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
 
 ### Real run, 2026-10-16
 

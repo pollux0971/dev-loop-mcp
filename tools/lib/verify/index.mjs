@@ -90,7 +90,7 @@ export async function runVerify(ctx) {
       }
     }
     if (isLast && ['dev', 'integrate'].includes(leg) && !results.some((x) => x.outcome === 'FAIL')) {
-      results.push(...checkMutation(ex, changed, node, config));
+      results.push(...checkMutation(ex, changed, node, config, { leg }));
     }
   } finally {
     removeTree(scratch);

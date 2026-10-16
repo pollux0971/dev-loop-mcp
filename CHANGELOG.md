@@ -57,7 +57,10 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   規劃頁標成「已被 p-002 取代」。只能取代還沒決定的。沒帶 `supersedes`、但還在等決定的舊提案有同樣的節點時,提案結果帶提醒。
   實跑(minilang,Sonnet 5.5 當 Front):AI 發現第一份提案的 gherkin 欄位算錯,重提一份後只能請使用者「忽略」舊的;
   兩份都被批准的話,先寫進 DAG 的是舊的(錯的)那份。事件格式只多一個選填欄位 `decision_request.supersedes`,舊帳本照樣重播。
-- 新測試 11 個,加上 PR #1 的 1 個。`npm test` 182 個全部通過(4.7.2 是 171 個)。
+- **mutation 找不到相關的單元測試時分清楚**:Stryker(vitest.related)找不到 import 改到的檔的單元測試,會印「No tests were executed」、exit 1,
+  以前一律 ABSTAIN(「沒產生可讀的報告」),每次都升級問使用者。現在整合棒是 SKIPPED:命令列等組合層本來就用子程序從外面測、
+  由整合驗收把關;其他棒照舊 ABSTAIN,但說明是「沒有任何單元測試直接 import 改到的檔」。實跑:minilang 的 I1(apps/cli)。
+- 新測試 12 個,加上 PR #1 的 1 個。`npm test` 183 個全部通過(4.7.2 是 171 個)。
 
 ## 4.7.2 — 改名 dev-paradigm-mcp
 

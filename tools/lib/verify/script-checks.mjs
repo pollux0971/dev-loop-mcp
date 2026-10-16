@@ -125,7 +125,10 @@ export function mutationScore(report) {
  * 最後一棒:只對這一棒改到的實作檔跑 mutation。分數低代表測試抓不到錯,
  * 常見原因是實作對測試值寫死。tier strict 判 FAIL,其他 ABSTAIN(交 Critic 或你)。
  */
-export function checkMutation(ex, files, node, config) {
+/** Stryker 找不到跟改到的檔有關的測試(vitest.related):沒有任何單元測試 import 這些檔。 */
+const NO_RELATED_TESTS = /No tests were executed|failed to find test files related to mutated files/;
+
+export function checkMutation(ex, files, node, config, { leg } = {}) {
   const m = config.verify.mutation;
   if (!m?.cmd) return [];
   const targets = files.filter((f) => matchAny(f, m.include ?? []) && !matchAny(f, config.paths.tests));
@@ -138,7 +141,18 @@ export function checkMutation(ex, files, node, config) {
   if (existsSync(reportPath)) {
     try { score = mutationScore(JSON.parse(readFileSync(reportPath, 'utf8'))); } catch { /* 下面當成沒有報告 */ }
   }
-  if (!score) return [r('mutation', 'ABSTAIN', `mutation 沒產生可讀的報告(exit ${res.code}),無法判斷測試強度`, tail(res.stdout + res.stderr, 1500))];
+  if (!score) {
+    const out = res.stdout + res.stderr;
+    // v4.7.3:沒有單元測試 import 改到的檔。整合棒的組合層(命令列等)本來就是用子程序從外面測、靠整合驗收把關,mutation 量不到
+    // 不是問題 → SKIPPED;其他棒是真的警訊(測試沒碰到這些檔),照舊 ABSTAIN,但說清楚原因。
+    // 實測:minilang 的 I1(apps/cli)每次都因為「No tests were executed」ABSTAIN,整合棒每次都要問使用者
+    if (NO_RELATED_TESTS.test(out)) {
+      return leg === 'integrate'
+        ? [r('mutation', 'SKIPPED', `整合棒改到的檔(${targets.join(', ')})沒有單元測試直接 import(命令列多半用子程序測),mutation 量不到;這一層由整合驗收把關`)]
+        : [r('mutation', 'ABSTAIN', `改到的檔(${targets.join(', ')})沒有任何單元測試直接 import,mutation 量不到測試強度:測試可能只從外面跑程式,或根本沒測到這些檔`, tail(out, 600))];
+    }
+    return [r('mutation', 'ABSTAIN', `mutation 沒產生可讀的報告(exit ${res.code}),無法判斷測試強度`, tail(out, 1500))];
+  }
   const pct = score.score.toFixed(1);
   const min = node.tier === 'strict' ? (m.min_strict ?? m.min) : m.min;
   if (score.score >= min) return [r('mutation', 'PASS', `mutation 分數 ${pct}%(${score.detected}/${score.valid})≥ ${min}%`)];

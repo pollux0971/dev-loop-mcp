@@ -210,3 +210,20 @@ describe('dp check', () => {
     assert.equal(checkRuleSize(join(REPO, 'payload'), DEFAULTS).result, 'PASS');
   });
 });
+
+test('mutation 找不到相關的單元測試:整合棒 SKIPPED(組合層由整合驗收把關),其他棒 ABSTAIN 並說原因', async () => {
+  const { checkMutation } = await import('../tools/lib/verify/script-checks.mjs');
+  const { tempDir } = await import('./helpers.mjs');
+  const cwd = tempDir();
+  const out = 'WARN VitestTestRunner Vitest failed to find test files related to mutated files.\nERROR Stryker No tests were executed. Stryker will exit prematurely.';
+  const ex = { cwd, sh: () => ({ code: 1, stdout: out, stderr: '' }) };
+  const config = { ...DEFAULTS, verify: { ...DEFAULTS.verify, mutation: { ...DEFAULTS.verify.mutation, cmd: 'npx stryker run --mutate {files}' } } };
+  const [integ] = checkMutation(ex, ['apps/cli/src/main.ts'], { id: 'I1', kind: 'integration' }, config, { leg: 'integrate' });
+  assert.equal(integ.outcome, 'SKIPPED', '整合棒不升級去問使用者');
+  assert.match(integ.detail, /apps\/cli\/src\/main\.ts(.*)整合驗收/);
+  const [dev] = checkMutation(ex, ['packages/expr/src/evaluate.ts'], { id: 'expr/v1', kind: 'phase' }, config, { leg: 'dev' });
+  assert.equal(dev.outcome, 'ABSTAIN', '實作棒的檔沒有單元測試碰到是真的警訊');
+  assert.match(dev.detail, /沒有任何單元測試直接 import/);
+  const broken = { cwd, sh: () => ({ code: 2, stdout: 'something else broke', stderr: '' }) };
+  assert.match(checkMutation(broken, ['apps/cli/src/main.ts'], { id: 'I1' }, config, { leg: 'integrate' })[0].detail, /沒產生可讀的報告/, '其他失敗照舊');
+});

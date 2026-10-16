@@ -13,7 +13,7 @@
 | evidence | 每條附證據的宣稱 | dp 用同一條指令以 argv 重跑(不經 shell),退出碼不同。指令不在 `verify.rerun_allow`、含英數與 `._/:=@+-` 以外的字元、或指向 worktree 外 → ABSTAIN(不執行);但這一棒的 acceptance 已由 dp 重跑通過時,改記 SKIPPED(只是多說的話沒驗,不升級問你)。FAIL 不附輸出 |
 | acceptance | 有 accept 指令時 | 測試棒:不是紅的,或紅的原因是語法錯誤 / 步驟沒綁定 / pending;其他棒:不是綠的 |
 | dry-run | 測試棒與 test-fix 棒(設了 `verify.dry_run_cmd`) | gherkin 有步驟沒綁定、ambiguous(看摘要行,不信退出碼) |
-| mutation | 最後一棒(設了 `verify.mutation.cmd`) | 這一棒改到的實作檔 mutation 分數低於門檻(一般 `min` 預設 50,strict 節點 `min_strict` 預設 70):strict 判 FAIL,其他 ABSTAIN |
+| mutation | 最後一棒(設了 `verify.mutation.cmd`) | 這一棒改到的實作檔 mutation 分數低於門檻(一般 `min` 預設 50,strict 節點 `min_strict` 預設 70):strict 判 FAIL,其他 ABSTAIN。沒有單元測試 import 改到的檔時:整合棒 SKIPPED(組合層由整合驗收把關),其他棒 ABSTAIN |
 | standalone | 實作/整合棒 | 節點的 standalone 指令非 0 |
 | stubs / regression-standalone | 整合棒 | 正式碼仍 import `__stubs__`;依賴節點的 standalone 壞了 |
 
