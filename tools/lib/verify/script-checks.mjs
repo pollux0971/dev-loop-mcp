@@ -47,7 +47,13 @@ export function checkPaths(changed, envelope) {
   const outside = changed.filter((p) => !matchAny(p, envelope.allowed_paths));
   const forbidden = changed.filter((p) => matchAny(p, envelope.forbidden_paths));
   const bad = [...new Set([...outside, ...forbidden])];
-  if (!changed.length) return r('paths', 'FAIL', '這一棒沒有任何檔案變動');
+  // v4.7.3:整合棒可以沒有變動——組合層在能力節點合併時已經接通(驗收照樣要綠,後面的 acceptance 會檢查)。
+  // 實測:todo-cli 的 I1 跳過測試棒後,整合棒誠實地什麼都沒改,被這條退回;再派一次一樣,只能造假塞一個檔
+  if (!changed.length) {
+    return envelope.leg === 'integrate'
+      ? r('paths', 'PASS', '整合棒沒有檔案變動:組合層已經接通(驗收照樣要綠)')
+      : r('paths', 'FAIL', '這一棒沒有任何檔案變動');
+  }
   return bad.length
     ? r('paths', 'FAIL', `寫到 allowed_paths 以外或禁區:${bad.join(', ')}`, `allowed=${envelope.allowed_paths.join(' ')}`)
     : r('paths', 'PASS', `${changed.length} 個檔都在範圍內`);

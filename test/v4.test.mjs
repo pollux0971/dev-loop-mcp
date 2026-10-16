@@ -176,7 +176,7 @@ test('新專案的節點把程式放在 packages/ 與 apps/ 以外 → 提案照
   assert.deepEqual(proposeFeature(bf, off, CALC_GHERKIN).warnings, [], '既有專案照它自己的版面');
 });
 
-test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「跳過測試棒」,選了記 leg_done、接著跑整合棒、合併後請使用者試用', async () => {
+test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「跳過測試棒」,選了記 leg_done;整合棒零變動也能過;合併後請使用者試用', async () => {
   const proj = makeProject({ mode: 'already-green' });
   addNode(proj, CALC, CALC_GHERKIN);
   await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
@@ -193,7 +193,9 @@ test('整合點的驗收在動手前就是綠的:測試棒卡住時多一個「�
   s = await tickUntil(proj, (st) => st.nodes.get('I1').status === 'done');
   const iTest = [...s.dispatches.values()].find((d) => d.node_id === 'I1' && d.leg === 'test');
   assert.ok(readEvents(proj).some((e) => e.type === 'leg_done' && e.dispatch_id === iTest.dispatch_id && e.leg === 'test'), '記 leg_done');
-  assert.ok([...s.dispatches.values()].some((d) => d.node_id === 'I1' && d.leg === 'integrate' && d.state === 'accepted'), '接著跑整合棒並合併');
+  const integ = [...s.dispatches.values()].find((d) => d.node_id === 'I1' && d.leg === 'integrate' && d.state === 'accepted');
+  assert.ok(integ, '接著跑整合棒並合併');
+  assert.ok(integ.verify.results.some((r) => r.check === 'paths' && r.outcome === 'PASS' && /沒有檔案變動/.test(r.detail)), '整合棒零變動不算失敗');
   assert.ok(s.nodes.get('I1').e2e?.requestedSeq, '合併後請使用者試用');
 });
 

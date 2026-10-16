@@ -15,7 +15,7 @@
 //   hardcode   實作棒對測試值寫死(run 永遠回 5)
 //   badtest    測試棒把期望值寫錯(2+3=6);實作棒發現後回報 fix_leg=test;test-fix 棒改對(v4)
 //   hang       睡 30 秒(測停機會不會終止 worker)
-//   already-green 整合點的測試棒:驗收在動手前就是綠的,誠實回報卡住(不造假紅燈);其他棒照 good(v4.7.3)
+//   already-green 整合點的測試棒:驗收在動手前就是綠的,誠實回報卡住(不造假紅燈);整合棒什麼都不改照實交件;其他棒照 good(v4.7.3)
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -120,6 +120,10 @@ if (mode === 'escalate') {
   const cmd = env.acceptance[0].cmd;
   const code = sh(cmd);
   report({ kind: 'done', summary: '實作完成', claims: [{ text: '驗收通過', evidence: { cmd, exit: mode === 'lie' ? 0 : code } }] });
+} else if (env.leg === 'integrate' && mode === 'already-green') {
+  // 組合層早就接通了:什麼都不改,照實交 done 附驗收證據(v4.7.3)
+  const cmd = env.acceptance[0].cmd;
+  report({ kind: 'done', summary: '組合層已經接通,沒有要改的', claims: [{ text: '整合驗收通過', evidence: { cmd, exit: sh(cmd) } }] });
 } else if (env.leg === 'integrate') {
   write('packages/app/main.mjs', "import { run } from '../calc/src/calc.mjs';\nif (run(2, 3) !== 5) process.exit(1);\nconsole.log('ok');\n");
   commit('integrate');
