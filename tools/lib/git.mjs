@@ -1,24 +1,24 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { DpError, atomicWrite, ensureDir, removePath, run, sha256 } from './util.mjs';
+import { DlmError, atomicWrite, ensureDir, removePath, run, sha256 } from './util.mjs';
 
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /**
- * dp 跑的每一條 git 都停用 hooks。worktree 跟根目錄共用 .git/hooks:worker 在那裡放一個 post-merge,
- * 下一次 dp 在根目錄 merge 就會在主機上執行它。dp 自己的 commit / merge 不需要任何 hook。
+ * dlm 跑的每一條 git 都停用 hooks。worktree 跟根目錄共用 .git/hooks:worker 在那裡放一個 post-merge,
+ * 下一次 dlm 在根目錄 merge 就會在主機上執行它。dlm 自己的 commit / merge 不需要任何 hook。
  */
 export const NO_HOOKS = '-c core.hooksPath=/dev/null';
 
 export function git(cwd, args, { allowFail = false } = {}) {
   const r = run(`git ${NO_HOOKS} ${args}`, { cwd, timeoutMs: 5 * 60 * 1000 });
-  if (r.code !== 0 && !allowFail) throw new DpError(`git ${args} 失敗(${cwd}):\n${r.stderr || r.stdout}`);
+  if (r.code !== 0 && !allowFail) throw new DlmError(`git ${args} 失敗(${cwd}):\n${r.stderr || r.stdout}`);
   return r;
 }
 
 /**
  * 共用 git 設定的指紋(.git/config 與 config.worktree)。filter、diff driver、core.fsmonitor 之類都在這裡,
- * worker 改了它就能讓 dp 的 git 指令執行任意程式;所以每個 tick 開頭比對,不一致就停機等使用者看。
+ * worker 改了它就能讓 dlm 的 git 指令執行任意程式;所以每個 tick 開頭比對,不一致就停機等使用者看。
  */
 export function gitConfigFingerprint(root) {
   const dirOut = git(root, 'rev-parse --git-common-dir').stdout.trim();
@@ -30,7 +30,7 @@ export function gitConfigFingerprint(root) {
   return sha256(parts.join('\0'));
 }
 
-const baselinePath = (root) => join(root, '.dp', 'git-config.sha256');
+const baselinePath = (root) => join(root, '.dlm', 'git-config.sha256');
 
 export function readConfigBaseline(root) {
   const p = baselinePath(root);
@@ -58,7 +58,7 @@ export function branchExists(root, branch) {
   return git(root, `rev-parse --verify --quiet ${q(`refs/heads/${branch}`)}`, { allowFail: true }).code === 0;
 }
 
-/** 追蹤中的檔案有沒有未 commit 的變更(可排除 dp 自己管理的路徑)。 */
+/** 追蹤中的檔案有沒有未 commit 的變更(可排除 dlm 自己管理的路徑)。 */
 export function dirtyTracked(root, ignorePrefixes = []) {
   // 不能 trim:porcelain 每行開頭的狀態欄可能是空白(" M path")
   const lines = git(root, 'status --porcelain --untracked-files=no').stdout.split('\n').filter((l) => l.trim());
@@ -110,12 +110,12 @@ export function commitAll(cwd, paths, message) {
   git(cwd, `add -A -- ${paths.map(q).join(' ')}`);
   const staged = git(cwd, 'diff --cached --quiet', { allowFail: true });
   if (staged.code === 0) return null;
-  git(cwd, `-c user.name=dp -c user.email=dp@localhost commit --quiet -m ${q(message)}`);
+  git(cwd, `-c user.name=dlm -c user.email=dlm@localhost commit --quiet -m ${q(message)}`);
   return headSha(cwd);
 }
 
 export function mergeNoFf(root, branch, message) {
-  const r = git(root, `-c user.name=dp -c user.email=dp@localhost merge --no-ff --no-edit -m ${q(message)} ${q(branch)}`, { allowFail: true });
+  const r = git(root, `-c user.name=dlm -c user.email=dlm@localhost merge --no-ff --no-edit -m ${q(message)} ${q(branch)}`, { allowFail: true });
   if (r.code !== 0) {
     git(root, 'merge --abort', { allowFail: true });
     return { ok: false, output: r.stdout + r.stderr };
@@ -128,7 +128,7 @@ export function mergeNoFf(root, branch, message) {
  * 否則分支落後時會快轉,主線的 commit 會混進這一棒的 first-parent 鏈,被當成 worker 改的。衝突就放棄並回報。
  */
 export function syncWithMain(worktree, main) {
-  const r = git(worktree, `-c user.name=dp -c user.email=dp@localhost merge --no-ff --no-edit ${q(main)}`, { allowFail: true });
+  const r = git(worktree, `-c user.name=dlm -c user.email=dlm@localhost merge --no-ff --no-edit ${q(main)}`, { allowFail: true });
   if (r.code !== 0) {
     git(worktree, 'merge --abort', { allowFail: true });
     return { ok: false, output: r.stdout + r.stderr };
@@ -141,7 +141,7 @@ export function withMergeTree(root, dir, main, branch, fn) {
   removeWorktree(root, dir);
   git(root, `worktree add --detach ${q(dir)} ${q(main)}`);
   try {
-    const m = git(dir, `-c user.name=dp -c user.email=dp@localhost merge --no-ff --no-edit ${q(branch)}`, { allowFail: true });
+    const m = git(dir, `-c user.name=dlm -c user.email=dlm@localhost merge --no-ff --no-edit ${q(branch)}`, { allowFail: true });
     if (m.code !== 0) return fn({ ok: false, output: m.stdout + m.stderr, dir });
     return fn({ ok: true, dir, sha: headSha(dir) });
   } finally {

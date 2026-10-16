@@ -117,7 +117,7 @@ export class ProjectWorld extends World {
   /**
    * 同步執行一個 shell 指令,結果放進 lastRun 並回傳。cwd 預設 repo 根;命令列的整合測試常要在暫存目錄跑(放測試用的檔),給 opts.cwd。
    * 指令裡的 `--import tsx` 會換成 tsx 的絕對位置:在 repo 以外的目錄,node 解不到 tsx,子程序一啟動就失敗,
-   * 看起來像「還沒實作」的紅(假紅),之後實作棒怎麼改都綠不了(dp v4.7.3 實測:步驟自己 spawn、cwd 設暫存目錄)。
+   * 看起來像「還沒實作」的紅(假紅),之後實作棒怎麼改都綠不了(dlm v4.7.3 實測:步驟自己 spawn、cwd 設暫存目錄)。
    */
   runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): RunResult {
     const r = spawnSync(withTsxResolved(cmd), {

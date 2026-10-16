@@ -1,5 +1,5 @@
 {
-  "$comment": "worker.cmd 範例(依你的 CLI 版本確認旗標):Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DP_PROMPT\"。verifier 範例:backend cmd、cmd claude -p --model haiku --tools \"\" --no-session-persistence(dp setup 會幫你填)。worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dp/SECURITY.md)。詳見 docs/dp/AGENTS-SETUP.md",
+  "$comment": "worker.cmd 範例(依你的 CLI 版本確認旗標):Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DLM_PROMPT\"。verifier 範例:backend cmd、cmd claude -p --model haiku --tools \"\" --no-session-persistence(dlm setup 會幫你填)。worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dlm/SECURITY.md)。詳見 docs/dlm/AGENTS-SETUP.md",
   "main_branch": "main",
   "platform": "claude",
   "caps": {
@@ -11,7 +11,7 @@
   },
   "gates": {
     "chain": [
-      "check:dp",
+      "check:dlm",
       "typecheck",
       "test",
       "accept"

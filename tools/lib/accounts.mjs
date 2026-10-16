@@ -1,23 +1,23 @@
 // v4.6 多帳號(訂閱方案)。做法跟 Orca 的帳號切換一樣:每個帳號一個獨立的設定目錄,
 // Claude Code 用 CLAUDE_CONFIG_DIR、Codex 用 CODEX_HOME;在那個目錄登入一次,之後派工時帶上環境變數就是用那個帳號。
 //
-// 帳號清單是這台電腦的(~/.config/dp/accounts.json,DP_ACCOUNTS_FILE 可改),不進 repo:登入目錄的路徑跟憑證都是你個人的。
-// 專案的 dp.config.json 只寫「哪個角色用哪幾個帳號」(agents.worker.accounts = ["max-a", "max-b"])。
-// 一個角色有好幾個帳號時,dp 輪流用(最近用得最少的先),被限流的帳號冷卻到重置時間,期間跳過、改派下一個。
+// 帳號清單是這台電腦的(~/.config/dlm/accounts.json,DLM_ACCOUNTS_FILE 可改),不進 repo:登入目錄的路徑跟憑證都是你個人的。
+// 專案的 dlm.config.json 只寫「哪個角色用哪幾個帳號」(agents.worker.accounts = ["max-a", "max-b"])。
+// 一個角色有好幾個帳號時,dlm 輪流用(最近用得最少的先),被限流的帳號冷卻到重置時間,期間跳過、改派下一個。
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { DpError, readJson, run, writeJson } from './util.mjs';
+import { machineDir } from './legacy.mjs';
+import { DlmError, readJson, run, writeJson } from './util.mjs';
 
-/** 這台電腦的 dp 設定目錄(帳號、專案清單、跨專案的帳號用量、hub token)。DP_CONFIG_DIR 可改。 */
+/** 這台電腦的 dlm 設定目錄(帳號、專案清單、跨專案的帳號用量、hub token)。DLM_CONFIG_DIR 可改。 */
 export function configDir() {
-  if (process.env.DP_CONFIG_DIR) return process.env.DP_CONFIG_DIR;
-  if (process.env.DP_ACCOUNTS_FILE) return dirname(process.env.DP_ACCOUNTS_FILE);
-  return join(homedir(), '.config', 'dp');
+  if (process.env.DLM_CONFIG_DIR) return process.env.DLM_CONFIG_DIR;
+  if (process.env.DLM_ACCOUNTS_FILE) return dirname(process.env.DLM_ACCOUNTS_FILE);
+  return machineDir();
 }
 
 export function accountsFile() {
-  return process.env.DP_ACCOUNTS_FILE || join(configDir(), 'accounts.json');
+  return process.env.DLM_ACCOUNTS_FILE || join(configDir(), 'accounts.json');
 }
 const accountsDir = () => join(configDir(), 'accounts');
 
@@ -35,7 +35,7 @@ export const CLIS = {
     login: 'claude auth login',
     status: 'claude auth status --json',
     model: (m) => `--model ${m}`,
-    worker: 'claude -p --output-format json {model} --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools "Bash(rm -rf *)" "Bash(rm -fr *)" "Bash(sudo *)" < "$DP_PROMPT"',
+    worker: 'claude -p --output-format json {model} --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools "Bash(rm -rf *)" "Bash(rm -fr *)" "Bash(sudo *)" < "$DLM_PROMPT"',
     critic: 'claude -p --output-format json {model} --allowedTools "Read" "Grep" "Glob" "Bash(npm test*)" "Bash(npm run *)" "Bash(npx vitest*)" "Bash(npx cucumber-js*)" "Bash(git diff*)" "Bash(git log*)" "Bash(git show*)" --disallowedTools "Edit" "Write" "NotebookEdit"',
     verifier: 'claude -p {model} --tools "" --no-session-persistence',
     defaultVerifierModel: 'haiku',
@@ -48,7 +48,7 @@ export const CLIS = {
     status: 'codex login status',
     model: (m) => `-m ${m}`,
     // worker 的副本沒有 .git:要 --skip-git-repo-check;`-` = prompt 從 stdin 讀
-    worker: 'codex exec --skip-git-repo-check --sandbox workspace-write {model} - < "$DP_PROMPT"',
+    worker: 'codex exec --skip-git-repo-check --sandbox workspace-write {model} - < "$DLM_PROMPT"',
     critic: 'codex exec --skip-git-repo-check --sandbox read-only {model} -',
     verifier: 'codex exec --skip-git-repo-check --sandbox read-only {model} -',
   },
@@ -56,7 +56,7 @@ export const CLIS = {
 
 export function cliOf(name) {
   const c = CLIS[name];
-  if (!c) throw new DpError(`不支援的 CLI「${name}」(支援:${Object.keys(CLIS).join('、')})。其他工具照舊在 agents.<角色>.cmd 自己寫指令`);
+  if (!c) throw new DlmError(`不支援的 CLI「${name}」(支援:${Object.keys(CLIS).join('、')})。其他工具照舊在 agents.<角色>.cmd 自己寫指令`);
   return c;
 }
 
@@ -70,22 +70,22 @@ function saveAccounts(accounts) {
 
 export function getAccount(name) {
   const a = loadAccounts()[name];
-  if (!a) throw new DpError(`沒有帳號「${name}」。先 dp account add ${name} --cli claude`);
+  if (!a) throw new DlmError(`沒有帳號「${name}」。先 dlm account add ${name} --cli claude`);
   return { name, ...a };
 }
 
 const posInt = (v, what) => {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 1 || n > 50) throw new DpError(`${what} 要是 1–50 的整數`);
+  if (!Number.isInteger(n) || n < 1 || n > 50) throw new DlmError(`${what} 要是 1–50 的整數`);
   return n;
 };
 
 export function addAccount(name, { cli, plan = null, home = null, maxParallel = null } = {}) {
-  if (!/^[a-z0-9][a-z0-9_-]{0,39}$/i.test(name ?? '')) throw new DpError('帳號名稱只能用英數、- 和 _(例:max-a、codex-plus)');
+  if (!/^[a-z0-9][a-z0-9_-]{0,39}$/i.test(name ?? '')) throw new DlmError('帳號名稱只能用英數、- 和 _(例:max-a、codex-plus)');
   cliOf(cli);
   const accounts = loadAccounts();
-  if (accounts[name]) throw new DpError(`帳號「${name}」已經有了`);
+  if (accounts[name]) throw new DlmError(`帳號「${name}」已經有了`);
   const dir = home ?? join(accountsDir(), name);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const mp = posInt(maxParallel, '同時上限');
@@ -98,18 +98,18 @@ export function addAccount(name, { cli, plan = null, home = null, maxParallel = 
 export function updateAccount(name, { plan, maxParallel } = {}) {
   const accounts = loadAccounts();
   const a = accounts[name];
-  if (!a) throw new DpError(`沒有帳號「${name}」`);
+  if (!a) throw new DlmError(`沒有帳號「${name}」`);
   if (plan !== undefined) { if (plan) a.plan = plan; else delete a.plan; }
   if (maxParallel !== undefined) { const mp = posInt(maxParallel, '同時上限'); if (mp) a.max_parallel = mp; else delete a.max_parallel; }
   saveAccounts(accounts);
   return { name, ...a };
 }
 
-/** 只刪清單;dp 自己建的登入目錄一起刪(裡面是那個帳號的憑證),你指定的目錄不動。 */
+/** 只刪清單;dlm 自己建的登入目錄一起刪(裡面是那個帳號的憑證),你指定的目錄不動。 */
 export function removeAccount(name) {
   const accounts = loadAccounts();
   const a = accounts[name];
-  if (!a) throw new DpError(`沒有帳號「${name}」`);
+  if (!a) throw new DlmError(`沒有帳號「${name}」`);
   delete accounts[name];
   saveAccounts(accounts);
   const owned = a.home === join(accountsDir(), name);
@@ -120,7 +120,7 @@ export function removeAccount(name) {
 /** 派工時加的環境變數:指到帳號目錄,並清掉會蓋過它的金鑰(值設成空字串,childEnv 之後刪掉)。 */
 export function accountEnv(account) {
   const c = cliOf(account.cli);
-  const env = { [c.homeEnv]: account.home, DP_ACCOUNT: account.name };
+  const env = { [c.homeEnv]: account.home, DLM_ACCOUNT: account.name };
   for (const k of c.clearEnv) env[k] = '';
   return env;
 }
@@ -186,7 +186,7 @@ export function pickAccount(pool, usage, now = Date.now(), { ignoreParallel = fa
   if (!pool?.length) return null;
   const accounts = loadAccounts();
   const missing = pool.filter((n) => !accounts[n]);
-  if (missing.length) throw new DpError(`dp.config.json 用到這台電腦沒有的帳號:${missing.join(', ')}(dp account list 看有哪些;dp account add 新增)`);
+  if (missing.length) throw new DlmError(`dlm.config.json 用到這台電腦沒有的帳號:${missing.join(', ')}(dlm account list 看有哪些;dlm account add 新增)`);
   const cooling = (n) => usage[n]?.limited_until && Date.parse(usage[n].limited_until) > now;
   // v4.7:帳號可以設同時上限(所有專案加起來);滿了這輪先不用它
   const full = (n) => !ignoreParallel && accounts[n].max_parallel && (usage[n]?.open ?? 0) >= accounts[n].max_parallel;
@@ -245,7 +245,7 @@ export function accountUsage(events, now = Date.now()) {
 
 // ------------------------------------------------------------------ v4.7 跨專案的帳號紀錄
 // 同一個訂閱帳號可能同時給好幾個專案用:額度、冷卻、同時上限都是整個帳號的事,所以派工、結束、限流、花費
-// 另外記一份在這台電腦(~/.config/dp/account-log.jsonl,只記帳號相關的欄位,不記程式內容)。選號看這一份。
+// 另外記一份在這台電腦(~/.config/dlm/account-log.jsonl,只記帳號相關的欄位,不記程式內容)。選號看這一份。
 
 export const accountLogFile = () => join(configDir(), 'account-log.jsonl');
 const LOG_KEEP_DAYS = 7;

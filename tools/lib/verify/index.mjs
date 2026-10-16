@@ -1,6 +1,6 @@
 // Verifier:script 檢查 + 小模型窄題檢查。
 // 小模型只有否決權:輸出 FAIL / ABSTAIN / NO_OBJECTION,從來沒有 PASS。
-// 它看的是 dp 自己重跑的輸出與 diff,不看 worker 的敘述(避免被大模型的說法錨定)。
+// 它看的是 dlm 自己重跑的輸出與 diff,不看 worker 的敘述(避免被大模型的說法錨定)。
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from '../git.mjs';
@@ -35,7 +35,7 @@ export async function modelCheck(root, config, name, vars, label) {
       prompt = fillTemplate(tpl, vars);
     } catch (e) {
       // 模板是舊版(例:v3 的 scenario-honesty 用 <<SCENARIO>>/<<DIFF>>):不讓整個 tick 當掉,棄權並提示升級
-      return { check: name, outcome: 'ABSTAIN', detail: `${label}:prompts/verifier/${name}.${variant}.md 是舊版模板(${e.message}),請跑 dp upgrade` };
+      return { check: name, outcome: 'ABSTAIN', detail: `${label}:prompts/verifier/${name}.${variant}.md 是舊版模板(${e.message}),請跑 dlm upgrade` };
     }
     answers.push(await askVerifier(config, prompt));
   }
@@ -59,7 +59,7 @@ export async function runVerify(ctx) {
   const changed = legDiff(wt, legBase, commit);
   const paths = checkPaths(changed, envelope);
   results.push(paths);
-  // 沙箱副本裡碰了 .git / .dp / node_modules / symlink 的,dp 沒有同步回來,但這一棒一樣不算數
+  // 沙箱副本裡碰了 .git / .dlm / node_modules / symlink 的,dlm 沒有同步回來,但這一棒一樣不算數
   const violations = dispatch.violations_path ? readJson(join(root, dispatch.violations_path), []) : [];
   if (violations.length) results.push({ check: 'sandbox-escape', outcome: 'FAIL', detail: `在沙箱副本裡碰了不該碰的地方:${violations.slice(0, 10).join(', ')}` });
   results.push(checkReportSanity(report));
@@ -76,7 +76,7 @@ export async function runVerify(ctx) {
   const leg = dispatch.leg;
   const isLast = leg === pipelineFor(node, config).at(-1);
   let reruns = [];
-  // 驗收指令 → dp 自己重跑的結果(PASS = 照規定紅 / 綠,紅的原因也對)
+  // 驗收指令 → dlm 自己重跑的結果(PASS = 照規定紅 / 綠,紅的原因也對)
   const accepted = new Map();
   try {
     const evidence = checkEvidence(ex, report, config);
@@ -103,11 +103,11 @@ export async function runVerify(ctx) {
 
   // ---- 模型窄題 ----
   for (const rr of reruns) {
-    // v4.7.3:證據指令就是這一棒的驗收指令,而且 dp 剛用它重跑確認過(紅 / 綠照規定、紅的原因也對,退出碼也跟宣稱一樣):
+    // v4.7.3:證據指令就是這一棒的驗收指令,而且 dlm 剛用它重跑確認過(紅 / 綠照規定、紅的原因也對,退出碼也跟宣稱一樣):
     // 再問小模型「輸出有沒有推翻這個宣稱」是多餘的;兩種問法答得不一樣就變成 ABSTAIN、升級問使用者。
     // 實跑:todo-cli、wordfreq、minilang 好幾次要使用者決定合併,原因都是「驗收是紅的 / 全綠」這種宣稱兩種問法不一致
     if (accepted.get(normCmd(rr.cmd)) === 'PASS') {
-      results.push({ check: 'claim-supported', outcome: 'SKIPPED', detail: `宣稱「${rr.claim.slice(0, 40)}」:證據就是驗收指令,dp 已經重跑確認,不再問小模型` });
+      results.push({ check: 'claim-supported', outcome: 'SKIPPED', detail: `宣稱「${rr.claim.slice(0, 40)}」:證據就是驗收指令,dlm 已經重跑確認,不再問小模型` });
       continue;
     }
     results.push(await modelCheck(root, config, 'claim-supported', { CLAIM: rr.claim, CMD: rr.cmd, EXIT: String(rr.exit), OUTPUT: rr.output }, `宣稱「${rr.claim.slice(0, 40)}」`));
@@ -126,13 +126,13 @@ export async function runVerify(ctx) {
       }
     }
   }
-  // v4:不在重跑白名單的證據,如果這一棒的驗收已經由 dp 自己跑過並通過,只是「多說的話沒驗」,不再升級成問使用者
+  // v4:不在重跑白名單的證據,如果這一棒的驗收已經由 dlm 自己跑過並通過,只是「多說的話沒驗」,不再升級成問使用者
   const acceptanceRan = results.some((x) => x.check === 'acceptance' && x.outcome === 'PASS');
   if (acceptanceRan) {
     for (const x of results) {
       if (x.check === 'evidence' && x.outcome === 'ABSTAIN' && /重跑白名單/.test(x.detail ?? '')) {
         x.outcome = 'SKIPPED';
-        x.detail = `${x.detail}(驗收已由 dp 重跑通過,這條只記錄不升級)`;
+        x.detail = `${x.detail}(驗收已由 dlm 重跑通過,這條只記錄不升級)`;
       }
     }
   }

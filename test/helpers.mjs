@@ -13,17 +13,17 @@ import { pidAlive, readJson, run, writeJson } from '../tools/lib/util.mjs';
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// 測試不碰你真的 ~/.config/dp/key:整個測試行程(含它開的 dp 子程序)用一把暫存金鑰
-if (!process.env.DP_KEY_FILE) process.env.DP_KEY_FILE = join(mkdtempSync(join(tmpdir(), 'dp-key-')), 'key');
-// v4.7:帳號、專案清單、hub token 也不碰你真的 ~/.config/dp
-if (!process.env.DP_CONFIG_DIR) process.env.DP_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'dp-config-'));
+// 測試不碰你真的 ~/.config/dlm/key:整個測試行程(含它開的 dlm 子程序)用一把暫存金鑰
+if (!process.env.DLM_KEY_FILE) process.env.DLM_KEY_FILE = join(mkdtempSync(join(tmpdir(), 'dlm-key-')), 'key');
+// v4.7:帳號、專案清單、hub token 也不碰你真的 ~/.config/dlm
+if (!process.env.DLM_CONFIG_DIR) process.env.DLM_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'dlm-config-'));
 export const FAKE = join(REPO, 'test', 'fixtures', 'fake-worker.mjs');
 export const FAKE_VERIFIER = join(REPO, 'test', 'fixtures', 'fake-verifier.mjs');
 /** 測試專案沒有 node_modules:用 node 內建 test runner 當專案測試,讓合併 gate 真的跑到所有節點的測試。 */
 export const TEST_SCRIPT = 'node --test "packages/**/*.test.mjs"';
 
 const temps = [];
-export function tempDir(prefix = 'dp-test-') {
+export function tempDir(prefix = 'dlm-test-') {
   const d = mkdtempSync(join(tmpdir(), prefix));
   temps.push(d);
   return d;
@@ -39,15 +39,15 @@ export function sh(cwd, cmd) {
 }
 
 export function makeProject({ mode = 'good', level = 1, config = {} } = {}) {
-  const proj = join(tempDir('dp-proj-'), 'proj');
+  const proj = join(tempDir('dlm-proj-'), 'proj');
   init(proj, { name: 'demo' });
   const pkg = readJson(join(proj, 'package.json'));
   pkg.scripts.test = TEST_SCRIPT;
   writeJson(join(proj, 'package.json'), pkg);
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.worker.cmd = `FAKE_MODE=${mode} node ${FAKE}`;
   cfg.autonomy.level = level;
-  cfg.gates.chain = ['check:dp', 'test'];
+  cfg.gates.chain = ['check:dlm', 'test'];
   // 測試專案沒有 node_modules / tsx / stryker:dry-run 與 mutation 由專門的測試開
   cfg.verify = { ...cfg.verify, dry_run_cmd: null, mutation: { ...cfg.verify?.mutation, cmd: null } };
   // 使用者授權的簽章流程由 p1 測試專門驗;其他測試直接以使用者身分 decide
@@ -62,15 +62,15 @@ export function makeProject({ mode = 'good', level = 1, config = {} } = {}) {
     if (k === 'agents') for (const [a, av] of Object.entries(v)) cfg.agents[a] = { ...cfg.agents[a], ...av };
     else cfg[k] = typeof v === 'object' && !Array.isArray(v) ? { ...cfg[k], ...v } : v;
   }
-  writeJson(join(proj, 'dp.config.json'), cfg);
+  writeJson(join(proj, 'dlm.config.json'), cfg);
   sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm config');
   return proj;
 }
 
 export function setWorkerMode(proj, mode) {
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.worker.cmd = `FAKE_MODE=${mode} node ${FAKE}`;
-  writeJson(join(proj, 'dp.config.json'), cfg);
+  writeJson(join(proj, 'dlm.config.json'), cfg);
   sh(proj, `git add -A && git -c user.name=t -c user.email=t@t commit -qm "mode ${mode}"`);
 }
 

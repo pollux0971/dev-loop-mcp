@@ -1,4 +1,4 @@
-// AUTONOMY.md 的機械版。等級由使用者在 dp.config.json 設;這裡只決定「這件事往哪送」。
+// AUTONOMY.md 的機械版。等級由使用者在 dlm.config.json 設;這裡只決定「這件事往哪送」。
 //   L0 每一次合併都問使用者
 //   L1 script 全綠且 Verifier 無異議 → 自動;有 ABSTAIN → 問使用者
 //   L2 ABSTAIN 交 Critic;範圍在父節點內的側向子節點自動批准

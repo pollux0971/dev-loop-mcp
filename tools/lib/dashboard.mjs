@@ -1,7 +1,7 @@
-// 視覺化主控台:資料只從 dag + ledger 重播得出(跟 dp status 同一份),不寫任何事件。
+// 視覺化主控台:資料只從 dag + ledger 重播得出(跟 dlm status 同一份),不寫任何事件。
 // 產物是一個自帶資料的 HTML 檔;--serve 時同一頁每幾秒重抓 /data.json。零依賴。
-// v4.6:--serve 時「帳號」頁可以設定訂閱帳號(新增、移除、哪個角色用哪幾個)。唯一能寫的地方,做法是跑一次 `dp account …`,
-// 跟在終端機打指令一模一樣;要帶這次啟動才有的 token,只收 127.0.0.1 來的請求。決定、批准仍然只能在 Front 或 dp decide。
+// v4.6:--serve 時「帳號」頁可以設定訂閱帳號(新增、移除、哪個角色用哪幾個)。唯一能寫的地方,做法是跑一次 `dlm account …`,
+// 跟在終端機打指令一模一樣;要帶這次啟動才有的 token,只收 127.0.0.1 來的請求。決定、批准仍然只能在 Front 或 dlm decide。
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -254,7 +254,7 @@ const embed = (data) => JSON.stringify(data).replace(/</g, '\\u003c');
 export function renderDashboard(data, { live = false, intervalMs = 5000, token = '', hub = '' } = {}) {
   return PAGE
     .replace('"__HUB__"', () => JSON.stringify(hub))
-    .replace('__TITLE__', () => escapeHtml(`${data.project} · dp 主控台`))
+    .replace('__TITLE__', () => escapeHtml(`${data.project} · dlm 主控台`))
     .replace('__DATA__', () => embed(data))
     .replace('__LIVE__', live ? String(intervalMs) : '0')
     .replace('"__TOKEN__"', () => JSON.stringify(token));
@@ -264,9 +264,9 @@ const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '
 
 const NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 const WORD = /^[\w.:@-]{1,60}$/;
-const DP = fileURLToPath(new URL('../dp.mjs', import.meta.url));
+const DLM = fileURLToPath(new URL('../dlm.mjs', import.meta.url));
 
-/** 帳號頁的動作 → dp account 的 argv。每個值都先檢查過,而且不經 shell。 */
+/** 帳號頁的動作 → dlm account 的 argv。每個值都先檢查過,而且不經 shell。 */
 export function accountArgv(body) {
   const bad = (m) => { throw new Error(m); };
   switch (body?.action) {
@@ -298,26 +298,26 @@ function sameToken(a, b) {
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
 
-/** POST /api/account:只收這台電腦、這次啟動的頁面送來的(Host / Origin 是 127.0.0.1、帶 x-dp-token、JSON)。 */
+/** POST /api/account:只收這台電腦、這次啟動的頁面送來的(Host / Origin 是 127.0.0.1、帶 x-dlm-token、JSON)。 */
 function accountApi(root, req, res, { token, port }) {
   const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
   const send = (code, obj) => res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end(JSON.stringify(obj));
   if (!hosts.includes(req.headers.host)) return send(403, { ok: false, out: 'Host 不對' });
   if (req.headers.origin && !hosts.map((h) => `http://${h}`).includes(req.headers.origin)) return send(403, { ok: false, out: 'Origin 不對' });
-  if (!sameToken(req.headers['x-dp-token'], token)) return send(403, { ok: false, out: 'token 不對(重新整理頁面)' });
+  if (!sameToken(req.headers['x-dlm-token'], token)) return send(403, { ok: false, out: 'token 不對(重新整理頁面)' });
   if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) return send(415, { ok: false, out: '要 JSON' });
   let raw = '';
   req.on('data', (c) => { raw += c; if (raw.length > 16384) req.destroy(); });
   req.on('end', () => {
     let argv;
     try { argv = accountArgv(JSON.parse(raw)); } catch (e) { return send(400, { ok: false, out: e.message }); }
-    const r = spawnSync(process.execPath, [DP, ...argv], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync(process.execPath, [DLM, ...argv], { cwd: root, encoding: 'utf8', timeout: 60000 });
     const out = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim();
     return send(200, { ok: r.status === 0, out });
   });
 }
 
-/** --serve:只綁 127.0.0.1。GET 是唯讀的主控台;POST 只有帳號設定。每次請求重新重播帳本,所以永遠跟 dp status 一致。 */
+/** --serve:只綁 127.0.0.1。GET 是唯讀的主控台;POST 只有帳號設定。每次請求重新重播帳本,所以永遠跟 dlm status 一致。 */
 export function serveDashboard(root, { port = 7171, intervalMs = 5000, log = console.log } = {}) {
   const token = randomBytes(24).toString('hex');
   let bound = port;

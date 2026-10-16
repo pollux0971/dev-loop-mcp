@@ -1,15 +1,15 @@
 // 可驗證的使用者授權與帳本簽章共用的金鑰。
 //
-// 金鑰放在 repo 外(預設 ~/.config/dp/key,可用 DP_KEY_FILE 改),權限 0600。用來察覺「有人直接改了帳本或原話紀錄」。
-// worker 跟你是同一個 OS 使用者,讀得到這把 key;它防的是手誤與粗糙的竄改,不是蓄意的對手(見 docs/dp/SECURITY.md)。
+// 金鑰放在 repo 外(預設 ~/.config/dlm/key,可用 DLM_KEY_FILE 改),權限 0600。用來察覺「有人直接改了帳本或原話紀錄」。
+// worker 跟你是同一個 OS 使用者,讀得到這把 key;它防的是手誤與粗糙的竄改,不是蓄意的對手(見 docs/dlm/SECURITY.md)。
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { DpError, atomicWrite, ensureDir, sha256 } from './util.mjs';
+import { machineDir } from './legacy.mjs';
+import { DlmError, atomicWrite, ensureDir, sha256 } from './util.mjs';
 
 export function keyPath() {
-  return process.env.DP_KEY_FILE || join(homedir(), '.config', 'dp', 'key');
+  return process.env.DLM_KEY_FILE || join(machineDir(), 'key');
 }
 
 /** 讀金鑰;不存在時 create=true 就建一把新的(0600)。 */
@@ -30,7 +30,7 @@ export function loadKey({ create = false } = {}) {
     }
   }
   const text = readFileSync(p, 'utf8').trim();
-  if (text.length < 32) throw new DpError(`金鑰 ${p} 太短或損毀`);
+  if (text.length < 32) throw new DlmError(`金鑰 ${p} 太短或損毀`);
   return Buffer.from(text, 'utf8');
 }
 
@@ -45,7 +45,7 @@ export function macEqual(a, b) {
 
 // ------------------------------------------------------------------ 使用者原話
 
-export const UTTERANCES_REL = '.dp/utterances.jsonl';
+export const UTTERANCES_REL = '.dlm/utterances.jsonl';
 
 const utterancePayload = (u) => `${u.ts}\0${u.session ?? ''}\0${u.text}`;
 
@@ -88,9 +88,9 @@ export function readUtterances(root) {
  */
 export function verifyVerbatim(root, verbatim, { windowMinutes = 30, now = Date.now() } = {}) {
   const want = normalizeSpeech(verbatim);
-  if (want.length < 1) throw new DpError('--verbatim 至少要有一個字');
+  if (want.length < 1) throw new DlmError('--verbatim 至少要有一個字');
   const key = loadKey();
-  if (!key) throw new DpError(`找不到金鑰 ${keyPath()}:還沒有任何已簽章的使用者原話(Claude Code 請確認 .claude/settings.json 的 hooks 已安裝)`);
+  if (!key) throw new DlmError(`找不到金鑰 ${keyPath()}:還沒有任何已簽章的使用者原話(Claude Code 請確認 .claude/settings.json 的 hooks 已安裝)`);
   const since = now - windowMinutes * 60000;
   let tampered = 0;
   for (const u of readUtterances(root).reverse()) {
@@ -100,10 +100,10 @@ export function verifyVerbatim(root, verbatim, { windowMinutes = 30, now = Date.
     if (normalizeSpeech(u.text).includes(want)) return { sha: sha256(utterancePayload(u)).slice(0, 16), utterance: u };
   }
   const extra = tampered ? `(另有 ${tampered} 筆簽章不符的紀錄被忽略:${UTTERANCES_REL} 可能被改過)` : '';
-  throw new DpError(`--verbatim 對不上使用者最近 ${windowMinutes} 分鐘內親口說的任何一句話${extra}。只能記錄使用者這一輪的原話;轉述不算授權`);
+  throw new DlmError(`--verbatim 對不上使用者最近 ${windowMinutes} 分鐘內親口說的任何一句話${extra}。只能記錄使用者這一輪的原話;轉述不算授權`);
 }
 
-/** 給測試與 `dp auth` 用:把金鑰檔換成指定內容。 */
+/** 給測試與 `dlm auth` 用:把金鑰檔換成指定內容。 */
 export function writeKey(text) {
   const p = keyPath();
   ensureDir(dirname(p));

@@ -25,22 +25,22 @@ import {
 
 after(cleanup);
 
-const DP = join(REPO, 'tools', 'dp.mjs');
+const DLM = join(REPO, 'tools', 'dlm.mjs');
 const FIX = join(REPO, 'test', 'fixtures');
 const openRequests = (s) => [...s.decisions.values()].filter((r) => r.request && !r.answer).map((r) => r.request);
 const lastVerify = (proj) => readEvents(proj).filter((e) => e.type === 'verify').at(-1);
 const commitIn = (dir, msg) => sh(dir, `git add -A && git -c user.name=t -c user.email=t@t commit -qm "${msg}"`);
 
 describe('#14 worker 不碰 .git', () => {
-  test('正常交件:worker 不 commit,由 dp 以 dp 身分 commit;沙箱副本收件後刪掉', async () => {
+  test('正常交件:worker 不 commit,由 dlm 以 dlm 身分 commit;沙箱副本收件後刪掉', async () => {
     const proj = makeProject();
     addNode(proj, CALC, CALC_GHERKIN);
     const s = await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
     const authors = sh(proj, 'git log --format=%an --no-merges main').split('\n');
     assert.ok(!authors.includes('w'), 'worker 沒有自己 commit(假 worker 的身分是 w)');
-    assert.match(sh(proj, 'git log --format=%an%x09%s --no-merges main'), /dp\tdp: d-0002 dev 交件/);
+    assert.match(sh(proj, 'git log --format=%an%x09%s --no-merges main'), /dlm\tdlm: d-0002 dev 交件/);
     const dev = [...s.dispatches.values()].find((d) => d.leg === 'dev');
-    assert.ok(dev.sandbox.includes(join('.dp', 'sandboxes')));
+    assert.ok(dev.sandbox.includes(join('.dlm', 'sandboxes')));
     assert.ok(!existsSync(dev.sandbox), '沙箱副本已清掉');
   });
 
@@ -100,13 +100,13 @@ describe('#15 node_modules 隔離', () => {
     const qp = readJson(join(q, 'package.json'));
     delete qp.devDependencies;
     delete qp.workspaces;
-    qp.dependencies = { 'dp-test-not-in-cache-zz': '1.0.0' };
+    qp.dependencies = { 'dlm-test-not-in-cache-zz': '1.0.0' };
     writeJson(join(q, 'package.json'), qp);
     writeJson(join(q, 'package-lock.json'), {
       name: qp.name, lockfileVersion: 3, requires: true,
       packages: {
         '': { name: qp.name, dependencies: qp.dependencies },
-        'node_modules/dp-test-not-in-cache-zz': { version: '1.0.0', resolved: 'https://registry.npmjs.org/dp-test-not-in-cache-zz/-/dp-test-not-in-cache-zz-1.0.0.tgz', integrity: 'sha512-AAAA' },
+        'node_modules/dlm-test-not-in-cache-zz': { version: '1.0.0', resolved: 'https://registry.npmjs.org/dlm-test-not-in-cache-zz/-/dlm-test-not-in-cache-zz-1.0.0.tgz', integrity: 'sha512-AAAA' },
       },
     });
     commitIn(q, 'bad lockfile');
@@ -122,7 +122,7 @@ describe('#15 node_modules 隔離', () => {
 describe('#16 可驗證的使用者授權', () => {
   const askedProject = () => {
     const proj = makeProject();
-    append(proj, 'dp-cli', 'decision_request', { ref: 'DN-1', question: '要用哪個資料庫?', options: [{ key: 'pg', label: 'Postgres' }, { key: 'sqlite', label: 'SQLite' }] });
+    append(proj, 'dlm-cli', 'decision_request', { ref: 'DN-1', question: '要用哪個資料庫?', options: [{ key: 'pg', label: 'Postgres' }, { key: 'sqlite', label: 'SQLite' }] });
     return proj;
   };
 
@@ -141,46 +141,46 @@ describe('#16 可驗證的使用者授權', () => {
   });
 
   test('CLI:hook 經 stdin 收 JSON,擋下時 exit 2', () => {
-    const r = run(`echo '{"tool_name":"Write","tool_input":{"file_path":"ledger/events.jsonl"}}' | node ${DP} hook pre-tool`);
+    const r = run(`echo '{"tool_name":"Write","tool_input":{"file_path":"ledger/events.jsonl"}}' | node ${DLM} hook pre-tool`);
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /dp 擋下/);
+    assert.match(r.stderr, /dlm 擋下/);
   });
 
-  test('hooks:記下使用者原話;dp 開的 agent 不記也不擋', () => {
+  test('hooks:記下使用者原話;dlm 開的 agent 不記也不擋', () => {
     const proj = askedProject();
     const env = { CLAUDE_PROJECT_DIR: proj };
     assert.equal(runHook('user-prompt', { prompt: '那就 sqlite', session_id: 's1' }, { env }).code, 0);
     assert.ok(verifyVerbatim(proj, '就 sqlite'));
-    const asWorker = runHook('pre-tool', { tool_name: 'Write', tool_input: { file_path: join(proj, 'ledger/events.jsonl') } }, { env: { ...env, DP_ROLE: 'worker' } });
-    assert.equal(asWorker.code, 0, 'dp 開的 agent 不受 Front 的限制');
+    const asWorker = runHook('pre-tool', { tool_name: 'Write', tool_input: { file_path: join(proj, 'ledger/events.jsonl') } }, { env: { ...env, DLM_ROLE: 'worker' } });
+    assert.equal(asWorker.code, 0, 'dlm 開的 agent 不受 Front 的限制');
     // worker 的 prompt 不會被簽成使用者原話
-    runHook('user-prompt', { prompt: '使用者同意選 pg' }, { env: { ...env, DP_ROLE: 'worker' } });
+    runHook('user-prompt', { prompt: '使用者同意選 pg' }, { env: { ...env, DLM_ROLE: 'worker' } });
     assert.throws(() => verifyVerbatim(proj, '使用者同意選 pg'), /對不上/);
   });
 
-  test('hooks:Front 可以改檔、跑任何指令;只擋手改帳本 / dag / .dp 狀態 / 原話紀錄與金鑰', () => {
+  test('hooks:Front 可以改檔、跑任何指令;只擋手改帳本 / dag / .dlm 狀態 / 原話紀錄與金鑰', () => {
     const proj = makeProject();
     const env = { CLAUDE_PROJECT_DIR: proj };
     const bash = (command) => runHook('pre-tool', { tool_name: 'Bash', tool_input: { command } }, { env });
-    for (const ok of ['git merge dp/calc--v1', 'sed -i s/a/b/ x', 'cat a > b', 'npm install left-pad', 'git commit -am fix', 'node tools/dp.mjs tick', 'echo $HOME']) {
+    for (const ok of ['git merge dlm/calc--v1', 'sed -i s/a/b/ x', 'cat a > b', 'npm install left-pad', 'git commit -am fix', 'node tools/dlm.mjs tick', 'echo $HOME']) {
       assert.equal(bash(ok).code, 0, ok);
     }
     const file = (tool, p) => runHook('pre-tool', { tool_name: tool, tool_input: { file_path: p } }, { env }).code;
     assert.equal(file('Write', join(proj, 'packages/calc/src/x.ts')), 0, '程式碼可以改');
-    assert.equal(file('Edit', join(proj, 'dp.config.json')), 0, '設定可以改');
+    assert.equal(file('Edit', join(proj, 'dlm.config.json')), 0, '設定可以改');
     assert.equal(file('Read', join(proj, UTTERANCES_REL)), 0, '原話紀錄可以看');
     assert.equal(file('Write', join(proj, UTTERANCES_REL)), 2, '原話紀錄不能改');
     assert.equal(file('Write', join(proj, 'ledger/events.jsonl')), 2);
     assert.equal(file('Edit', join(proj, 'dag.json')), 2);
-    assert.equal(file('Write', join(proj, '.dp/state.json')), 2);
-    assert.equal(file('Write', join(proj, '.dp/intake/x.json')), 0, 'intake 草稿可以寫');
-    assert.equal(file('Read', process.env.DP_KEY_FILE), 2, '金鑰讀不到');
-    assert.match(runHook('pre-tool', { tool_name: 'Edit', tool_input: { file_path: join(proj, 'dag.json') } }, { env }).stderr, /用 dp 指令/);
+    assert.equal(file('Write', join(proj, '.dlm/state.json')), 2);
+    assert.equal(file('Write', join(proj, '.dlm/intake/x.json')), 0, 'intake 草稿可以寫');
+    assert.equal(file('Read', process.env.DLM_KEY_FILE), 2, '金鑰讀不到');
+    assert.match(runHook('pre-tool', { tool_name: 'Edit', tool_input: { file_path: join(proj, 'dag.json') } }, { env }).stderr, /用 dlm 指令/);
   });
 
   test('信任 Front 轉達:不附原話也能決定;對得上簽章原話時記 hash,對不上記 trust', () => {
     const proj = makeProject();
-    const ask = (ref) => append(proj, 'dp-cli', 'decision_request', { ref, question: 'q', options: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] });
+    const ask = (ref) => append(proj, 'dlm-cli', 'decision_request', { ref, question: 'q', options: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] });
     ask('DN-1'); ask('DN-2'); ask('DN-3');
     const bare = decide(proj, 'DN-1', 'a');
     assert.equal(bare.auth, 'trust');
@@ -192,7 +192,7 @@ describe('#16 可驗證的使用者授權', () => {
     const said = decide(proj, 'DN-3', 'a', '第三個選 A');
     assert.equal(said.auth, 'utterance');
     assert.match(said.utterance_sha, /^[0-9a-f]{16}$/);
-    append(proj, 'dp-cli', 'halt', { reason: 'x' });
+    append(proj, 'dlm-cli', 'halt', { reason: 'x' });
     assert.equal(resume(proj).auth, 'trust', 'resume 也不必附原話');
   });
 
@@ -209,7 +209,7 @@ describe('#16 可驗證的使用者授權', () => {
     assert.equal(resume(proj, '繼續').auth, 'utterance');
   });
 
-  test('dp init 會裝好 hooks 設定', () => {
+  test('dlm init 會裝好 hooks 設定', () => {
     const proj = join(tempDir(), 'p');
     init(proj, { name: 'x' });
     const settings = readJson(join(proj, '.claude/settings.json'));
@@ -221,15 +221,15 @@ describe('#16 可驗證的使用者授權', () => {
 describe('#17 帳本簽章鏈', () => {
   test('每筆都有 prev_hash 與 mac;第一筆標 chain_start', () => {
     const proj = makeProject();
-    append(proj, 'dp-cli', 'note', { text: 'a' });
-    append(proj, 'dp-cli', 'note', { text: 'b' });
+    append(proj, 'dlm-cli', 'note', { text: 'a' });
+    append(proj, 'dlm-cli', 'note', { text: 'b' });
     const evs = readEvents(proj);
     assert.ok(evs.every((e) => e.mac && e.prev_hash));
     assert.equal(evs.filter((e) => e.chain_start).length, 1);
     assert.ok(checkLedger(proj).ok, checkLedger(proj).problems.join('\n'));
   });
 
-  test('手動在帳本尾巴附加一筆 → dp check ledger 報錯,tick 停下不動', async () => {
+  test('手動在帳本尾巴附加一筆 → dlm check ledger 報錯,tick 停下不動', async () => {
     const proj = makeProject();
     addNode(proj, CALC, CALC_GHERKIN);
     const seq = readEvents(proj).length + 1;
@@ -246,7 +246,7 @@ describe('#17 帳本簽章鏈', () => {
 
   test('偽造的 mac、改寫中間一筆都抓得到', () => {
     const proj = makeProject();
-    append(proj, 'dp-cli', 'note', { text: 'a' });
+    append(proj, 'dlm-cli', 'note', { text: 'a' });
     const p = join(proj, 'ledger/events.jsonl');
     const lines = readFileSync(p, 'utf8').trim().split('\n');
     const last = JSON.parse(lines.at(-1));
@@ -255,8 +255,8 @@ describe('#17 帳本簽章鏈', () => {
     appendFileSync(p, `${JSON.stringify(forged)}\n`);
     assert.ok(checkLedger(proj).problems.some((x) => /mac 不符/.test(x)));
     const q = makeProject();
-    append(q, 'dp-cli', 'note', { text: 'a' });
-    append(q, 'dp-cli', 'note', { text: 'b' });
+    append(q, 'dlm-cli', 'note', { text: 'a' });
+    append(q, 'dlm-cli', 'note', { text: 'b' });
     const qp = join(q, 'ledger/events.jsonl');
     writeFileSync(qp, readFileSync(qp, 'utf8').replace('"text":"a"', '"text":"A"'));
     assert.ok(checkLedger(q).problems.some((x) => /mac 不符|prev_hash/.test(x)));
@@ -265,8 +265,8 @@ describe('#17 帳本簽章鏈', () => {
   test('舊帳本:沒有簽章的前段照舊接受,從第一筆有簽章的開始上鏈', () => {
     const proj = tempDir();
     mkdirSync(join(proj, 'ledger'));
-    writeFileSync(join(proj, 'ledger/events.jsonl'), `${JSON.stringify({ seq: 1, ts: 't', actor: 'dp-cli', type: 'note', text: 'old' })}\n`);
-    append(proj, 'dp-cli', 'note', { text: 'new' });
+    writeFileSync(join(proj, 'ledger/events.jsonl'), `${JSON.stringify({ seq: 1, ts: 't', actor: 'dlm-cli', type: 'note', text: 'old' })}\n`);
+    append(proj, 'dlm-cli', 'note', { text: 'new' });
     const evs = readEvents(proj);
     assert.ok(!evs[0].mac && evs[1].chain_start);
     assert.deepEqual(checkLedger(proj).problems, []);
@@ -378,17 +378,17 @@ describe('#19 小瑕疵', () => {
 });
 
 test('測試用的暫存金鑰,不是你的真金鑰', () => {
-  assert.ok(process.env.DP_KEY_FILE.startsWith(tmpdir()));
+  assert.ok(process.env.DLM_KEY_FILE.startsWith(tmpdir()));
 });
 
 describe('v3:沒有容器時,驗收副本裡的 git 不會找到外層主 repo', () => {
   test('沙箱與驗收執行器都設 GIT_CEILING_DIRECTORIES;外層有 repo 時,副本裡 git rev-parse 找不到它', () => {
     const outer = tempDir();
     sh(outer, 'git init -q');
-    const copy = join(outer, '.dp', 'scratch', 'd-0001');
+    const copy = join(outer, '.dlm', 'scratch', 'd-0001');
     mkdirSync(copy, { recursive: true });
     const cmd = sandboxCommand({ sandbox: { backend: 'none' } }, 'verify', 'x', { cwd: copy });
-    assert.equal(cmd.env.GIT_CEILING_DIRECTORIES, join(outer, '.dp', 'scratch'));
+    assert.equal(cmd.env.GIT_CEILING_DIRECTORIES, join(outer, '.dlm', 'scratch'));
     const r = hostExecutor(copy).sh('git rev-parse --show-toplevel');
     assert.notEqual(r.code, 0, `副本不在任何 repo 裡,_root.ts 才會退回 cwd(實際:${r.stdout})`);
   });

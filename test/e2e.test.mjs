@@ -16,7 +16,7 @@ test('完整流程:一個能力 + 一個整合點,從提案到使用者確認', 
 
   // 第一個 tick 套用提案並派測試棒
   let s = await tickUntil(proj, (st) => st.nodes.get('calc/v1')?.legsDone.includes('test'));
-  assert.ok(existsSync(join(proj, 'features/calc/v1.feature')), 'gherkin 由 dp 寫入');
+  assert.ok(existsSync(join(proj, 'features/calc/v1.feature')), 'gherkin 由 dlm 寫入');
   const testLeg = [...s.dispatches.values()].find((d) => d.leg === 'test');
   const verify = testLeg.verify.results;
   assert.ok(verify.some((r) => r.check === 'acceptance' && r.outcome === 'PASS' && /預期 非 0/.test(r.detail)), '測試棒的驗收是「必須紅」');
@@ -29,7 +29,7 @@ test('完整流程:一個能力 + 一個整合點,從提案到使用者確認', 
   const devLeg = [...s.dispatches.values()].find((d) => d.leg === 'dev');
   assert.equal(devLeg.state, 'accepted');
   assert.ok(devLeg.gates.ok, '合併後臨時樹的全 gate 是綠的');
-  assert.ok(sh(proj, 'git tag').includes(`dp-archive/${devLeg.dispatch_id}`));
+  assert.ok(sh(proj, 'git tag').includes(`dlm-archive/${devLeg.dispatch_id}`));
   assert.ok(!existsSync(devLeg.worktree), 'worktree 已清掉');
   assert.ok(existsSync(join(proj, 'ledger/dispatch', devLeg.dispatch_id, 'prompt.md')), 'worker 當時看到的 prompt 有留檔');
 

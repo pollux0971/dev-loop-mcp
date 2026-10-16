@@ -1,7 +1,8 @@
 import { join } from 'node:path';
+import { assertNotLegacy } from './legacy.mjs';
 import { assertValid } from './schema.mjs';
 import { configSchema } from './schemas.mjs';
-import { DpError, readJson } from './util.mjs';
+import { DlmError, readJson } from './util.mjs';
 
 /**
  * gate 定義檔與 agent 設定。worker 改得到它們,就能把 `test` 改成 `exit 0`、或換掉測試框架,
@@ -15,9 +16,9 @@ export const BUILD_CONFIG_PATHS = [
 
 export const DEFAULTS = {
   main_branch: 'main',
-  worktree_dir: '.dp/worktrees',
+  worktree_dir: '.dlm/worktrees',
   platform: 'generic',
-  // v4.5:greenfield / brownfield(dp setup 會問)。language 決定 characterize 與測試檔的預設路徑
+  // v4.5:greenfield / brownfield(dlm setup 會問)。language 決定 characterize 與測試檔的預設路徑
   project: { mode: 'greenfield', language: 'node' },
   caps: {
     parallel: 3, unmerged: 3, drift: 20, attempts: 3, lease_minutes: 90,
@@ -35,23 +36,23 @@ export const DEFAULTS = {
     integration: ['test', 'integrate'],
     shared: ['dev'],
   },
-  // 合併前在 main+分支 的臨時樹跑的 npm scripts。必須含專案測試:只跑 check:dp 等於只驗元資料,
+  // 合併前在 main+分支 的臨時樹跑的 npm scripts。必須含專案測試:只跑 check:dlm 等於只驗元資料,
   // 節點 B 弄壞節點 A 的測試不會被擋。
   // install:merge-tree 的依賴怎麼來。auto = 有 package-lock.json 就用本機快取 `npm ci --offline --ignore-scripts`
   // 裝一份乾淨的(不受根目錄 node_modules 被改的影響),沒有 lockfile 才 symlink 根目錄。
   // commands(v4.5):chain 名字對應的指令,給不是用 npm script 跑測試的既有專案(例 { test: 'python3 -m pytest -q' })。
-  gates: { chain: ['check:dp', 'typecheck', 'test', 'accept'], timeout_minutes: 30, install: 'auto', commands: {} },
+  gates: { chain: ['check:dlm', 'typecheck', 'test', 'accept'], timeout_minutes: 30, install: 'auto', commands: {} },
   autonomy: { level: 1 },
   // 使用者授權(decide / confirm / resume / unblock):信任 Front 轉達;--verbatim 可省略。
   // 有給且對得上 hook 簽章過的原話(最近 window_minutes 分鐘內)時,事件記下那句話的 hash
   auth: { window_minutes: 30 },
   budget: { daily_usd: 5 },
   // v4:版本整合關卡(見 AUTONOMY.md、WORKFLOW.md)。每個版本最後一個整合點 I<n>;下一版的節點依賴它,
-  // gate_next_version = true 時,要等整合點合併而且你試用確認(dp confirm)過,下一版才開工。
+  // gate_next_version = true 時,要等整合點合併而且你試用確認(dlm confirm)過,下一版才開工。
   // v4.7.3 precheck_green:整合點的測試棒派出去之前先在那棵樹上跑一次驗收;已經是綠的(能力節點已經做到)就不派,
   // 測試棒記為完成、接著派整合棒(省一棒和一次「卡住」的詢問)。false = 照舊派,卡住時再讓使用者選 skip
   integration: { gate_next_version: true, precheck_green: true },
-  // v4:有新的待決事項時執行(環境變數 DP_NOTIFY_TEXT)。例:macOS `osascript -e "display notification \"$DP_NOTIFY_TEXT\" with title \"dp\""`
+  // v4:有新的待決事項時執行(環境變數 DLM_NOTIFY_TEXT)。例:macOS `osascript -e "display notification \"$DLM_NOTIFY_TEXT\" with title \"dlm\""`
   notify: { cmd: null },
   agents: {
     worker: { cmd: null, timeout_minutes: 90 },
@@ -61,10 +62,10 @@ export const DEFAULTS = {
   paths: {
     forbidden: [
       'ledger/**', 'dag.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json',
-      'AGENTS.md', 'CLAUDE.md', 'AUTONOMY.md', 'dp.config.json',
-      '.claude/**', 'prompts/**', 'tools/**', 'contracts/**', '.dp-install.json',
+      'AGENTS.md', 'CLAUDE.md', 'AUTONOMY.md', 'dlm.config.json',
+      '.claude/**', 'prompts/**', 'tools/**', 'contracts/**', '.dlm-install.json',
       // v4.5:既有專案的測試基線(哪些測試在主線上本來就紅)。worker 改得到它,就能把自己弄壞的測試寫成「本來就壞」
-      'docs/dp-baseline.json',
+      'docs/dlm-baseline.json',
       ...BUILD_CONFIG_PATHS,
     ],
     tests: ['**/*.test.*', '**/*.spec.*', 'features/**/*.feature', 'features/steps/**', 'docs/integration/**/*.feature'],
@@ -72,9 +73,9 @@ export const DEFAULTS = {
   },
   verify: {
     // 前綴比對;指令本身只能含英數與 ._/:=@+- 和空白,以 argv 執行、不經 shell。
-    // 不放 cat / ls:worker 可以宣稱「cat ~/.aws/credentials 的 exit 是 1」,讓 dp 在主機上替它讀檔。
-    // v4:加入 `node tools/dp.mjs check`(契約節點唯一能拿來當證據的指令;v3 實測沒放行,整筆變成問使用者)
-    rerun_allow: ['npm run ', 'npm test', 'npx cucumber-js', 'npx vitest', 'node --test', 'node tools/dp.mjs check', 'git diff', 'git log', 'git status'],
+    // 不放 cat / ls:worker 可以宣稱「cat ~/.aws/credentials 的 exit 是 1」,讓 dlm 在主機上替它讀檔。
+    // v4:加入 `node tools/dlm.mjs check`(契約節點唯一能拿來當證據的指令;v3 實測沒放行,整筆變成問使用者)
+    rerun_allow: ['npm run ', 'npm test', 'npx cucumber-js', 'npx vitest', 'node --test', 'node tools/dlm.mjs check', 'git diff', 'git log', 'git status'],
     rerun_timeout_seconds: 600,
     // 測試棒:所有步驟都要綁定({gherkin} 換成節點的 gherkin 路徑)。null = 不跑
     dry_run_cmd: null,
@@ -99,7 +100,7 @@ function merge(base, over) {
 
 /**
  * v4.1 拿掉的設定(實跑沒用到;要用時再加回來,程式在 git 歷史 v4.0.0)。
- * 舊設定檔裡有這些不報錯:讀的時候拿掉,`dp doctor` 會逐條提醒。回傳 [{ key, note }]。
+ * 舊設定檔裡有這些不報錯:讀的時候拿掉,`dlm doctor` 會逐條提醒。回傳 [{ key, note }]。
  */
 const REMOVED = [
   ['agents.manager', 'Manager 已移除,改用預設優先序(解鎖下游數)', (v) => !v?.cmd],
@@ -107,7 +108,7 @@ const REMOVED = [
   ['front', 'Front 的 strict 唯讀模式已移除(只剩防寫帳本的 light)', (v) => (v?.guard ?? 'light') === 'light'],
   ['auth.mode', 'signed / off 模式已移除:一律信任 Front 轉達,對得上簽章原話時另外記 hash', (v) => v === 'trust'],
   ['agents.verifier.url', 'Verifier 的 http(Ollama)模式已移除,改用 cmd', (v) => !v],
-  // agents.verifier.model 不在這裡:v4.6 起它是帳號模式下 CLI 用的模型(dp account use verifier … --model),見 stripRemovedSettings
+  // agents.verifier.model 不在這裡:v4.6 起它是帳號模式下 CLI 用的模型(dlm account use verifier … --model),見 stripRemovedSettings
   ['verify.clean_room_max_overlap', '外部程式匯入(intake import)已移除', () => true],
   ['pipeline.backfill', '既有專案補 gherkin(brownfield)已移除', (v) => String(v) === 'backfill'],
   ['pipeline.import-hard', '外部程式匯入(intake import)已移除', (v) => String(v) === 'test,port'],
@@ -119,7 +120,7 @@ export function stripRemovedSettings(raw) {
   const removed = [];
   // v4.1 拿掉 http(Ollama)模式時,agents.verifier.model 是 Ollama 的模型名,一律拿掉;但 v4.6 起同一個欄位是帳號模式下
   // Verifier 用的模型(例 haiku、sonnet)。只有舊的 http 設定(backend http 或有 url)才當成已移除的設定。
-  // v4.7.3 實測:dp account use verifier <帳號> --model haiku 之後 doctor 警告「http 模式已移除」,而且模型被丟掉、永遠用預設
+  // v4.7.3 實測:dlm account use verifier <帳號> --model haiku 之後 doctor 警告「http 模式已移除」,而且模型被丟掉、永遠用預設
   const v0 = out.agents?.verifier;
   if (v0 && typeof v0 === 'object' && 'model' in v0 && (v0.backend === 'http' || 'url' in v0)) {
     const silent = !v0.model;
@@ -138,17 +139,19 @@ export function stripRemovedSettings(raw) {
     }
   }
   if (out.platform === 'codex') { out.platform = 'generic'; removed.push({ key: 'platform', note: 'Codex 專屬的支援已移除,codex 指令照 generic 執行(沒有 hooks)' }); }
-  if (out.agents?.verifier?.backend === 'http') { out.agents.verifier.backend = 'none'; removed.push({ key: 'agents.verifier.backend', note: 'http(Ollama)已移除,Verifier 暫時停用;改成 cmd(dp setup 可選 Claude Haiku)' }); }
+  if (out.agents?.verifier?.backend === 'http') { out.agents.verifier.backend = 'none'; removed.push({ key: 'agents.verifier.backend', note: 'http(Ollama)已移除,Verifier 暫時停用;改成 cmd(dlm setup 可選 Claude Haiku)' }); }
   if (out.autonomy?.level === 3) { out.autonomy.level = 2; removed.push({ key: 'autonomy.level', note: 'L3 已移除,當成 L2(Critic 不代你做決定)' }); }
   return { config: out, removed };
 }
 
 export function loadConfig(root) {
-  const { config: raw } = stripRemovedSettings(readJson(join(root, 'dp.config.json'), {}));
+  // A project from before 4.8.0 has dp.config.json; reading defaults here would run it with the wrong settings
+  assertNotLegacy(root);
+  const { config: raw } = stripRemovedSettings(readJson(join(root, 'dlm.config.json'), {}));
   try {
-    assertValid(configSchema, raw, 'dp.config.json');
+    assertValid(configSchema, raw, 'dlm.config.json');
   } catch (e) {
-    throw new DpError(e.message);
+    throw new DlmError(e.message);
   }
   const config = merge(DEFAULTS, raw);
   // v4.5:gate 對應的指令(例 python3 -m pytest -q)也是 worker 拿來當證據的指令,自動放進重跑白名單。

@@ -1,12 +1,12 @@
 # {{PROJECT_NAME}}
 
-本專案用 dev-paradigm-mcp(dp)開發:使用者只跟一個窗口(Front)說話,其餘由 `dp` 排程、headless agent 施工、機器驗證。
-這份檔是所有 agent 共用的**核心規則**,刻意很短;細節在 `docs/dp/`,需要時才讀。
+本專案用 dev-loop-mcp(dlm)開發:使用者只跟一個窗口(Front)說話,其餘由 `dlm` 排程、headless agent 施工、機器驗證。
+這份檔是所有 agent 共用的**核心規則**,刻意很短;細節在 `docs/dlm/`,需要時才讀。
 
 ## 真相在哪裡
 
-- 結構:`dag.json`。狀態與歷史:`ledger/events.jsonl`(只增不改)。兩者都**只由 `dp` 寫入**。
-- `STATUS.md`、`DECISIONS.md`、`standalone.json` 是產生檔,不要手改;要知道現況就跑 `dp status --json` 或讀你收到的資料區塊。
+- 結構:`dag.json`。狀態與歷史:`ledger/events.jsonl`(只增不改)。兩者都**只由 `dlm` 寫入**。
+- `STATUS.md`、`DECISIONS.md`、`standalone.json` 是產生檔,不要手改;要知道現況就跑 `dlm status --json` 或讀你收到的資料區塊。
 - 規格:gherkin。沒有 gherkin 不寫程式;gherkin 由使用者批准,施工者不改。
 - 跨模組約定:`contracts/schema/`(可執行)。改 major 要使用者批准。
 

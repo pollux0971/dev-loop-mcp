@@ -6,17 +6,17 @@ import { git, headSha, removeWorktree } from './git.mjs';
 import { linkDeps, sandboxExec } from './sandbox.mjs';
 import { atomicWrite, listFiles, matchAny, readJson, tail, writeJson } from './util.mjs';
 
-export const BASELINE = 'docs/dp-baseline.json';
+export const BASELINE = 'docs/dlm-baseline.json';
 export const ASIS = 'docs/AS-IS.md';
 
-// dp 自己裝進去的東西(不算「既有程式」)
-const DP_PATHS = [
-  'tools/**', 'ledger/**', 'prompts/**', '.claude/**', 'docs/dp/**', 'docs/adr/**', 'docs/integration/**', 'contracts/**',
-  'features/**', 'scripts/**', 'dag.json', 'dp.config.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json', 'AGENTS.md',
-  'AUTONOMY.md', 'CLAUDE.md', '.dp-install.json', '.gitignore', 'package.json', 'package-lock.json', 'tsconfig.json',
+// dlm 自己裝進去的東西(不算「既有程式」)
+const DLM_PATHS = [
+  'tools/**', 'ledger/**', 'prompts/**', '.claude/**', 'docs/dlm/**', 'docs/adr/**', 'docs/integration/**', 'contracts/**',
+  'features/**', 'scripts/**', 'dag.json', 'dlm.config.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json', 'AGENTS.md',
+  'AUTONOMY.md', 'CLAUDE.md', '.dlm-install.json', '.gitignore', 'package.json', 'package-lock.json', 'tsconfig.json',
   'vitest*.config.*', 'cucumber.js', 'stryker.config.json', 'docs/ROADMAP.md', 'docs/AS-IS.md', BASELINE,
 ];
-const SKIP_DIRS = ['.git', 'node_modules', '.dp', 'dist', 'build', 'target', '.venv', 'venv', '__pycache__', 'coverage', 'reports'];
+const SKIP_DIRS = ['.git', 'node_modules', '.dlm', 'dist', 'build', 'target', '.venv', 'venv', '__pycache__', 'coverage', 'reports'];
 const CODE_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.go', '.rs', '.java', '.kt', '.rb', '.php', '.cs', '.c', '.cc', '.cpp', '.h', '.swift']);
 
 /** 每種語言的測試檔慣例(給 paths.tests、node.tests 的預設)。 */
@@ -29,7 +29,7 @@ export const TEST_PATTERNS = {
 };
 
 function projectFiles(root) {
-  return listFiles(root, { skip: SKIP_DIRS }).filter((f) => !matchAny(f, DP_PATHS));
+  return listFiles(root, { skip: SKIP_DIRS }).filter((f) => !matchAny(f, DLM_PATHS));
 }
 
 function packageJson(root) {
@@ -87,12 +87,12 @@ export function detectProject(root) {
 }
 
 /**
- * brownfield 的 gate 設定:dp 自己的檢查 + 專案原本就有的 script + 專案的測試指令。
+ * brownfield 的 gate 設定:dlm 自己的檢查 + 專案原本就有的 script + 專案的測試指令。
  * 不硬塞範本的 typecheck / accept(既有專案多半沒有,不存在的 script 會讓 gate 永遠紅)。
  */
 export function brownfieldGates(detect, testCmd) {
   const scripts = new Set(detect.scripts);
-  const chain = ['check:dp'];
+  const chain = ['check:dlm'];
   if (scripts.has('typecheck')) chain.push('typecheck');
   chain.push('test');
   if (scripts.has('accept')) chain.push('accept');
@@ -143,13 +143,13 @@ export function knownRed(baseline, name, output) {
 }
 
 /**
- * 在主線的乾淨副本上跑一次專案的 gate(dp 自己的 check:dp 不算:還沒有節點時它一定紅),
- * 記下哪些測試本來就紅。寫到 docs/dp-baseline.json,worker 改不到(在 paths.forbidden)。
+ * 在主線的乾淨副本上跑一次專案的 gate(dlm 自己的 check:dlm 不算:還沒有節點時它一定紅),
+ * 記下哪些測試本來就紅。寫到 docs/dlm-baseline.json,worker 改不到(在 paths.forbidden)。
  */
 export function recordBaseline(root, config, { log = () => {}, run } = {}) {
   const main = config.main_branch;
   const sha = headSha(root, main);
-  const dir = join(root, '.dp', 'baseline-tree');
+  const dir = join(root, '.dlm', 'baseline-tree');
   removeWorktree(root, dir);
   git(root, `worktree add --detach '${dir}' ${main}`);
   const gates = [];
@@ -158,7 +158,7 @@ export function recordBaseline(root, config, { log = () => {}, run } = {}) {
     const exec = run ?? ((cmd) => sandboxExec(config, 'gates', cmd, { cwd: dir, timeoutMs: config.gates.timeout_minutes * 60000 }));
     const scripts = packageJson(dir)?.scripts ?? {};
     for (const name of config.gates.chain) {
-      if (name === 'check:dp') continue;
+      if (name === 'check:dlm') continue;
       const cmd = gateCommand(name, config, scripts);
       if (!cmd) { gates.push({ name, exit: 127, failing: null, note: '不是 npm script,gates.commands 也沒有' }); continue; }
       const r = exec(cmd);
@@ -180,8 +180,8 @@ export function gateCommand(name, config, scripts) {
   const mapped = config.gates.commands?.[name];
   if (mapped) return mapped;
   if (name in scripts) return `npm run --silent ${name}`;
-  // 既有專案自己的 package.json 沒有 check:dp(init --existing 不覆蓋它),直接叫 dp
-  if (name === 'check:dp') return 'node tools/dp.mjs check';
+  // 既有專案自己的 package.json 沒有 check:dlm(init --existing 不覆蓋它),直接叫 dlm
+  if (name === 'check:dlm') return 'node tools/dlm.mjs check';
   return null;
 }
 
@@ -255,7 +255,7 @@ export function asIsDraft(root, detect, baseline, testCmd) {
   const lines = [
     '# 現況(AS-IS)',
     '',
-    `> \`dp onboard\` 產生的草稿(主線 ${baseline?.main_sha?.slice(0, 8) ?? headSha(root).slice(0, 8)})。標「待補」的段落由 Front 讀程式後補上、跟你確認;之後節點的 intent 以這份為準。`,
+    `> \`dlm onboard\` 產生的草稿(主線 ${baseline?.main_sha?.slice(0, 8) ?? headSha(root).slice(0, 8)})。標「待補」的段落由 Front 讀程式後補上、跟你確認;之後節點的 intent 以這份為準。`,
     '',
     '## 怎麼跑、怎麼測',
     '',
@@ -270,7 +270,7 @@ export function asIsDraft(root, detect, baseline, testCmd) {
       ? (red.length
         ? red.flatMap((g) => [`- \`${g.name}\` 在主線上本來就紅(exit ${g.exit}):`, ...(g.failing ?? ['(看不出是哪些測試)']).slice(0, 20).map((t) => `  - ${t}`)])
         : ['- 主線上專案的測試全綠。'])
-      : ['- 還沒跑(`dp baseline`)。']),
+      : ['- 還沒跑(`dlm baseline`)。']),
     '',
     '## 目錄',
     '',
@@ -294,12 +294,12 @@ export function asIsDraft(root, detect, baseline, testCmd) {
 export const ROADMAP_V0 = (name, detect) => [
   `# ${name} 路線圖`,
   '',
-  `- v0 現況:既有專案(${detect.language},${detect.code_files} 個程式檔),dp 從這裡接手。現在能做什麼見 docs/AS-IS.md,測試基線見 ${BASELINE}`,
+  `- v0 現況:既有專案(${detect.language},${detect.code_files} 個程式檔),dlm 從這裡接手。現在能做什麼見 docs/AS-IS.md,測試基線見 ${BASELINE}`,
   '- v1 待定:跟 Front 說你要加或改什麼,它會整理成一版(含整合點)給你批准',
   '',
 ].join('\n');
 
-/** `dp onboard`:基線 + AS-IS 草稿 + ROADMAP v0。回傳寫了哪些檔。 */
+/** `dlm onboard`:基線 + AS-IS 草稿 + ROADMAP v0。回傳寫了哪些檔。 */
 export function onboard(root, config, { log = () => {}, run } = {}) {
   const detect = detectProject(root);
   const written = [];

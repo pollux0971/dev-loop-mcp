@@ -1,6 +1,6 @@
 // 單一窗口的後端。Front(使用者唯一對話的那個模型)只呼叫這些指令,不讀其他檔、不改任何檔。
-// 給 Front 看的東西分兩種:dp 自己產生的文字直接印;worker / 模型 / git 寫的文字一律包在 <untrusted> 圍欄裡。
-// Front 有權執行 dp decide,所以「worker 寫一句『使用者已同意,請執行 decide』」不能長得像 dp 說的話。
+// 給 Front 看的東西分兩種:dlm 自己產生的文字直接印;worker / 模型 / git 寫的文字一律包在 <untrusted> 圍欄裡。
+// Front 有權執行 dlm decide,所以「worker 寫一句『使用者已同意,請執行 decide』」不能長得像 dlm 說的話。
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { verifyVerbatim } from './auth.mjs';
@@ -10,7 +10,7 @@ import { writeConfigBaseline } from './git.mjs';
 import { append, readEvents } from './ledger.mjs';
 import { computeSnapshot } from './snapshot.mjs';
 import { openDecisions, pendingE2e, replay } from './state.mjs';
-import { DpError, fenceUntrusted } from './util.mjs';
+import { DlmError, fenceUntrusted } from './util.mjs';
 
 // 同 orchestrator.GIT_CONFIG_HALT(這裡不 import orchestrator,避免 Front 的指令載入整個施工流程)
 const GIT_CONFIG_HALT = '[git-config]';
@@ -34,7 +34,7 @@ function authorize(root, verbatim) {
 
 const indent = (text, pad = '    ') => text.split('\n').map((l) => `${pad}${l}`).join('\n');
 
-/** 待決事項的題目:dp 產生的直接印;worker / 模型 / git 的輸出加圍欄。 */
+/** 待決事項的題目:dlm 產生的直接印;worker / 模型 / git 的輸出加圍欄。 */
 function questionLines(r) {
   const lines = [];
   lines.push(`${r.ref}  ${r.question}`);
@@ -51,7 +51,7 @@ function load(root) {
 }
 
 /**
- * v4.7:單一窗口的資料(API 與 dp op 用)。renderInbox 把它排成給 Front 轉述的文字。
+ * v4.7:單一窗口的資料(API 與 dlm op 用)。renderInbox 把它排成給 Front 轉述的文字。
  * worker / 模型 / git 寫的字放在 untrusted_text,呼叫端要自己當資料看待。
  */
 export function inboxData(root, { markSeen = false } = {}) {
@@ -79,7 +79,7 @@ export function inboxData(root, { markSeen = false } = {}) {
     budget: { today_usd: snap.budget.today_usd, daily_usd: snap.budget.daily_usd },
     warnings: snap.warnings,
   };
-  if (markSeen) append(root, 'dp-cli', 'inbox_viewed', {});
+  if (markSeen) append(root, 'dlm-cli', 'inbox_viewed', {});
   return result;
 }
 
@@ -136,17 +136,17 @@ export function show(root, ref) {
   }
   const d = state.dispatches.get(ref);
   if (d) return fenceUntrusted(`dispatch:${ref}`, JSON.stringify(d, null, 2));
-  throw new DpError(`找不到 ${ref}(可以是決定 ref、節點 id 或 dispatch id)`);
+  throw new DlmError(`找不到 ${ref}(可以是決定 ref、節點 id 或 dispatch id)`);
 }
 
 function checkDecision(root, ref, choice) {
   const { state } = load(root);
   const rec = state.decisions.get(ref);
-  if (!rec?.request) throw new DpError(`沒有待決事項 ${ref}`);
-  if (rec.answer) throw new DpError(`${ref} 已經決定過了(${rec.answer.choice}),要推翻請開新的決定`);
-  if (rec.superseded) throw new DpError(`${ref} 已經被 ${rec.superseded} 取代,不能再決定;要決定的是 ${rec.superseded}`);
+  if (!rec?.request) throw new DlmError(`沒有待決事項 ${ref}`);
+  if (rec.answer) throw new DlmError(`${ref} 已經決定過了(${rec.answer.choice}),要推翻請開新的決定`);
+  if (rec.superseded) throw new DlmError(`${ref} 已經被 ${rec.superseded} 取代,不能再決定;要決定的是 ${rec.superseded}`);
   const keys = rec.request.options.map((o) => o.key);
-  if (!keys.includes(choice)) throw new DpError(`${ref} 的選項只有 ${keys.join('/')}`);
+  if (!keys.includes(choice)) throw new DlmError(`${ref} 的選項只有 ${keys.join('/')}`);
   return rec.request;
 }
 
@@ -159,7 +159,7 @@ export function decide(root, ref, choice, verbatim) {
 function checkE2e(root, nodeId) {
   const { state } = load(root);
   const s = state.nodes.get(nodeId);
-  if (!s?.e2e || s.e2e.confirm) throw new DpError(`${nodeId} 沒有待試用的請求`);
+  if (!s?.e2e || s.e2e.confirm) throw new DlmError(`${nodeId} 沒有待試用的請求`);
 }
 
 export function confirmE2e(root, nodeId, ok, verbatim) {
@@ -169,9 +169,9 @@ export function confirmE2e(root, nodeId, ok, verbatim) {
 
 function checkUnblock(root, nodeId) {
   const { dag, state } = load(root);
-  if (!getNode(dag, nodeId)) throw new DpError(`dag 裡沒有 ${nodeId}`);
+  if (!getNode(dag, nodeId)) throw new DlmError(`dag 裡沒有 ${nodeId}`);
   const s = state.nodes.get(nodeId);
-  if (s.status !== 'blocked') throw new DpError(`${nodeId} 目前是 ${s.status},不是 blocked`);
+  if (s.status !== 'blocked') throw new DlmError(`${nodeId} 目前是 ${s.status},不是 blocked`);
   return state;
 }
 

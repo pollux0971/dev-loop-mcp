@@ -98,7 +98,7 @@ test('冪等:合併後、記帳前當機 → 下一次 tick 偵測到分支已�
   await harvest(ctx);
   const d = [...ctx.state.dispatches.values()].find((x) => x.state === 'done');
   assert.ok(d, '實作棒已交件');
-  commitState(ctx, 'dp: 合併前存檔(模擬 finalize 的第一步)');
+  commitState(ctx, 'dlm: 合併前存檔(模擬 finalize 的第一步)');
   sh(proj, `git -c user.name=t -c user.email=t@t merge --no-ff -q -m crash-merge ${d.branch}`);
   const mergesBefore = sh(proj, 'git rev-list --merges --count HEAD');
   const r = await tick(proj);
@@ -129,7 +129,7 @@ test('L0:每次合併都要使用者點頭;說 no 時原話成為退回原因', 
 
 test('停機:halt 之後不派工;resume 之後繼續', async () => {
   const proj = makeProject();
-  append(proj, 'dp-cli', 'halt', { reason: '先停' });
+  append(proj, 'dlm-cli', 'halt', { reason: '先停' });
   addNode(proj, CALC, CALC_GHERKIN);
   await tick(proj);
   assert.equal(readEvents(proj).filter((e) => e.type === 'dispatch').length, 0);
@@ -146,7 +146,7 @@ test('預算:今天花費到頂就不派工', async () => {
 });
 
 test('Critic(L2):strict 節點交 Critic;Critic 看不到 worker 敘述;PASS 就合併', async () => {
-  // v4:證據指令不在白名單、但 dp 自己重跑的驗收通過時,只記錄不升級(不再觸發 Critic);改用 strict 節點觸發
+  // v4:證據指令不在白名單、但 dlm 自己重跑的驗收通過時,只記錄不升級(不再觸發 Critic);改用 strict 節點觸發
   const log = join(tempDir(), 'critic.log');
   const proj = makeProject({
     level: 2,
@@ -181,10 +181,10 @@ test('Critic ASK_USER → 轉成使用者待決事項', async () => {
 test('根目錄有別人未 commit 的變更 → tick 拒絕執行,不動任何東西', async () => {
   const proj = makeProject();
   addNode(proj, CALC, CALC_GHERKIN);
-  const cfg = readJson(join(proj, 'AGENTS.md').replace('AGENTS.md', 'dp.config.json'));
-  writeJson(join(proj, 'dp.config.json'), { ...cfg, $comment: 'someone edited' });
+  const cfg = readJson(join(proj, 'AGENTS.md').replace('AGENTS.md', 'dlm.config.json'));
+  writeJson(join(proj, 'dlm.config.json'), { ...cfg, $comment: 'someone edited' });
   const r = await tick(proj);
   assert.equal(r.ok, false);
-  assert.match(r.reason, /dp\.config\.json/);
+  assert.match(r.reason, /dlm\.config\.json/);
   assert.equal(readEvents(proj).filter((e) => e.type === 'dispatch').length, 0);
 });

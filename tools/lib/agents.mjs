@@ -4,7 +4,7 @@
 import { accountEnv, roleCmd } from './accounts.mjs';
 import { validate } from './schema.mjs';
 import { sandboxExec, sandboxSpawn } from './sandbox.mjs';
-import { DpError } from './util.mjs';
+import { DlmError } from './util.mjs';
 import { extractJson } from './verify/backend.mjs';
 
 /** v4.6:worker 能不能開——有 cmd,或有帳號(用帳號那個 CLI 的預設指令)。 */
@@ -13,10 +13,10 @@ export const criticConfigured = (config) => !!(config.agents.critic.cmd || confi
 
 export function launchWorker(config, { cwd, promptPath, reportPath, logPath, dispatchId, account = null }) {
   const cmd = roleCmd(config.agents.worker, 'worker', account);
-  if (!cmd) throw new DpError('dp.config.json 的 agents.worker 沒有 cmd 也沒有 accounts,無法開 worker(範例見 docs/dp/AGENTS-SETUP.md)');
+  if (!cmd) throw new DlmError('dlm.config.json 的 agents.worker 沒有 cmd 也沒有 accounts,無法開 worker(範例見 docs/dlm/AGENTS-SETUP.md)');
   return sandboxSpawn(config, 'worker', cmd, {
     cwd, logPath,
-    env: { DP_PROMPT: promptPath, DP_REPORT: reportPath, DP_DISPATCH: dispatchId, DP_ROLE: 'worker', ...(account ? accountEnv(account) : {}) },
+    env: { DLM_PROMPT: promptPath, DLM_REPORT: reportPath, DLM_DISPATCH: dispatchId, DLM_ROLE: 'worker', ...(account ? accountEnv(account) : {}) },
   });
 }
 
@@ -25,7 +25,7 @@ export function callAgent(agentCfg, prompt, schema, { cwd, config, role = 'criti
   const cmd = roleCmd(agentCfg, role, account);
   if (!cmd) return { error: 'not-configured' };
   const r = sandboxExec(config, 'critic', cmd, {
-    cwd, input: prompt, env: { DP_ROLE: role, ...(account ? accountEnv(account) : {}) },
+    cwd, input: prompt, env: { DLM_ROLE: role, ...(account ? accountEnv(account) : {}) },
     timeoutMs: (agentCfg.timeout_minutes ?? 10) * 60 * 1000,
   });
   if (r.code !== 0) return { error: `exit ${r.code}: ${(r.stderr || r.stdout).slice(0, 400)}` };

@@ -1,5 +1,5 @@
 {
-  "$comment": "只由 dp 寫入(dp intake / 批准的子節點)。狀態不在這裡,在 ledger/events.jsonl 重播得出。",
+  "$comment": "只由 dlm 寫入(dlm intake / 批准的子節點)。狀態不在這裡,在 ledger/events.jsonl 重播得出。",
   "version": 1,
   "nodes": []
 }

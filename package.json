@@ -1,13 +1,13 @@
 {
-  "name": "dev-paradigm-mcp",
-  "version": "4.7.3",
+  "name": "dev-loop-mcp",
+  "version": "4.8.0",
   "private": true,
   "type": "module",
-  "description": "AI 從需求到合併的開發範式:單一窗口、事件帳、機器驗收",
-  "bin": { "dp": "tools/dp.mjs" },
+  "description": "AI 從需求到合併的開發迴圈:單一窗口、事件帳、機器驗收",
+  "bin": { "dlm": "tools/dlm.mjs" },
   "engines": { "node": ">=20" },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "dp": "node tools/dp.mjs"
+    "dlm": "node tools/dlm.mjs"
   }
 }

@@ -1,9 +1,9 @@
-// v4.7 dp 的 HTTP API 定義(唯一的一份)。dp hub 照這張表路由,/api/v1/openapi.json 也是從這張表產生的,
+// v4.7 dlm 的 HTTP API 定義(唯一的一份)。dlm hub 照這張表路由,/api/v1/openapi.json 也是從這張表產生的,
 // 所以文件跟實作不會對不上。
 //
 // kind:
-//   op       專案的操作:由那個專案自己的 tools/dp.mjs 執行(`dp op <op>`),參數 = query + body + 路徑參數
-//   machine  這台電腦層級的(專案清單、帳號):dp hub 自己執行
+//   op       專案的操作:由那個專案自己的 tools/dlm.mjs 執行(`dlm op <op>`),參數 = query + body + 路徑參數
+//   machine  這台電腦層級的(專案清單、帳號):dlm hub 自己執行
 //   stream   Server-Sent Events(text/event-stream)
 //   meta     health、openapi
 import { validate } from './schema.mjs';
@@ -15,21 +15,21 @@ const int = (description, extra = {}) => ({ type: 'integer', description, ...ext
 const obj = (properties, required = [], description) => ({ type: 'object', properties, required, additionalProperties: false, ...(description ? { description } : {}) });
 
 // v4.7.3 提案的欄位:型別直接取 schemas.mjs 的 nodeSchema(格式只定義在那一處),這裡只補說明。
-// 只看得到 MCP 的 AI 讀不到 docs/dp/INTAKE.md;以前 spec / bundle 只寫 type: object,它猜不出格式,第一次呼叫就被擋。
+// 只看得到 MCP 的 AI 讀不到 docs/dlm/INTAKE.md;以前 spec / bundle 只寫 type: object,它猜不出格式,第一次呼叫就被擋。
 const NODE_DOCS = {
   id: '節點 id:phase 是 <能力>/v<n>(例 notes/v1),integration 是 I<n>(例 I1),shared 是 shared/<名稱>(例 shared/deps)',
   kind: 'phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔)',
   title: '短標題',
   intent: '這個節點要做到什麼(300 字內)',
   owns: '這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。'
-    + '新專案(dp 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,'
+    + '新專案(dlm 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,'
     + '範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔',
   gherkin: 'gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設)',
   accept: '驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試)',
   standalone: '這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸',
   depends_on: '要先完成的節點 id',
   parent: '父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq',
-  relation: 'prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫',
+  relation: 'prereq = 父節點要等這個節點完成(dlm 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫',
   tier: 'strict = 機器驗收全過也一定給 Critic 或你看;standard(預設)',
   pipeline: '要跑哪幾棒(選填;預設 phase 是 test → dev,integration 是 test → integrate,shared 是 dev;既有專案改到既有程式時前面自動加 characterize)',
   release: '屬於哪一版(例 v1);bundle 裡會被 bundle.release 蓋掉',
@@ -99,33 +99,33 @@ export const ROUTES = [
   { method: 'GET', path: '/api/v1/openapi.json', id: 'openapi', tag: 'meta', kind: 'meta', summary: '這份 API 的 OpenAPI 3.1 規格' },
   {
     method: 'GET', path: '/api/v1/flow', id: 'flow', tag: 'meta', kind: 'machine',
-    summary: 'dp 的流程:建專案 → 帳號 → 規劃一版 → 施工 → 監控與回答 → 試用與下一版 → 暫停與恢復;每一步誰做、呼叫哪個操作',
-    description: '第一次用、或不確定下一步時先看這個。stages[].steps[].call 是 operationId(MCP 工具名 = dp_ + snake_case)。',
+    summary: 'dlm 的流程:建專案 → 帳號 → 規劃一版 → 施工 → 監控與回答 → 試用與下一版 → 暫停與恢復;每一步誰做、呼叫哪個操作',
+    description: '第一次用、或不確定下一步時先看這個。stages[].steps[].call 是 operationId(MCP 工具名 = dlm_ + snake_case)。',
   },
 
   // ---------------------------------------------------------------- 多專案
   {
     method: 'GET', path: '/api/v1/overview', id: 'overview', tag: 'monitor', kind: 'machine',
     summary: '總覽:每個專案的進度、背景迴圈、在跑的 worker、等你決定的事、今天花費;帳號用量;總計',
-    description: '監控用。每個專案的資料由該專案自己的 dp 算出(有快取,帳本沒變就不重算)。專案的 dp 太舊或路徑不見了,那一筆會有 error。',
+    description: '監控用。每個專案的資料由該專案自己的 dlm 算出(有快取,帳本沒變就不重算)。專案的 dlm 太舊或路徑不見了,那一筆會有 error。',
   },
-  { method: 'GET', path: '/api/v1/projects', id: 'listProjects', tag: 'projects', kind: 'machine', summary: '這台電腦登記的 dp 專案(名稱、路徑、dp 版本、能不能用 API)' },
+  { method: 'GET', path: '/api/v1/projects', id: 'listProjects', tag: 'projects', kind: 'machine', summary: '這台電腦登記的 dlm 專案(名稱、路徑、dlm 版本、能不能用 API)' },
   {
     method: 'POST', path: '/api/v1/projects', id: 'addProject', tag: 'projects', kind: 'machine', write: true, ok: 201,
-    summary: '登記一個專案(已經是 dp 專案的目錄;同一個路徑登記兩次回原本那筆)',
+    summary: '登記一個專案(已經是 dlm 專案的目錄;同一個路徑登記兩次回原本那筆)',
     body: obj({ path: str('專案目錄的絕對路徑'), name: { ...NAME, description: '名稱(選填,預設用目錄名)' } }, ['path']),
   },
   {
     method: 'POST', path: '/api/v1/projects/init', id: 'initProject', tag: 'projects', kind: 'machine', write: true, ok: 201,
-    summary: '建一個 dp 專案(新的空目錄,或 existing=true 補進既有專案)並登記;下一步 setupProject',
+    summary: '建一個 dlm 專案(新的空目錄,或 existing=true 補進既有專案)並登記;下一步 setupProject',
     body: obj({
       path: str('專案目錄的絕對路徑(不存在會建立)'), name: { ...NAME, description: '名稱(選填,預設用目錄名)' },
-      existing: bool('true = 既有專案,只補 dp 的檔(衝突就一個都不寫)'),
+      existing: bool('true = 既有專案,只補 dlm 的檔(衝突就一個都不寫)'),
     }, ['path']),
   },
   {
     method: 'POST', path: '/api/v1/projects/{project}/upgrade', id: 'upgradeProject', tag: 'projects', kind: 'machine', write: true,
-    summary: '把專案的 dp 升級成這個 hub / MCP 的版本(衝突就一個都不寫)',
+    summary: '把專案的 dlm 升級成這個 hub / MCP 的版本(衝突就一個都不寫)',
     body: obj({ dry_run: bool('true = 只列出會改什麼') }),
   },
   { method: 'DELETE', path: '/api/v1/projects/{project}', id: 'removeProject', tag: 'projects', kind: 'machine', write: true, summary: '從清單拿掉(不刪任何檔案)' },
@@ -138,7 +138,7 @@ export const ROUTES = [
   },
   {
     method: 'POST', path: '/api/v1/accounts', id: 'addAccount', tag: 'accounts', kind: 'machine', write: true, ok: 201,
-    summary: '登記一個帳號(建立它的登入目錄)。登入要開瀏覽器,請在終端機跑 dp account login <name>',
+    summary: '登記一個帳號(建立它的登入目錄)。登入要開瀏覽器,請在終端機跑 dlm account login <name>',
     body: obj({
       name: ACCOUNT_NAME, cli: { type: 'string', enum: ['claude', 'codex'] }, plan: str('方案名稱(選填,例 max、pro、plus)'),
       max_parallel: int('所有專案加起來同時最多跑幾個 worker(選填,不填 = 不限)', { minimum: 1, maximum: 50 }),
@@ -149,7 +149,7 @@ export const ROUTES = [
     summary: '改方案名稱或同時上限(null = 拿掉)',
     body: obj({ plan: { type: ['string', 'null'] }, max_parallel: { type: ['integer', 'null'], minimum: 1, maximum: 50 } }),
   },
-  { method: 'DELETE', path: '/api/v1/accounts/{account}', id: 'removeAccount', tag: 'accounts', kind: 'machine', write: true, summary: '移除帳號(dp 建的登入目錄一起刪)' },
+  { method: 'DELETE', path: '/api/v1/accounts/{account}', id: 'removeAccount', tag: 'accounts', kind: 'machine', write: true, summary: '移除帳號(dlm 建的登入目錄一起刪)' },
 
   // ---------------------------------------------------------------- 監控串流
   {
@@ -186,7 +186,7 @@ export const ROUTES = [
   // ---------------------------------------------------------------- 一個專案:設定
   {
     method: 'POST', path: '/api/v1/projects/{project}/setup', id: 'setupProject', tag: 'projects', kind: 'op', op: 'setup', write: true,
-    summary: '不互動的 dp setup:寫 dp.config.json、裝 hooks、commit,回傳健康檢查',
+    summary: '不互動的 dlm setup:寫 dlm.config.json、裝 hooks、commit,回傳健康檢查',
     description: 'answers 沒給的用預設。mode:greenfield / brownfield;platform:claude / custom(custom 要 worker_cmd);'
       + 'verifier:haiku / none;autonomy:"0" / "1" / "2";critic、npm_install、commit:true / false。'
       + 'brownfield 的 test_cmd 沒給時用偵測到的測試指令,偵測不到就會失敗。npm_install 預設 false(要下載)。',
@@ -202,7 +202,7 @@ export const ROUTES = [
   },
   {
     method: 'PATCH', path: '/api/v1/projects/{project}/settings', id: 'setSettings', tag: 'projects', kind: 'op', op: 'set_settings', write: true,
-    summary: '改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dp.config.json 並 commit)',
+    summary: '改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dlm.config.json 並 commit)',
     description: '這些只有使用者能決定。不要為了改其中一項重跑 setupProject(它會連其他設定一起問、一起寫)。',
     body: obj({
       autonomy_level: int('0 = 每次合併都問;1 = 機器全過就自動合併;2 = 沒把握的先交 Critic', { minimum: 0, maximum: 2 }),
@@ -265,7 +265,7 @@ export const ROUTES = [
   },
   {
     method: 'PUT', path: '/api/v1/projects/{project}/roles/{role}', id: 'setRole', tag: 'accounts', kind: 'op', op: 'set_role', write: true,
-    summary: '設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)與模型;改 dp.config.json 並 commit',
+    summary: '設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)與模型;改 dlm.config.json 並 commit',
     body: obj({ accounts: { type: 'array', items: ACCOUNT_NAME }, model: { type: ['string', 'null'], description: '模型(null / 空字串 = 拿掉)' } }, ['accounts']),
   },
 ];
@@ -337,7 +337,7 @@ export function openapi(version) {
       responses: {
         [ok]: r.kind === 'stream'
           ? { description: 'Server-Sent Events', content: { 'text/event-stream': { schema: { type: 'string' } } } }
-          : { description: r.kind === 'op' ? `\`dp op ${r.op}\` 的結果` : '結果', content: { 'application/json': { schema: { type: 'object' } } } },
+          : { description: r.kind === 'op' ? `\`dlm op ${r.op}\` 的結果` : '結果', content: { 'application/json': { schema: { type: 'object' } } } },
         400: errorRes, 401: errorRes, 404: errorRes, ...(r.write ? { 409: errorRes } : {}), 501: errorRes,
       },
       ...(r.id === 'health' || r.id === 'openapi' ? { security: [] } : {}),
@@ -347,10 +347,10 @@ export function openapi(version) {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'dev-paradigm-mcp (dp) API',
+      title: 'dev-loop-mcp (dlm) API',
       version,
-      description: 'dp hub 提供的本機 API:多專案的監控與操作、訂閱帳號。只綁 127.0.0.1;除了 health 與 openapi,都要帶 token'
-        + '(`Authorization: Bearer <token>`,token 用 `dp hub token` 看)。決定類的端點(decisions、confirmations、unblock、resume)'
+      description: 'dlm hub 提供的本機 API:多專案的監控與操作、訂閱帳號。只綁 127.0.0.1;除了 health 與 openapi,都要帶 token'
+        + '(`Authorization: Bearer <token>`,token 用 `dlm hub token` 看)。決定類的端點(decisions、confirmations、unblock、resume)'
         + '只能轉達使用者親口的決定。',
     },
     servers: [{ url: 'http://127.0.0.1:7170' }],

@@ -1,4 +1,4 @@
-// v4.7:API 定義、流程、專案清單、dp op、跨專案帳號、dp hub(HTTP + SSE)、dp mcp(stdio)。
+// v4.7:API 定義、流程、專案清單、dlm op、跨專案帳號、dlm hub(HTTP + SSE)、dlm mcp(stdio)。
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -17,9 +17,9 @@ import { addProject, loadProjects, removeProject, resolveProject } from '../tool
 import { readJson, run } from '../tools/lib/util.mjs';
 
 after(cleanup);
-const DP = join(REPO, 'tools', 'dp.mjs');
-const dp = (cwd, args, input) => run(`node ${JSON.stringify(DP)} ${args}`, { cwd, ...(input !== undefined ? { input } : {}) });
-const op = (cwd, name, args = {}) => JSON.parse(dp(cwd, `op ${name}`, JSON.stringify(args)).stdout.trim().split('\n').at(-1));
+const DLM = join(REPO, 'tools', 'dlm.mjs');
+const dlm = (cwd, args, input) => run(`node ${JSON.stringify(DLM)} ${args}`, { cwd, ...(input !== undefined ? { input } : {}) });
+const op = (cwd, name, args = {}) => JSON.parse(dlm(cwd, `op ${name}`, JSON.stringify(args)).stdout.trim().split('\n').at(-1));
 
 describe('API 定義與流程', () => {
   test('路由表:id 不重複、MCP 工具名不重複、流程每一步都對得到路由、OpenAPI 有每一條', () => {
@@ -36,12 +36,12 @@ describe('API 定義與流程', () => {
     for (const r of ROUTES) assert.ok(spec.paths[r.path][r.method.toLowerCase()].operationId === r.id);
     // MCP 沒有串流與 openapi;其他每一條路由都有工具
     assert.equal(names.length, ROUTES.filter((r) => r.kind !== 'stream' && r.id !== 'openapi').length);
-    assert.ok(names.includes(toolName('decide')) && toolName('setRole') === 'dp_set_role');
+    assert.ok(names.includes(toolName('decide')) && toolName('setRole') === 'dlm_set_role');
   });
 
-  test('提案的 spec / bundle 列出每個欄位(型別取自 nodeSchema),格式錯了指出是哪一個欄位;dp_health 在 MCP 能用', async () => {
+  test('提案的 spec / bundle 列出每個欄位(型別取自 nodeSchema),格式錯了指出是哪一個欄位;dlm_health 在 MCP 能用', async () => {
     const tools = Object.fromEntries(toolList().map((t) => [t.name, t]));
-    const spec = tools.dp_propose_feature.inputSchema.properties.spec;
+    const spec = tools.dlm_propose_feature.inputSchema.properties.spec;
     assert.deepEqual(Object.keys(spec.properties).sort(), Object.keys(nodeSchema.properties).sort(), 'spec 的欄位就是 dag.json 節點的欄位');
     assert.deepEqual(spec.required, ['id', 'title', 'intent', 'owns'], 'kind 有預設(phase),不必填;owns 是 validateDag 要求的');
     assert.equal(spec.properties.owns.minItems, 1);
@@ -51,7 +51,7 @@ describe('API 定義與流程', () => {
     }
     assert.equal(spec.properties.pipeline.items.type, 'string');
     assert.equal(spec.properties.intent.maxLength, nodeSchema.properties.intent.maxLength, '限制照抄 nodeSchema');
-    const bundle = tools.dp_propose_bundle.inputSchema.properties.bundle;
+    const bundle = tools.dlm_propose_bundle.inputSchema.properties.bundle;
     assert.deepEqual(bundle.required, ['release', 'nodes']);
     const item = bundle.properties.nodes.items;
     for (const k of ['id', 'kind', 'owns', 'depends_on', 'gherkin_text', 'gherkin_file']) assert.ok(item.properties[k], `bundle.nodes[].${k}`);
@@ -67,7 +67,7 @@ describe('API 定義與流程', () => {
     assert.match(err('proposeBundle', { bundle: { release: 'v1', nodes: [] } }), /body\.bundle\.nodes: 項目數 < 1/);
     assert.equal(err('proposeBundle', { bundle: { release: 'v1', goal: 'g', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }, { ...I1, gherkin_text: I1_GHERKIN }] } }), undefined);
 
-    const h = await callTool('dp_health', {}, { cwd: tempDir(), env: {} });
+    const h = await callTool('dlm_health', {}, { cwd: tempDir(), env: {} });
     assert.ok(!h.isError, h.content[0].text);
     assert.equal(JSON.parse(h.content[0].text).ok, true);
   });
@@ -90,22 +90,22 @@ describe('API 定義與流程', () => {
   });
 });
 
-describe('專案清單與 dp op', () => {
-  test('登記 / 重複登記 / 名稱衝突 / 拿掉;不是 dp 專案拒絕', () => {
+describe('專案清單與 dlm op', () => {
+  test('登記 / 重複登記 / 名稱衝突 / 拿掉;不是 dlm 專案拒絕', () => {
     const a = makeProject();
     const p = addProject(a);
     assert.equal(p.existed, false);
     assert.equal(addProject(a).existed, true, '同一個路徑不重複');
     assert.equal(resolveProject(p.name).path, p.path);
     assert.equal(resolveProject(a).name, p.name, '用路徑也找得到');
-    assert.throws(() => addProject(tempDir()), /不是 dp 專案/);
+    assert.throws(() => addProject(tempDir()), /不是 dlm 專案/);
     const b = makeProject();
     assert.notEqual(addProject(b).name, p.name, '同名(都叫 proj)自動加編號');
     removeProject(p.name);
     assert.ok(!loadProjects()[p.name]);
   });
 
-  test('dp op:status / 提案 / decide / set_role 都回 JSON;錯誤回 ok:false', () => {
+  test('dlm op:status / 提案 / decide / set_role 都回 JSON;錯誤回 ok:false', () => {
     const proj = makeProject();
     const st = op(proj, 'status');
     assert.ok(st.ok);
@@ -125,7 +125,7 @@ describe('專案清單與 dp op', () => {
     addAccount('op-a', { cli: 'claude' });
     const sr = op(proj, 'set_role', { role: 'critic', accounts: ['op-a'], model: 'opus' });
     assert.ok(sr.ok, sr.error);
-    assert.deepEqual(readJson(join(proj, 'dp.config.json')).agents.critic.accounts, ['op-a']);
+    assert.deepEqual(readJson(join(proj, 'dlm.config.json')).agents.critic.accounts, ['op-a']);
     const ev = op(proj, 'events', { types: 'decision' });
     assert.equal(ev.result.events.length, 1);
     assert.equal(ev.result.events[0].mac, undefined, '簽章欄位不外流');
@@ -152,9 +152,9 @@ describe('帳號跨專案共用', () => {
   test('實際派工:dispatch 與結束都記進這台電腦的帳號紀錄', async () => {
     addAccount('real-a', { cli: 'claude' });
     const proj = makeProject();
-    const cfg = readJson(join(proj, 'dp.config.json'));
+    const cfg = readJson(join(proj, 'dlm.config.json'));
     cfg.agents.worker.accounts = ['real-a'];
-    writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg, null, 2));
+    writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg, null, 2));
     sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm acct');
     const p = op(proj, 'propose_feature', { spec: CALC, gherkin: CALC_GHERKIN });
     op(proj, 'decide', { ref: p.result.decide_ref, choice: 'yes', verbatim: '好' });
@@ -179,7 +179,7 @@ async function startHub() {
   return { base, token, get, send, close: () => server.close() };
 }
 
-describe('dp hub(HTTP API)', () => {
+describe('dlm hub(HTTP API)', () => {
   test('token、Host、Origin;overview 看得到每個專案;從 API 提案 → 決定 → 帳本有原話;openapi', async () => {
     const proj = makeProject();
     const name = addProject(proj).name;
@@ -207,7 +207,7 @@ describe('dp hub(HTTP API)', () => {
       assert.equal(spec.body.openapi, '3.1.0');
       assert.match(spec.body.servers[0].url, /^http:\/\/127\.0\.0\.1:\d+$/);
       const flow = await h.get('/api/v1/flow');
-      assert.ok(flow.body.stages.find((s) => s.id === 'plan').steps.some((x) => x.tool === 'dp_propose_bundle'));
+      assert.ok(flow.body.stages.find((s) => s.id === 'plan').steps.some((x) => x.tool === 'dlm_propose_bundle'));
       const page = await fetch(`${h.base}/`).then((r) => r.text());
       assert.ok(page.includes(h.token), '首頁內嵌 token');
       // fetch 不讓改 Host,用 http.request
@@ -221,7 +221,7 @@ describe('dp hub(HTTP API)', () => {
   });
 
   test('initProject + setupProject + 背景迴圈啟停 + SSE 推送新事件', async () => {
-    const dir = join(tempDir('dp-hubinit-'), 'fresh');
+    const dir = join(tempDir('dlm-hubinit-'), 'fresh');
     const h = await startHub();
     try {
       const init = await h.send('POST', '/api/v1/projects/init', { path: dir });
@@ -229,7 +229,7 @@ describe('dp hub(HTTP API)', () => {
       const name = init.body.project;
       const setup = await h.send('POST', `/api/v1/projects/${name}/setup`, { answers: { platform: 'custom', worker_cmd: `FAKE_MODE=good node ${FAKE}`, verifier: 'none', autonomy: '1' } });
       assert.equal(setup.status, 200, JSON.stringify(setup.body));
-      assert.equal(readJson(join(dir, 'dp.config.json')).agents.worker.cmd, `FAKE_MODE=good node ${FAKE}`);
+      assert.equal(readJson(join(dir, 'dlm.config.json')).agents.worker.cmd, `FAKE_MODE=good node ${FAKE}`);
       // SSE:先連上,再寫一筆事件
       const ctrl = new AbortController();
       const res = await fetch(`${h.base}/api/v1/projects/${name}/events/stream?token=${h.token}`, { signal: ctrl.signal });
@@ -263,9 +263,9 @@ describe('dp hub(HTTP API)', () => {
     }
   });
 
-  test('舊版 dp 的專案:回 501 並說要升級', async () => {
+  test('舊版 dlm 的專案:回 501 並說要升級', async () => {
     const proj = makeProject();
-    writeFileSync(join(proj, 'tools', 'dp.mjs'), "console.error('不認識的指令 op'); process.exit(1);\n");
+    writeFileSync(join(proj, 'tools', 'dlm.mjs'), "console.error('不認識的指令 op'); process.exit(1);\n");
     const name = addProject(proj).name;
     const h = await startHub();
     try {
@@ -281,49 +281,49 @@ describe('dp hub(HTTP API)', () => {
 });
 
 describe('文件跟路由表、流程表一致', () => {
-  test('payload/docs/dp 的 API.md、openapi.json、FLOW.md 就是 dp api 產生的(改了 api.mjs / flow.mjs 要重產)', () => {
+  test('payload/docs/dlm 的 API.md、openapi.json、FLOW.md 就是 dlm api 產生的(改了 api.mjs / flow.mjs 要重產)', () => {
     for (const [kind, file] of [['md', 'API.md'], ['openapi', 'openapi.json'], ['flow', 'FLOW.md']]) {
-      const want = run(`node tools/dp.mjs api ${kind}`, { cwd: REPO }).stdout;
-      assert.equal(readFileSync(join(REPO, 'payload', 'docs', 'dp', file), 'utf8'), want, `${file} 過期了:node tools/dp.mjs api ${kind} > payload/docs/dp/${file}`);
+      const want = run(`node tools/dlm.mjs api ${kind}`, { cwd: REPO }).stdout;
+      assert.equal(readFileSync(join(REPO, 'payload', 'docs', 'dlm', file), 'utf8'), want, `${file} 過期了:node tools/dlm.mjs api ${kind} > payload/docs/dlm/${file}`);
     }
   });
 });
 
-describe('dp mcp', () => {
+describe('dlm mcp', () => {
   test('refuseReason:worker / Critic 不能用', () => {
     assert.equal(refuseReason('/p', {}), null);
-    assert.match(refuseReason('/p', { DP_ROLE: 'worker' }), /DP_ROLE/);
-    assert.match(refuseReason('/p/.dp/sandbox/d-1', {}), /\.dp/);
+    assert.match(refuseReason('/p', { DLM_ROLE: 'worker' }), /DLM_ROLE/);
+    assert.match(refuseReason('/p/.dlm/sandbox/d-1', {}), /\.dlm/);
   });
 
   test('handle:initialize(含流程說明)、prompts、未知方法、缺 project', async () => {
     const init = await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } }, { cwd: tempDir(), env: {} });
     assert.equal(init.result.protocolVersion, '2025-03-26');
     assert.ok(init.result.capabilities.prompts);
-    assert.match(init.result.instructions, /dp_init_project/);
+    assert.match(init.result.instructions, /dlm_init_project/);
     assert.equal(await handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
     assert.equal((await handle({ jsonrpc: '2.0', id: 2, method: 'resources/list' })).error.code, -32601);
     const prompts = (await handle({ jsonrpc: '2.0', id: 3, method: 'prompts/list' })).result.prompts;
     assert.ok(prompts.some((p) => p.name === 'new-project'));
     const got = await handle({ jsonrpc: '2.0', id: 4, method: 'prompts/get', params: { name: 'new-project', arguments: { path: '/tmp/x' } } });
-    assert.match(got.result.messages[0].content.text, /dp_init_project[\s\S]*dp_propose_bundle/);
+    assert.match(got.result.messages[0].content.text, /dlm_init_project[\s\S]*dlm_propose_bundle/);
     assert.equal((await handle({ jsonrpc: '2.0', id: 5, method: 'prompts/get', params: { name: 'new-project', arguments: {} } })).error.code, -32602);
-    const r = await callTool('dp_get_inbox', {}, { cwd: tempDir(), env: {} });
+    const r = await callTool('dlm_get_inbox', {}, { cwd: tempDir(), env: {} });
     assert.ok(r.isError);
     assert.match(r.content[0].text, /要指定 project/);
     for (const t of toolList()) {
       assert.equal(t.inputSchema.type, 'object', t.name);
-      if (['dp_decide', 'dp_confirm', 'dp_resume', 'dp_unblock', 'dp_set_settings'].includes(t.name)) assert.match(t.description, /親口/);
+      if (['dlm_decide', 'dlm_confirm', 'dlm_resume', 'dlm_unblock', 'dlm_set_settings'].includes(t.name)) assert.match(t.description, /親口/);
     }
   });
 
   test('提案工具帶節點欄位的 schema:agent 不用讀 INTAKE.md 也知道 spec / bundle 長什麼樣', () => {
     const tools = Object.fromEntries(toolList().map((t) => [t.name, t]));
-    const spec = tools.dp_propose_feature.inputSchema.properties.spec;
+    const spec = tools.dlm_propose_feature.inputSchema.properties.spec;
     for (const k of ['id', 'kind', 'title', 'intent', 'owns', 'depends_on', 'accept']) assert.ok(spec.properties[k]?.description || spec.properties[k], k);
     // 4.7.3:owns 也是必填(validateDag 本來就要求每個節點都有)
     assert.deepEqual(spec.required, ['id', 'title', 'intent', 'owns']);
-    const node = tools.dp_propose_bundle.inputSchema.properties.bundle.properties.nodes.items;
+    const node = tools.dlm_propose_bundle.inputSchema.properties.bundle.properties.nodes.items;
     assert.ok(node.properties.gherkin_text && node.properties.kind);
     const r = ROUTES.find((x) => x.id === 'proposeFeature');
     assert.match(buildArgs(r, { project: 'p' }, [], { spec: { title: 'x' } }).error, /缺必填欄位 id/);
@@ -335,7 +335,7 @@ describe('dp mcp', () => {
 
   test('stdio 實跑(在專案目錄啟動,project 可省略):tools/list → 提案 → inbox → decide', async () => {
     const proj = makeProject();
-    const child = spawn(process.execPath, [DP, 'mcp'], { cwd: proj, env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [DLM, 'mcp'], { cwd: proj, env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] });
     const pending = new Map();
     let buf = '';
     child.stdout.on('data', (b) => {
@@ -352,21 +352,21 @@ describe('dp mcp', () => {
     const tool = async (name, args = {}) => { const r = (await call('tools/call', { name, arguments: args })).result; return { err: !!r.isError, text: r.content[0].text, json: (() => { try { return JSON.parse(r.content[0].text); } catch { return null; } })() }; };
     try {
       const init = await call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
-      assert.match(init.result.instructions, /目前目錄是 dp 專案/);
+      assert.match(init.result.instructions, /目前目錄是 dlm 專案/);
       const tools = (await call('tools/list')).result.tools.map((t) => t.name);
-      assert.ok(tools.includes('dp_overview') && tools.includes('dp_propose_bundle'));
-      const st = await tool('dp_get_project');
+      assert.ok(tools.includes('dlm_overview') && tools.includes('dlm_propose_bundle'));
+      const st = await tool('dlm_get_project');
       assert.ok(!st.err, st.text);
       assert.equal(st.json.counts.nodes, 0);
-      const p = await tool('dp_propose_feature', { spec: CALC, gherkin: CALC_GHERKIN });
+      const p = await tool('dlm_propose_feature', { spec: CALC, gherkin: CALC_GHERKIN });
       assert.ok(!p.err, p.text);
-      const inbox = await tool('dp_get_inbox');
+      const inbox = await tool('dlm_get_inbox');
       assert.ok(inbox.json.decisions.some((d) => d.ref === p.json.decide_ref));
-      const d = await tool('dp_decide', { ref: p.json.decide_ref, choice: 'yes', verbatim: '好' });
+      const d = await tool('dlm_decide', { ref: p.json.decide_ref, choice: 'yes', verbatim: '好' });
       assert.ok(!d.err, d.text);
-      const bad = await tool('dp_show', { ref: 'no-such-thing' });
+      const bad = await tool('dlm_show', { ref: 'no-such-thing' });
       assert.ok(bad.err);
-      const ov = await tool('dp_overview');
+      const ov = await tool('dlm_overview');
       assert.ok(ov.json.projects.some((x) => x.path === proj || x.path.endsWith('/proj')), '用過的專案自動登記');
     } finally {
       child.stdin.end();
@@ -374,17 +374,17 @@ describe('dp mcp', () => {
     }
   });
 
-  test('DP_ROLE 有值 → 拒絕啟動;dp mcp install --client project 寫 .mcp.json 且不重複;dp mcp config 印出設定', () => {
+  test('DLM_ROLE 有值 → 拒絕啟動;dlm mcp install --client project 寫 .mcp.json 且不重複;dlm mcp config 印出設定', () => {
     const proj = makeProject();
-    const r = run(`node ${JSON.stringify(DP)} mcp < /dev/null`, { cwd: proj, env: { DP_ROLE: 'worker' } });
+    const r = run(`node ${JSON.stringify(DLM)} mcp < /dev/null`, { cwd: proj, env: { DLM_ROLE: 'worker' } });
     assert.notEqual(r.code, 0);
     assert.match(r.stderr, /拒絕啟動/);
-    assert.equal(dp(proj, 'mcp install --client project').code, 0);
-    assert.deepEqual(readJson(join(proj, '.mcp.json')).mcpServers.dp, { command: 'node', args: ['tools/dp.mjs', 'mcp'] });
-    assert.match(dp(proj, 'mcp install --client project').stdout, /已經有/);
-    const cfg = dp(proj, 'mcp config').stdout;
-    assert.match(cfg, /claude mcp add --scope user dp -- node/);
-    assert.match(cfg, /\[mcp_servers\.dp\]/);
+    assert.equal(dlm(proj, 'mcp install --client project').code, 0);
+    assert.deepEqual(readJson(join(proj, '.mcp.json')).mcpServers.dlm, { command: 'node', args: ['tools/dlm.mjs', 'mcp'] });
+    assert.match(dlm(proj, 'mcp install --client project').stdout, /已經有/);
+    const cfg = dlm(proj, 'mcp config').stdout;
+    assert.match(cfg, /claude mcp add --scope user dlm -- node/);
+    assert.match(cfg, /\[mcp_servers\.dlm\]/);
     mkdirSync(join(proj, 'x'), { recursive: true });
     assert.ok(readFileSync(join(REPO, 'tools', 'lib', 'hub.html'), 'utf8').includes('__TOKEN__'));
   });

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dp hub</title>
+<title>dlm hub</title>
 <style>
-/* dp hub:這台電腦所有 dp 專案的總覽。資料來自 /api/v1/overview(每幾秒)與 /api/v1/events/stream(即時)。不連任何外部資源。 */
+/* dlm hub:這台電腦所有 dlm 專案的總覽。資料來自 /api/v1/overview(每幾秒)與 /api/v1/events/stream(即時)。不連任何外部資源。 */
 :root{
   --bg:#121216; --s1:#1a1a1f; --s2:#202026; --s3:#27272e; --s4:#30303a;
   --text:#e6e3ec; --dim:#a8a4b2; --faint:#76727f;
@@ -85,16 +85,16 @@ a{color:inherit}
 </head>
 <body>
 <div class="wrap" id="app"></div>
-<script type="application/json" id="dp-data">__DATA__</script>
+<script type="application/json" id="dlm-data">__DATA__</script>
 <script>
 (function(){
 'use strict';
 var TOKEN = "__TOKEN__";
 var LIVE = __LIVE__;
-var data = JSON.parse(document.getElementById('dp-data').textContent);
+var data = JSON.parse(document.getElementById('dlm-data').textContent);
 var feed = [];
 var ui = { msg:null, busy:{}, addPath:'', notify:false, lastAwait:null };
-try { ui.notify = localStorage.getItem('dp-hub-notify') === '1'; } catch (e) {}
+try { ui.notify = localStorage.getItem('dlm-hub-notify') === '1'; } catch (e) {}
 
 function el(tag, attrs, kids){
   var e = document.createElement(tag);
@@ -132,29 +132,38 @@ function awaitingTotal(){ return data.totals ? data.totals.awaiting_user : 0; }
 function checkNotify(){
   var n = awaitingTotal();
   if (ui.lastAwait != null && n > ui.lastAwait && ui.notify && window.Notification && Notification.permission === 'granted') {
-    try { new Notification('dp:有事等你決定', { body: n + ' 件等你(' + data.projects.filter(function(p){ return p.awaiting_user && (p.awaiting_user.decisions + p.awaiting_user.e2e); }).map(function(p){ return p.name; }).join('、') + ')' }); } catch (e) {}
+    try { new Notification('dlm:有事等你決定', { body: n + ' 件等你(' + data.projects.filter(function(p){ return p.awaiting_user && (p.awaiting_user.decisions + p.awaiting_user.e2e); }).map(function(p){ return p.name; }).join('、') + ')' }); } catch (e) {}
   }
   ui.lastAwait = n;
-  document.title = (n ? '(' + n + ') ' : '') + 'dp hub';
+  document.title = (n ? '(' + n + ') ' : '') + 'dlm hub';
 }
 
 function header(){
   var t = data.totals || { projects:0, loops_running:0, workers:0, review:0, awaiting_user:0, blocked:0, done:0, nodes:0, today_usd:0, errors:0 };
   var k = function(label, v, cls){ return el('div', { cls:'kpi' + (cls ? ' ' + cls : '') }, [label, el('b', { text:String(v) })]); };
   return el('div', { cls:'top' }, [
-    el('div', { cls:'brand' }, [el('div', { cls:'logo', text:'dp' }), el('div', {}, [el('b', { text:'dp hub' }), el('br'), el('span', { text:'v' + (data.version || '') + ' · 這台電腦的所有專案' })])]),
+    el('div', { cls:'brand' }, [el('div', { cls:'logo', text:'dlm' }), el('div', {}, [el('b', { text:'dlm hub' }), el('br'), el('span', { text:'v' + (data.version || '') + ' · 這台電腦的所有專案' })])]),
     el('div', { cls:'kpis' }, [
       k('專案', t.projects), k('迴圈在跑', t.loops_running, t.loops_running ? 'ok' : ''), k('施工中', t.workers), k('審核中', t.review),
       k('等你', t.awaiting_user, t.awaiting_user ? 'warn' : ''), k('卡住', t.blocked, t.blocked ? 'bad' : ''), k('節點完成', t.done + '/' + t.nodes), k('今天', money(t.today_usd))
     ]),
     el('button', { cls:'btn', text: ui.notify ? '通知:開' : '開啟通知', onclick:function(){
       if (!window.Notification) { ui.msg = { ok:false, text:'這個瀏覽器不支援通知' }; render(); return; }
-      if (ui.notify) { ui.notify = false; } else { Notification.requestPermission().then(function(p){ ui.notify = p === 'granted'; try { localStorage.setItem('dp-hub-notify', ui.notify ? '1' : '0'); } catch (e) {} render(); }); return; }
-      try { localStorage.setItem('dp-hub-notify', '0'); } catch (e) {}
+      if (ui.notify) { ui.notify = false; } else { Notification.requestPermission().then(function(p){ ui.notify = p === 'granted'; try { localStorage.setItem('dlm-hub-notify', ui.notify ? '1' : '0'); } catch (e) {} render(); }); return; }
+      try { localStorage.setItem('dlm-hub-notify', '0'); } catch (e) {}
       render();
     } }),
     el('a', { cls:'btn', href:'/api/v1/openapi.json', target:'_blank', text:'API 規格' })
   ]);
+}
+
+function upgradeBtn(p, base){
+  return el('button', { cls:'btn pri', disabled: ui.busy['up' + p.name] ? 'disabled' : null, text:'升級這個專案的 dlm', onclick:function(){
+    if (!confirm('把 ' + p.name + ' 的 dlm 升級成 ' + data.version + '?(衝突就一個都不寫)')) return;
+    act('up' + p.name, 'POST', base + '/upgrade', {}, function(j){
+      return p.name + ':' + j.from + ' → ' + j.to + (j.migrated && j.migrated.length ? ',dp → dlm 改名完成' : '') + ',更新 ' + j.update.length + ' 個檔';
+    });
+  } });
 }
 
 function card(p){
@@ -165,10 +174,7 @@ function card(p){
       el('div', { cls:'path', text:p.path }),
       el('div', { cls:'err', text:p.error }),
       el('div', { cls:'acts' }, [
-        /4\.7 以上/.test(p.error) ? el('button', { cls:'btn pri', disabled: ui.busy['up' + p.name] ? 'disabled' : null, text:'升級這個專案的 dp', onclick:function(){
-          if (!confirm('把 ' + p.name + ' 的 dp 升級成 ' + data.version + '?(衝突就一個都不寫)')) return;
-          act('up' + p.name, 'POST', base + '/upgrade', {}, function(j){ return p.name + ':' + j.from + ' → ' + j.to + ',更新 ' + j.update.length + ' 個檔'; });
-        } }) : null,
+        /4\.7 以上/.test(p.error) || p.legacy ? upgradeBtn(p, base) : null,
         el('button', { cls:'btn danger', text:'從清單拿掉', onclick:function(){ if (confirm('從清單拿掉 ' + p.name + '?(不刪檔案)')) act('rm' + p.name, 'DELETE', base, null, '已拿掉 ' + p.name); } })
       ])
     ]);
@@ -194,8 +200,10 @@ function card(p){
     el('div', {}, [el('div', { cls:'prog' }, [el('span', { text:'完成 ' + p.counts.done + ' / ' + p.counts.nodes }), el('span', { text:ago(p.last_event_ts) })]), el('div', { cls:'bar' }, [el('i', { style:'width:' + pct + '%' })])]),
     el('div', { cls:'rows' }, rows),
     (p.warnings || []).length ? el('div', { cls:'rows', style:'color:var(--gate)' }, p.warnings.slice(0, 2).map(function(w){ return el('div', { text:'⚠ ' + w }); })) : null,
+    p.legacy ? el('div', { cls:'rows', style:'color:var(--gate)' }, [el('div', { text:'⚠ 4.8.0 以前(dp)的專案:升級後改用 dlm 的檔名。先停迴圈再升級' })]) : null,
     el('div', { cls:'acts' }, [
-      el('a', { cls:'btn pri', href:'/p/' + enc + '/', style:'text-decoration:none', text:'開主控台' }),
+      p.legacy && !running ? upgradeBtn(p, base) : null,
+      el('a', { cls:'btn' + (p.legacy && !running ? '' : ' pri'), href:'/p/' + enc + '/', style:'text-decoration:none', text:'開主控台' }),
       running ? el('button', { cls:'btn', disabled: ui.busy['loop' + p.name] || p.loop.stopping ? 'disabled' : null, text:'停止迴圈', onclick:function(){
         act('loop' + p.name, 'POST', base + '/loop/stop', { wait:0 }, p.name + ':已要求背景迴圈這一輪做完就結束');
       } }) : el('button', { cls:'btn', disabled: ui.busy['loop' + p.name] ? 'disabled' : null, text:'啟動迴圈', onclick:function(){
@@ -215,7 +223,7 @@ function card(p){
 function accounts(){
   var list = data.accounts || [];
   var p = el('div', { cls:'panel' }, [el('h3', { text:'訂閱帳號 · 所有專案加起來' })]);
-  if (!list.length) p.appendChild(el('div', { style:'color:var(--dim);font-size:13px' }, ['還沒登記。終端機:', el('code', { text:'dp account add max-a --cli claude' })]));
+  if (!list.length) p.appendChild(el('div', { style:'color:var(--dim);font-size:13px' }, ['還沒登記。終端機:', el('code', { text:'dlm account add max-a --cli claude' })]));
   list.forEach(function(a){
     var cool = a.limited_until && Date.parse(a.limited_until) > Date.now();
     p.appendChild(el('div', { cls:'acct' }, [
@@ -254,14 +262,14 @@ function feedPanel(){
 }
 
 function addPanel(){
-  var inp = el('input', { placeholder:'/絕對路徑/到/dp 專案', value:ui.addPath, oninput:function(){ ui.addPath = this.value; } });
+  var inp = el('input', { placeholder:'/絕對路徑/到/dlm 專案', value:ui.addPath, oninput:function(){ ui.addPath = this.value; } });
   return el('div', { cls:'panel' }, [
     el('h3', { text:'加入專案' }),
     el('div', { cls:'add' }, [inp, el('button', { cls:'btn pri', text:'登記', onclick:function(){
       var path = ui.addPath.trim(); if (!path) return;
       act('add', 'POST', '/api/v1/projects', { path:path }, function(j){ ui.addPath = ''; return j.existed ? '已經登記過了(' + j.name + ')' : '已登記 ' + j.name; });
     } })]),
-    el('div', { style:'color:var(--faint);font-size:12px;margin-top:8px' }, ['還不是 dp 專案的目錄,先用 MCP 的 ', el('code', { text:'dp_init_project' }), ' 或終端機 ', el('code', { text:'dp init' }), '。'])
+    el('div', { style:'color:var(--faint);font-size:12px;margin-top:8px' }, ['還不是 dlm 專案的目錄,先用 MCP 的 ', el('code', { text:'dlm_init_project' }), ' 或終端機 ', el('code', { text:'dlm init' }), '。'])
   ]);
 }
 
@@ -274,7 +282,7 @@ function render(){
   var left = el('div', {}, []);
   if (ui.msg) left.appendChild(el('div', { cls:'msg ' + (ui.msg.ok ? 'ok' : 'bad'), style:'margin:0 0 10px', text:ui.msg.text }));
   if (data.loading) left.appendChild(el('div', { cls:'empty', text:'讀取中…' }));
-  else if (!data.projects.length) left.appendChild(el('div', { cls:'empty' }, ['還沒有登記任何專案。右邊貼上專案路徑登記,或在終端機跑 ', el('code', { text:'dp project add <目錄>' }), '。']));
+  else if (!data.projects.length) left.appendChild(el('div', { cls:'empty' }, ['還沒有登記任何專案。右邊貼上專案路徑登記,或在終端機跑 ', el('code', { text:'dlm project add <目錄>' }), '。']));
   else {
     var order = data.projects.slice().sort(function(a, b){
       var w = function(p){ return p.error ? 0 : p.halted ? 1 : (p.awaiting_user.decisions + p.awaiting_user.e2e) ? 2 : p.in_progress.length ? 3 : 4; };

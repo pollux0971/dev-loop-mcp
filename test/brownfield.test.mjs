@@ -41,22 +41,22 @@ const FILES = {
   'README.md': '# budget\n',
 };
 
-/** 既有的 Python 專案(有 git 歷史),裝上 dp,setup 選 brownfield。 */
+/** 既有的 Python 專案(有 git 歷史),裝上 dlm,setup 選 brownfield。 */
 async function existingPython(mode = 'good') {
-  const proj = join(tempDir('dp-bf-'), 'budget');
+  const proj = join(tempDir('dlm-bf-'), 'budget');
   for (const [f, t] of Object.entries(FILES)) { mkdirSync(dirname(join(proj, f)), { recursive: true }); writeFileSync(join(proj, f), t); }
   sh(proj, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm "existing project"');
   const r = init(proj, { name: 'budget', existing: true });
-  // v4.7.3:已經有 git 的專案,init 自己把 dp 的檔 commit(以前這裡要手動 commit,真的使用者不會知道要這樣做)
-  assert.ok(r.committed, 'init 把 dp 的檔 commit 了');
+  // v4.7.3:已經有 git 的專案,init 自己把 dlm 的檔 commit(以前這裡要手動 commit,真的使用者不會知道要這樣做)
+  assert.ok(r.committed, 'init 把 dlm 的檔 commit 了');
   assert.equal(sh(proj, 'git status --porcelain --untracked-files=no'), '');
   const asked = [];
   const answers = { platform: '2', worker_cmd: `FAKE_MODE=${mode} node ${FAKE_BF}` };
   await setup(proj, { ask: async (q) => { asked.push(q.id); return answers[q.id] ?? ''; }, detect: { claude: false }, log: quiet });
   // 測試用:假的小模型、不簽章
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.verifier = { ...cfg.agents.verifier, backend: 'cmd', cmd: `FV=ok node ${FAKE_VERIFIER}` };
-  writeJson(join(proj, 'dp.config.json'), cfg);
+  writeJson(join(proj, 'dlm.config.json'), cfg);
   sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm verifier');
   return { proj, init: r, asked };
 }
@@ -97,7 +97,7 @@ test('新專案偵測成 greenfield,setup 預設不變', async () => {
   await setup(proj, { ask: async (q) => (q.id === 'npm_install' ? 'n' : ''), detect: { claude: true }, log: quiet });
   const cfg = loadConfig(proj);
   assert.equal(cfg.project.mode, 'greenfield');
-  assert.deepEqual(cfg.gates.chain, ['check:dp', 'typecheck', 'test', 'accept']);
+  assert.deepEqual(cfg.gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
 });
 
 test('既有 Python 專案:init 不裝 TS 工具鏈、setup 預設 brownfield、gate 跑 unittest', { skip: !HAS_PY && '沒有 python3' }, async () => {
@@ -106,28 +106,28 @@ test('既有 Python 專案:init 不裝 TS 工具鏈、setup 預設 brownfield、
   for (const f of ['package.json', 'tsconfig.json', 'vitest.config.ts', 'scripts/check-boundaries.ts', 'features/steps/_world.ts']) {
     assert.ok(!existsSync(join(proj, f)), `${f} 不該裝進 Python 專案`);
   }
-  assert.ok(existsSync(join(proj, 'tools/dp.mjs')) && existsSync(join(proj, '.claude/skills/brownfield-onboard/SKILL.md')));
+  assert.ok(existsSync(join(proj, 'tools/dlm.mjs')) && existsSync(join(proj, '.claude/skills/brownfield-onboard/SKILL.md')));
   assert.ok(asked.includes('mode') && asked.includes('test_cmd'));
   const cfg = loadConfig(proj);
   assert.equal(cfg.project.mode, 'brownfield');
   assert.equal(cfg.project.language, 'python');
-  assert.deepEqual(cfg.gates.chain, ['check:dp', 'test']);
+  assert.deepEqual(cfg.gates.chain, ['check:dlm', 'test']);
   assert.equal(cfg.gates.commands.test, 'python3 -m unittest discover -s tests -t .');
   assert.equal(cfg.verify.dry_run_cmd, null);
   assert.equal(cfg.verify.mutation.cmd, null);
   assert.ok(cfg.verify.rerun_allow.includes('python3 -m unittest'));
   assert.ok(cfg.paths.tests.includes('**/test_*.py'));
   // upgrade 也記得這是既有專案:不會補裝 package.json
-  assert.ok(!run('node tools/dp.mjs upgrade --dry-run', { cwd: proj }).stdout.includes('create package.json'));
+  assert.ok(!run('node tools/dlm.mjs upgrade --dry-run', { cwd: proj }).stdout.includes('create package.json'));
 });
 
 test('onboard:基線記下本來就紅的測試,AS-IS 與 ROADMAP v0;doctor 看得到', { skip: !HAS_PY && '沒有 python3' }, async () => {
   const { proj } = await existingPython();
-  const r = run('node tools/dp.mjs onboard', { cwd: proj });
+  const r = run('node tools/dlm.mjs onboard', { cwd: proj });
   assert.equal(r.code, 0, r.stderr + r.stdout);
   assert.match(r.stdout, /test 本來就紅.1 個測試/);
-  const b = readJson(join(proj, 'docs/dp-baseline.json'));
-  assert.deepEqual(b.gates.map((g) => g.name), ['test'], 'check:dp 不進基線');
+  const b = readJson(join(proj, 'docs/dlm-baseline.json'));
+  assert.deepEqual(b.gates.map((g) => g.name), ['test'], 'check:dlm 不進基線');
   assert.deepEqual(b.gates[0].failing, ['tests.test_core.CoreTest.test_rounding']);
   const asis = readFileSync(join(proj, 'docs/AS-IS.md'), 'utf8');
   assert.match(asis, /python3 -m unittest discover/);
@@ -135,7 +135,7 @@ test('onboard:基線記下本來就紅的測試,AS-IS 與 ROADMAP v0;doctor 看�
   assert.match(asis, /`budget\/` \| 2 \| 待補/);
   assert.match(readFileSync(join(proj, 'docs/ROADMAP.md'), 'utf8'), /^- v0 現況:/m);
   assert.equal(sh(proj, 'git status --porcelain -- docs'), '', 'onboard 要 commit');
-  const doc = run('node tools/dp.mjs doctor', { cwd: proj }).stdout;
+  const doc = run('node tools/dlm.mjs doctor', { cwd: proj }).stdout;
   assert.match(doc, /測試基線.*test 有 1 個本來就紅/);
   assert.match(doc, /合併 gate.*test\(python3 -m unittest discover -s tests -t \.\)/);
   // 主控台:模式與基線
@@ -167,7 +167,7 @@ test('intake:沒寫 accept 會擋;owns 碰到既有程式自動加 characterize;
 
 async function approved(mode) {
   const { proj } = await existingPython(mode);
-  assert.equal(run('node tools/dp.mjs onboard', { cwd: proj }).code, 0);
+  assert.equal(run('node tools/dlm.mjs onboard', { cwd: proj }).code, 0);
   const p = proposeFeature(proj, SPEC, GHERKIN);
   decide(proj, `node:${p.id}`, 'yes', '好');
   return proj;
@@ -191,7 +191,7 @@ test('brownfield 從提案到合併:characterize(綠)→ test(紅)→ dev(綠),�
   assert.deepEqual(envs[2].acceptance, [{ cmd: SPEC.accept, expect_exit: 0 }, { cmd: 'python3 -m unittest tests/test_core_characterize.py', expect_exit: 0 }]);
   const gates = readEvents(proj).filter((e) => e.type === 'gates').at(-1);
   assert.equal(gates.ok, true);
-  assert.deepEqual(gates.results.map((g) => [g.name, g.exit === 0 || !!g.known_red]), [['check:dp', true], ['test', true]]);
+  assert.deepEqual(gates.results.map((g) => [g.name, g.exit === 0 || !!g.known_red]), [['check:dlm', true], ['test', true]]);
   assert.equal(gates.results.find((g) => g.name === 'test').known_red, 1, 'test_rounding 本來就紅');
   assert.match(sh(proj, 'cat budget/core.py'), /def to_csv/);
   assert.ok(existsSync(join(proj, 'tests/test_core_characterize.py')));
@@ -223,6 +223,6 @@ test('onboard 不覆蓋已經有的 AS-IS 與 ROADMAP', { skip: !HAS_PY && '沒�
   writeFileSync(join(proj, 'docs/AS-IS.md'), '# mine\n');
   sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm asis');
   const r = onboard(proj, loadConfig(proj));
-  assert.deepEqual(r.written, ['docs/dp-baseline.json', 'docs/ROADMAP.md']);
+  assert.deepEqual(r.written, ['docs/dlm-baseline.json', 'docs/ROADMAP.md']);
   assert.equal(readFileSync(join(proj, 'docs/AS-IS.md'), 'utf8'), '# mine\n');
 });

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
-/* dp 主控台:唯讀。資料全部來自帳本重播(跟 dp status 同一份);不連任何外部資源。 */
+/* dlm 主控台:唯讀。資料全部來自帳本重播(跟 dlm status 同一份);不連任何外部資源。 */
 :root{
   --bg:#121216; --s1:#1a1a1f; --s2:#202026; --s3:#27272e; --s4:#30303a;
   --line:rgba(255,255,255,.09);
@@ -345,25 +345,25 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 </head>
 <body>
 <div class="app" id="app"></div>
-<script type="application/json" id="dp-data">__DATA__</script>
+<script type="application/json" id="dlm-data">__DATA__</script>
 <script>
 (function(){
 'use strict';
 var LIVE = __LIVE__;
 var TOKEN = "__TOKEN__";
 var HUB = "__HUB__";
-var data = JSON.parse(document.getElementById('dp-data').textContent);
+var data = JSON.parse(document.getElementById('dlm-data').textContent);
 var ui = { acct:{ form:{ name:'', cli:'claude', plan:'' }, roles:null, login:null, msg:null, busy:false }, view:'console', node:null, pinned:false, tab:null, cursor:null, playing:null, railOpen:false, tlNode:null, tlAll:false, more:{} };
 // 一打開看哪一頁:有軟體在開發 → 主控台;沒有 → 規劃頁(Front · intake),跟 Front 規劃下一版。
-// data.initial_view 由 dp 算(v4.7.3);舊版 dp 的專案沒有這個欄位,就用看得到的資料估。之後切頁只在這次打開有效,不記住
+// data.initial_view 由 dlm 算(v4.7.3);舊版 dlm 的專案沒有這個欄位,就用看得到的資料估。之後切頁只在這次打開有效,不記住
 ui.view = data.initial_view || ((data.in_progress || []).length || (data.review || []).length || (data.blocked || []).length
   || (data.decisions || []).some(function(d){ return /^(accept|escalation|stuck|testfix|spawn):/.test(d.ref); }) ? 'console' : 'planning');
-try { var saved = JSON.parse(localStorage.getItem('dp-console') || '{}'); ui.railOpen = !!saved.railOpen; } catch (e) {}
-function save(){ try { localStorage.setItem('dp-console', JSON.stringify({ railOpen: ui.railOpen })); } catch (e) {} }
+try { var saved = JSON.parse(localStorage.getItem('dlm-console') || '{}'); ui.railOpen = !!saved.railOpen; } catch (e) {}
+function save(){ try { localStorage.setItem('dlm-console', JSON.stringify({ railOpen: ui.railOpen })); } catch (e) {} }
 
 var STATUS = { done:'完成', 'in-progress':'施工中', review:'驗收中', todo:'未開始', blocked:'卡住', stale:'需重驗' };
 var LEG = { characterize:'釘現況', test:'測試棒', dev:'實作棒', integrate:'整合棒', 'test-fix':'修測試' };
-var ACTOR = { orchestrator:['orch','w-orch'], verifier:['verifier','w-ver'], critic:['critic','w-crit'], user:['你','w-you'], 'dp-cli':['dp','w-sys'] };
+var ACTOR = { orchestrator:['orch','w-orch'], verifier:['verifier','w-ver'], critic:['critic','w-crit'], user:['你','w-you'], 'dlm-cli':['dlm','w-sys'], 'dp-cli':['dlm','w-sys'] };
 var QUIET = { inbox_viewed:1, launched:1, cost:1 };
 
 /* ── helpers ─────────────────────────────── */
@@ -433,10 +433,10 @@ function rail(){
   var navs = [['console','▣','主控台'],['planning','✎','規劃'],['pipeline','▦','管線'],['timeline','≡','時間軸'],['cost','$','花費'],['accounts','◎','帳號']];
   return el('nav', { cls:'rail' }, [
     el('div', { cls:'top' }, [
-      el('div', { cls:'logo', title:'展開 / 收起', onclick:function(){ ui.railOpen = !ui.railOpen; save(); render(); }, text:'dp' }),
-      span('wordmark', 'dev-paradigm-mcp')
+      el('div', { cls:'logo', title:'展開 / 收起', onclick:function(){ ui.railOpen = !ui.railOpen; save(); render(); }, text:'dlm' }),
+      span('wordmark', 'dev-loop-mcp')
     ]),
-    HUB ? el('button', { cls:'nav', title:'所有專案(dp hub)', onclick:function(){ location.href = HUB; } }, [span('ic', '⌂'), span('lb', '所有專案')]) : null,
+    HUB ? el('button', { cls:'nav', title:'所有專案(dlm hub)', onclick:function(){ location.href = HUB; } }, [span('ic', '⌂'), span('lb', '所有專案')]) : null,
     navs.map(function(n){
       return el('button', { cls:'nav' + (ui.view === n[0] ? ' on' : ''), title:n[2], onclick:function(){ ui.view = n[0]; save(); render(); } }, [
         span('ic', n[1]), span('lb', n[2] + (n[0] === 'pipeline' && waiting ? ' · ' + waiting : ''))
@@ -507,7 +507,7 @@ function renderConsole(main){
   if (!n) { main.appendChild(el('div', { cls:'pg-wrap' }, [el('div', { cls:'pg-sub', text:'dag.json 還沒有任何節點。在 Front 說你想做什麼,intake 會把第一版放進來。' })])); return; }
   main.appendChild(header(n));
   main.appendChild(topbar(n));
-  if (data.halted) main.appendChild(el('div', { cls:'banner', text:'停機中:' + data.halted.reason + '(在 Front 說「繼續」或 dp resume)' }));
+  if (data.halted) main.appendChild(el('div', { cls:'banner', text:'停機中:' + data.halted.reason + '(在 Front 說「繼續」或 dlm resume)' }));
   var page = el('div', { cls:'page on' });
   main.appendChild(page);
   page.appendChild(el('div', { cls:'panes' }, [orchPane(n), workerPane(n), verifierPane(n), spinePane(n)]));
@@ -540,7 +540,7 @@ function orchPane(n){
       case 'accept': s.appendChild(ln('orchestrator', [span('ok', '⇢ 合併進主線'), ' @' + String(r.merge_sha || '').slice(0, 7)])); break;
       case 'e2e_request': s.appendChild(ln('orchestrator', [span('warn', '☞ 請你親手試用'), ' 整合點'])); break;
       case 'e2e_confirm': s.appendChild(ln('user', [e.text.replace(/^使用者/, ''), e.detail ? span('w-sys', '  「' + short(e.detail.replace(/^原話:/, ''), 80) + '」') : null])); break;
-      case 'decision_request': s.appendChild(ln('dp-cli', [span('warn', '? '), short(e.text.replace(/^請求決定 \S+:/, ''), 160)])); break;
+      case 'decision_request': s.appendChild(ln('dlm-cli', [span('warn', '? '), short(e.text.replace(/^請求決定 \S+:/, ''), 160)])); break;
       case 'decision': s.appendChild(ln(e.actor === 'user' ? 'user' : e.actor, ['決定 ' + (r.ref || '') + ' = ', span('ok', r.choice || ''), e.detail ? span('w-sys', '  「' + short(e.detail.replace(/^原話:/, ''), 80) + '」') : null])); break;
     }
   });
@@ -721,7 +721,7 @@ function spinePane(n){
   });
   if (!s.childNodes.length) s.appendChild(el('div', { cls:'empty-pane', text:'—' }));
   return el('section', { cls:'pane p-spine' }, [
-    el('div', { cls:'pane-head' }, [span('av', 'H'), span('nm', 'Harness'), span('sub', 'dp script')]),
+    el('div', { cls:'pane-head' }, [span('av', 'H'), span('nm', 'Harness'), span('sub', 'dlm script')]),
     s
   ]);
 }
@@ -729,8 +729,8 @@ function spinePane(n){
 /* ── 底部:要你決定的事(唯讀:只顯示該說什麼 / 該打什麼) ── */
 function inputbar(){
   var q = data.decisions[0], e2e = data.e2e[0], waiting = data.decisions.length + data.e2e.length, cmd = null, text;
-  if (q) { cmd = 'dp decide ' + q.ref + ' ' + (q.recommendation || '<選項>'); text = [q.question + (q.recommendation ? '(建議 ' + q.recommendation + ')' : '') + '  ', el('code', { text:cmd })]; }
-  else if (e2e) { cmd = 'dp confirm ' + e2e.id + ' yes'; text = ['親手試用 ' + e2e.id + ':' + e2e.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') + '  ', el('code', { text:cmd })]; }
+  if (q) { cmd = 'dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>'); text = [q.question + (q.recommendation ? '(建議 ' + q.recommendation + ')' : '') + '  ', el('code', { text:cmd })]; }
+  else if (e2e) { cmd = 'dlm confirm ' + e2e.id + ' yes'; text = ['親手試用 ' + e2e.id + ':' + e2e.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') + '  ', el('code', { text:cmd })]; }
   else text = [data.halted ? '停機中:' + data.halted.reason : '沒有要你決定的事。背景迴圈會自己推進;要新功能就在 Front 說。'];
   var btn = cmd ? el('button', { cls:'send', onclick:function(){
     var b = this; try { navigator.clipboard.writeText(cmd).then(function(){ b.textContent = '已複製'; setTimeout(function(){ b.textContent = '複製指令'; }, 1500); }); } catch (err) {}
@@ -767,10 +767,10 @@ function renderPipeline(main){
   var askPanel = el('div', { cls:'panel' });
   if (!waiting) askPanel.appendChild(el('div', { cls:'empty-pane', text:'沒有。' }));
   data.decisions.forEach(function(q){
-    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', q.ref), el('div', { cls:'ar-q' }, [q.question, el('small', { text:(q.options || []).map(function(o){ return o.key + '=' + o.label; }).join(' · ') + (q.reason ? ' · ' + q.reason : '') })]), el('code', { text:'dp decide ' + q.ref + ' ' + (q.recommendation || '<選項>') })]));
+    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', q.ref), el('div', { cls:'ar-q' }, [q.question, el('small', { text:(q.options || []).map(function(o){ return o.key + '=' + o.label; }).join(' · ') + (q.reason ? ' · ' + q.reason : '') })]), el('code', { text:'dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>') })]));
   });
   data.e2e.forEach(function(x){
-    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', x.id), el('div', { cls:'ar-q' }, ['親手試用', el('small', { text:x.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') })]), el('code', { text:'dp confirm ' + x.id + ' yes' })]));
+    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', x.id), el('div', { cls:'ar-q' }, ['親手試用', el('small', { text:x.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') })]), el('code', { text:'dlm confirm ' + x.id + ' yes' })]));
   });
   wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'要你決定 · ' + waiting }), askPanel]));
 
@@ -808,10 +808,10 @@ function releaseState(rel){
   return { st: done === ns.length && (!integ || tried) ? 'done' : 'active', ns: ns, sub: sub };
 }
 
-/* greenfield / brownfield:唯讀的切換外觀(要改在 dp setup) */
+/* greenfield / brownfield:唯讀的切換外觀(要改在 dlm setup) */
 function modeToggle(){
   var m = (data.mode && data.mode.mode) || 'greenfield';
-  return el('div', { cls:'mode pmode', title:'專案模式(dp setup 設定;這頁只讀)' }, [
+  return el('div', { cls:'mode pmode', title:'專案模式(dlm setup 設定;這頁只讀)' }, [
     el('button', { cls: m === 'greenfield' ? 'on' : '', disabled:'disabled', text:'Greenfield' }),
     el('button', { cls: m === 'brownfield' ? 'on bf' : '', disabled:'disabled', text:'Brownfield' })
   ]);
@@ -820,7 +820,7 @@ function brownfieldBanner(){
   var m = data.mode;
   if (!m || m.mode !== 'brownfield') return null;
   var items = [span('k', '既有專案'), span('', (m.language || '') + (m.test_cmd ? ' · 測試 ' + m.test_cmd : ''))];
-  if (!m.baseline) items.push(span('warn', '還沒記測試基線(dp onboard)'));
+  if (!m.baseline) items.push(span('warn', '還沒記測試基線(dlm onboard)'));
   else {
     var red = m.baseline.gates.filter(function(g){ return g.exit !== 0; });
     items.push(red.length ? span('warn', '基線 ' + m.baseline.main_sha + ':' + red.map(function(g){ return g.name + (g.failing == null ? ' 紅(看不出哪些)' : ' ' + g.failing + ' 個本來就紅'); }).join('、'))
@@ -882,7 +882,7 @@ function renderPlanning(main){
       }
       var open = !replacedBy && r.options && r.options.length && !data.timeline.some(function(x){ return x.type === 'decision' && x.raw && x.raw.ref === r.ref && x.seq > e.seq; });
       st.appendChild(el('div', { cls:'ps-msg ps-b' + (k === 'stuck' || open ? ' stuck' : '') }, [
-        el('div', { cls:'lbl', text:(k === 'proposal' ? 'Front · 提案 ' + (p ? p.id + ' · ' + (p.release || '') : '') : k === 'accept' ? 'dp · 等你決定合併' : 'dp · 卡點') + ' · ' + when(e.ts) }), body
+        el('div', { cls:'lbl', text:(k === 'proposal' ? 'Front · 提案 ' + (p ? p.id + ' · ' + (p.release || '') : '') : k === 'accept' ? 'dlm · 等你決定合併' : 'dlm · 卡點') + ' · ' + when(e.ts) }), body
       ]));
     } else if (e.type === 'decision') {
       var k2 = kindOf(r.ref);
@@ -890,7 +890,7 @@ function renderPlanning(main){
       if (e.actor !== 'user') { st.appendChild(el('div', { cls:'sysln', text:e.text })); return; }
       st.appendChild(el('div', { cls:'ps-msg me' }, [el('div', { cls:'lbl', text:'你 · ' + (r.choice || '') + ' · ' + when(e.ts) }), el('div', { cls:'b', text:r.verbatim || r.choice || '' })]));
     } else if (e.type === 'node_added') {
-      st.appendChild(el('div', { cls:'sysln' }, ['dp ▸ 寫進 DAG:', el('b', { text:e.node || '' })]));
+      st.appendChild(el('div', { cls:'sysln' }, ['dlm ▸ 寫進 DAG:', el('b', { text:e.node || '' })]));
     } else if (e.type === 'e2e_request') {
       var n = nodeById(e.node);
       st.appendChild(el('div', { cls:'ps-msg ps-b' }, [el('div', { cls:'lbl', text:'Front · 請你試用 ' + e.node + ' · ' + when(e.ts) }),
@@ -899,7 +899,7 @@ function renderPlanning(main){
     } else if (e.type === 'e2e_confirm') {
       st.appendChild(el('div', { cls:'ps-msg me' }, [el('div', { cls:'lbl', text:'你 · 試用 ' + (r.ok === false ? '不通過' : '通過') + ' · ' + when(e.ts) }), el('div', { cls:'b', text:r.verbatim || (r.ok ? 'yes' : 'no') })]));
     } else if (e.type === 'halt' || e.type === 'resume') {
-      st.appendChild(el('div', { cls:'sysln', text:'dp ▸ ' + e.text }));
+      st.appendChild(el('div', { cls:'sysln', text:'dlm ▸ ' + e.text }));
     }
   });
   if (!st.childNodes.length) st.appendChild(el('div', { cls:'empty-pane', text:'還沒有規劃紀錄。在 Front(Claude Code 的 /inbox 視窗)說你想做什麼,intake 會先畫路線圖、再寫 gherkin 給你批准。' }));
@@ -992,7 +992,7 @@ function renderCost(main){
 var ROLE_LABEL = { worker:'Worker(施工)', critic:'Critic(L2 審查)', verifier:'Verifier(小模型檢查)' };
 function acctApi(body, done){
   ui.acct.busy = true;
-  fetch('api/account', { method:'POST', headers:{ 'content-type':'application/json', 'x-dp-token':TOKEN }, body:JSON.stringify(body) })
+  fetch('api/account', { method:'POST', headers:{ 'content-type':'application/json', 'x-dlm-token':TOKEN }, body:JSON.stringify(body) })
     .then(function(r){ return r.json(); })
     .then(function(j){ ui.acct.busy = false; done(j); })
     .catch(function(e){ ui.acct.busy = false; done({ ok:false, out:String(e) }); });
@@ -1019,8 +1019,8 @@ function acctDo(body, okMsg){
 }
 function renderAccounts(main){
   var cfg = data.account_config || { clis:[], registry:[], roles:{} };
-  var wrap = pageShell(main, '帳號', 'dp account', LIVE ? '在這台電腦登記訂閱帳號,設定每個角色輪流用哪幾個。改的是 dp.config.json(會 commit)與這台電腦的帳號清單,跟在終端機打 dp account 一樣。' :
-    '這是快照,不能改。要在頁面上設定,請跑 node tools/dp.mjs dashboard --serve。');
+  var wrap = pageShell(main, '帳號', 'dlm account', LIVE ? '在這台電腦登記訂閱帳號,設定每個角色輪流用哪幾個。改的是 dlm.config.json(會 commit)與這台電腦的帳號清單,跟在終端機打 dlm account 一樣。' :
+    '這是快照,不能改。要在頁面上設定,請跑 node tools/dlm.mjs dashboard --serve。');
   if (LIVE && ui.acct.login == null) acctLoadLogin();
   if (ui.acct.msg) wrap.appendChild(el('div', { cls:'acct-msg ' + (ui.acct.msg.ok ? 'ok' : 'bad'), text:ui.acct.msg.text }));
   var usage = {}; (data.accounts || []).forEach(function(a){ usage[a.name] = a; });
@@ -1035,13 +1035,13 @@ function renderAccounts(main){
     cfg.registry.forEach(function(a){
       var u = usage[a.name] || {}, lg = ui.acct.login && ui.acct.login !== 'loading' ? ui.acct.login[a.name] : null;
       var loginCell = !LIVE ? el('td', { text:'—' }) : !lg ? el('td', { text:'檢查中…' }) : lg.ok ? el('td', { cls:'ok', text:lg.detail || '已登入' }) :
-        el('td', { cls:'bad' }, ['沒登入:在終端機跑 ', el('code', { text:'node tools/dp.mjs account login ' + a.name })]);
+        el('td', { cls:'bad' }, ['沒登入:在終端機跑 ', el('code', { text:'node tools/dlm.mjs account login ' + a.name })]);
       t.appendChild(el('tr', {}, [
         el('td', { cls:'hl', text:a.name }), el('td', { text:a.cli + (a.plan ? ' · ' + a.plan : '') }), loginCell,
         el('td', { text:(roleOf[a.name] || []).join('、') || '—' }), el('td', { text:(u.dispatches_5h || 0) + ' 次' }),
         el('td', { cls:u.limited_until ? 'warn' : 'ok', text:u.limited_until ? '冷卻到 ' + when(u.limited_until) : '可用' }),
         el('td', {}, [LIVE ? el('button', { cls:'send ghost mini', text:'移除', disabled:ui.acct.busy ? 'disabled' : null, onclick:function(){
-          if (!confirm('移除帳號 ' + a.name + '?dp 建的登入目錄(裡面是這個帳號的登入憑證)會一起刪掉。')) return;
+          if (!confirm('移除帳號 ' + a.name + '?dlm 建的登入目錄(裡面是這個帳號的登入憑證)會一起刪掉。')) return;
           acctDo({ action:'rm', name:a.name }, '已移除');
         } }) : null])
       ]));
@@ -1059,7 +1059,7 @@ function renderAccounts(main){
         f.name = ''; f.plan = '';
       } })
     ]));
-    p1.appendChild(el('div', { cls:'acct-note', style:'margin-top:8px' }, ['新增後要登入一次(會開瀏覽器,所以要在你自己的終端機跑):', el('code', { text:'node tools/dp.mjs account login <名稱>' })]));
+    p1.appendChild(el('div', { cls:'acct-note', style:'margin-top:8px' }, ['新增後要登入一次(會開瀏覽器,所以要在你自己的終端機跑):', el('code', { text:'node tools/dlm.mjs account login <名稱>' })]));
   }
   wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'這台電腦的帳號' }), p1]));
 

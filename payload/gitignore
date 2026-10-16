@@ -1,5 +1,5 @@
 node_modules/
-.dp/
+.dlm/
 *.tmp-*
 .mutate.lock
 .stryker-tmp/

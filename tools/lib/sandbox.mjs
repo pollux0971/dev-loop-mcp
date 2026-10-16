@@ -1,10 +1,10 @@
-// dp 在主機上執行「專案程式碼」(worker、驗收、證據重跑、合併 gate、Critic)的唯一入口。
+// dlm 在主機上執行「專案程式碼」(worker、驗收、證據重跑、合併 gate、Critic)的唯一入口。
 //
 // v4.1 只剩一種執行方式:在沒有 .git 的副本(或 merge-tree)裡以 `sh -c` 跑,程式以你的身分在主機上執行。
 // v4.0 的容器沙箱(docker / podman / srt)實跑沒用到,已移除;要加回來時從這裡接(profile 參數保留著)。
 //
 //   profile  在哪裡跑
-//   worker   沙箱副本(.dp/sandboxes/<id>,沒有 .git)
+//   worker   沙箱副本(.dlm/sandboxes/<id>,沒有 .git)
 //   verify   用完即丟的副本;原 worktree 不動
 //   gates    merge-tree(用完即丟)
 //   critic   交件分支的 worktree
@@ -16,11 +16,11 @@ import {
 import { dirname, join, relative, resolve } from 'node:path';
 import { childEnv, ensureDir, runArgv, sha256, toPosix } from './util.mjs';
 
-export const NO_SANDBOX_WARNING = 'worker 寫的程式(測試、步驟定義、gate)直接在你的主機上、以你的身分執行,讀得到你的家目錄(見 docs/dp/SECURITY.md)';
+export const NO_SANDBOX_WARNING = 'worker 寫的程式(測試、步驟定義、gate)直接在你的主機上、以你的身分執行,讀得到你的家目錄(見 docs/dlm/SECURITY.md)';
 
 /**
  * 組出實際要執行的 argv:`sh -c cmd`。
- * 沙箱副本與驗收副本放在專案的 .dp/ 底下、沒有 .git;不設 GIT_CEILING_DIRECTORIES 的話,裡面跑的
+ * 沙箱副本與驗收副本放在專案的 .dlm/ 底下、沒有 .git;不設 GIT_CEILING_DIRECTORIES 的話,裡面跑的
  * `git rev-parse --show-toplevel`(gate 包的 _root.ts 就靠它)會往上找到外層主 repo,把 ROOT 解析錯,
  * 看不到 worker 新寫的步驟檔(實測:dry-run 誤報 undefined、測試棒每次都被退回)。
  */
@@ -141,7 +141,7 @@ export function diffManifest(before, after) {
 
 /** 臨時副本(驗證用):每次 runVerify 一份,用完刪掉。 */
 export function scratchCopy(root, src, label) {
-  const dest = join(root, '.dp', 'scratch', `${label}-${process.pid}-${Date.now()}`);
+  const dest = join(root, '.dlm', 'scratch', `${label}-${process.pid}-${Date.now()}`);
   copyTree(src, dest, { skip: ['.git', 'node_modules'] });
   return dest;
 }
@@ -155,6 +155,6 @@ export function isDir(p) {
 }
 
 export function ensureSandboxDirs(root) {
-  ensureDir(join(root, '.dp', 'sandboxes'));
-  ensureDir(join(root, '.dp', 'manifests'));
+  ensureDir(join(root, '.dlm', 'sandboxes'));
+  ensureDir(join(root, '.dlm', 'manifests'));
 }

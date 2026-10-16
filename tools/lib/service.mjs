@@ -1,5 +1,5 @@
-// v4.7 執行 api.mjs 裡的一個操作,不管是從 HTTP(dp hub)還是 MCP(dp mcp)進來的。
-// - 專案的操作:交給「那個專案自己的 tools/dp.mjs」執行(`dp op <名稱>`,stdin JSON → stdout JSON),版本不同也不會讀錯格式。
+// v4.7 執行 api.mjs 裡的一個操作,不管是從 HTTP(dlm hub)還是 MCP(dlm mcp)進來的。
+// - 專案的操作:交給「那個專案自己的 tools/dlm.mjs」執行(`dlm op <名稱>`,stdin JSON → stdout JSON),版本不同也不會讀錯格式。
 // - 這台電腦層級的(專案清單、帳號、建專案、升級):在這裡直接做。
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
@@ -9,29 +9,31 @@ import { ROUTES } from './api.mjs';
 import { FLOW, PROMPTS, RULES, toolName } from './flow.mjs';
 import { init, upgrade } from './install.mjs';
 import { VERSION, accountRows } from './ops.mjs';
-import { addProject, isDpProject, loadProjects, projectVersion, removeProject, resolveProject } from './projects.mjs';
-import { DpError } from './util.mjs';
+import { isLegacyProject, projectCli, projectPaths } from './legacy.mjs';
+import { addProject, isDlmProject, loadProjects, projectVersion, removeProject, resolveProject } from './projects.mjs';
+import { DlmError } from './util.mjs';
 import { fileURLToPath } from 'node:url';
 
-const DP = JSON.stringify(fileURLToPath(new URL('../dp.mjs', import.meta.url)));
+const DLM = JSON.stringify(fileURLToPath(new URL('../dlm.mjs', import.meta.url)));
 
-/** 名稱或路徑 → 專案。路徑是 dp 專案但還沒登記 → 順手登記(用起來不用先 add)。 */
+/** 名稱或路徑 → 專案。路徑是 dlm 專案但還沒登記 → 順手登記(用起來不用先 add)。 */
 export function findProject(nameOrPath) {
-  if (!nameOrPath) throw new DpError('要指定 project(名稱或路徑;dp_list_projects 看有哪些)', 3);
+  if (!nameOrPath) throw new DlmError('要指定 project(名稱或路徑;dlm_list_projects 看有哪些)', 3);
   try {
     return resolveProject(nameOrPath);
   } catch (e) {
     const abs = resolve(String(nameOrPath));
-    if (String(nameOrPath).includes('/') && isDpProject(abs)) return addProject(abs);
+    if (String(nameOrPath).includes('/') && isDlmProject(abs)) return addProject(abs);
     throw e;
   }
 }
 
-/** 在專案裡跑 `dp op <name>`。回 { ok, result } 或 { ok:false, error, status }。 */
+/** 在專案裡跑 `dlm op <name>`。回 { ok, result } 或 { ok:false, error, status }。 */
 export function projectOp(path, name, args = {}, { timeoutMs = 120000 } = {}) {
   return new Promise((resolveP) => {
-    if (!isDpProject(path)) { resolveP({ ok: false, error: `${path} 不見了或不是 dp 專案`, status: 404 }); return; }
-    const child = spawn(process.execPath, [join(path, 'tools', 'dp.mjs'), 'op', name], { cwd: path, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (!isDlmProject(path)) { resolveP({ ok: false, error: `${path} 不見了或不是 dlm 專案`, status: 404 }); return; }
+    // tools/dlm.mjs, or tools/dp.mjs in a project not upgraded since 4.8.0 (its own CLI reads its own layout)
+    const child = spawn(process.execPath, [projectCli(path), 'op', name], { cwd: path, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
@@ -45,9 +47,9 @@ export function projectOp(path, name, args = {}, { timeoutMs = 120000 } = {}) {
         if (typeof r.ok === 'boolean') { resolveP(r); return; }
       } catch { /* 往下 */ }
       if (/不認識的指令 op/.test(err)) {
-        resolveP({ ok: false, status: 501, error: `這個專案的 dp 是 ${projectVersion(path) ?? '舊版'},要 4.7 以上才能這樣用。先升級:dp_upgrade_project(或在專案裡跑 node <新版 dp>/tools/dp.mjs upgrade)` });
+        resolveP({ ok: false, status: 501, error: `這個專案的 dlm 是 ${projectVersion(path) ?? '舊版'},要 4.7 以上才能這樣用。先升級:dlm_upgrade_project(或在專案裡跑 node <新版 dlm>/tools/dlm.mjs upgrade)` });
       } else {
-        resolveP({ ok: false, status: 500, error: `dp op ${name} 失敗(exit ${code}):${(err || out).trim().slice(-600)}` });
+        resolveP({ ok: false, status: 500, error: `dlm op ${name} 失敗(exit ${code}):${(err || out).trim().slice(-600)}` });
       }
     });
     child.stdin.end(JSON.stringify(args ?? {}));
@@ -58,9 +60,10 @@ export function projectOp(path, name, args = {}, { timeoutMs = 120000 } = {}) {
 const READ_CACHE = new Map();
 const mtime = (p) => { try { return statSync(p).mtimeMs; } catch { return 0; } };
 function fingerprint(path) {
+  const { config, stateDir } = projectPaths(path);
   return [
-    mtime(join(path, 'ledger', 'events.jsonl')), mtime(join(path, 'dp.config.json')), mtime(join(path, 'dag.json')),
-    mtime(join(path, 'ledger', 'proposals')), existsSync(join(path, '.dp', 'run.lock')), mtime(join(path, '.dp', 'run.stop')),
+    mtime(join(path, 'ledger', 'events.jsonl')), mtime(config), mtime(join(path, 'dag.json')),
+    mtime(join(path, 'ledger', 'proposals')), existsSync(join(stateDir, 'run.lock')), mtime(join(stateDir, 'run.stop')),
     mtime(join(configDir(), 'account-log.jsonl')), mtime(join(configDir(), 'accounts.json')),
   ].join(':');
 }
@@ -78,10 +81,11 @@ export const clearCache = () => READ_CACHE.clear();
 // ------------------------------------------------------------------ 總覽
 
 function summarize(name, path, r) {
-  if (!r.ok) return { name, path, version: projectVersion(path), error: r.error };
+  const legacy = isLegacyProject(path);
+  if (!r.ok) return { name, path, version: projectVersion(path), legacy, error: r.error };
   const s = r.result;
   return {
-    name, path, version: s.version, mode: s.mode, halted: s.halted ? s.halted.reason ?? true : null,
+    name, path, version: s.version, legacy, mode: s.mode, halted: s.halted ? s.halted.reason ?? true : null,
     loop: s.loop, counts: s.counts, budget: s.budget,
     in_progress: s.in_progress, review: s.review, blocked: s.blocked, dispatchable: s.dispatchable.length,
     awaiting_user: s.awaiting_user, warnings: s.warnings, ledger_seq: s.ledger_seq, last_event_ts: s.last_event_ts,
@@ -126,13 +130,13 @@ const MACHINE = {
   overview: () => overview(),
   listProjects: () => ({
     projects: Object.entries(loadProjects()).map(([name, p]) => {
-      const exists = isDpProject(p.path);
-      return { name, path: p.path, added: p.added, exists, version: exists ? projectVersion(p.path) : null };
+      const exists = isDlmProject(p.path);
+      return { name, path: p.path, added: p.added, exists, version: exists ? projectVersion(p.path) : null, legacy: exists && isLegacyProject(p.path) };
     }),
   }),
   addProject: (a) => addProject(a.path, { name: a.name ?? null }),
   initProject: (a) => {
-    if (!String(a.path).startsWith('/') && !/^[A-Za-z]:[\\/]/.test(String(a.path))) throw new DpError('path 要是絕對路徑');
+    if (!String(a.path).startsWith('/') && !/^[A-Za-z]:[\\/]/.test(String(a.path))) throw new DlmError('path 要是絕對路徑');
     const r = init(a.path, { name: a.name, existing: !!a.existing });
     const p = addProject(a.path, { name: a.name ?? null });
     return { project: p.name, path: p.path, created: r.created.length, kept: r.kept.length, git: r.git, next: `${toolName('setupProject')}(project: "${p.name}")` };
@@ -145,12 +149,12 @@ const MACHINE = {
   },
   removeProject: (a, params) => removeProject(findProject(params.project).name),
   listAccounts: (a) => ({ accounts: accountRows(null, { login: !!a.login }) }),
-  addAccount: (a) => ({ ...addAccount(a.name, { cli: a.cli, plan: a.plan ?? null, maxParallel: a.max_parallel ?? null }), next: `請使用者在自己的終端機跑:node ${DP} account login ${a.name}` }),
+  addAccount: (a) => ({ ...addAccount(a.name, { cli: a.cli, plan: a.plan ?? null, maxParallel: a.max_parallel ?? null }), next: `請使用者在自己的終端機跑:node ${DLM} account login ${a.name}` }),
   updateAccount: (a, params) => updateAccount(params.account, { ...('plan' in a ? { plan: a.plan } : {}), ...('max_parallel' in a ? { maxParallel: a.max_parallel } : {}) }),
   removeAccount: (a, params) => removeAccount(params.account),
 };
 
-/** 活著嗎:版本與登記了幾個專案(hub 的 GET /api/v1/health 與 MCP 的 dp_health 共用)。 */
+/** 活著嗎:版本與登記了幾個專案(hub 的 GET /api/v1/health 與 MCP 的 dlm_health 共用)。 */
 export const health = () => ({ ok: true, version: VERSION, projects: Object.keys(loadProjects()).length });
 
 /**
@@ -160,7 +164,7 @@ export const health = () => ({ ok: true, version: VERSION, projects: Object.keys
 export async function execRoute(route, params, args) {
   const err = (status, message) => ({ status, body: { error: { message, status } } });
   try {
-    // v4.7.3:health 在 MCP 也列成工具(dp_health),以前只有 hub 會處理,從 MCP 呼叫一律失敗
+    // v4.7.3:health 在 MCP 也列成工具(dlm_health),以前只有 hub 會處理,從 MCP 呼叫一律失敗
     if (route.id === 'health') return { status: 200, body: health() };
     if (route.kind === 'machine') {
       const body = await MACHINE[route.id](args, params);
@@ -175,7 +179,7 @@ export async function execRoute(route, params, args) {
     if (route.write) clearCache();
     return { status: route.ok ?? 200, body: r.result };
   } catch (e) {
-    if (e instanceof DpError) return err(e.code === 3 ? 404 : e.code === 2 ? 409 : 400, e.message);
+    if (e instanceof DlmError) return err(e.code === 3 ? 404 : e.code === 2 ? 409 : 400, e.message);
     return err(500, String(e?.message ?? e));
   }
 }

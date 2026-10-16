@@ -5,7 +5,7 @@ description: 把使用者的需求變成可批准的 DAG 提案。新版本(bund
 
 # Intake:需求 → 提案 → 使用者批准
 
-產出永遠是一份 `dp intake` 提案,**不是**直接寫檔。使用者說好之後 dp 才寫進 DAG。一次問一個問題。
+產出永遠是一份 `dlm intake` 提案,**不是**直接寫檔。使用者說好之後 dlm 才寫進 DAG。一次問一個問題。
 
 ## feature(新功能、新版本)
 
@@ -23,29 +23,29 @@ description: 把使用者的需求變成可批准的 DAG 提案。新版本(bund
    (總和、餘額、日期區間、排序):gherkin 是規格,算錯的話測試棒會照錯的寫,實作棒永遠做不出來。
    整合點的 gherkin 不要沿用能力 gherkin 的句子(Given/When/Then 一字不差):cucumber 一句只能有一個定義,
    能力的步驟操作核心套件、整合的步驟跑命令列,同一句會綁到錯的那一個,整合點的測試棒又改不到能力的步驟檔(v4 實測)。
-6. 寫一份 bundle 檔 `.dp/intake/<release>.json`:
+6. 寫一份 bundle 檔 `.dlm/intake/<release>.json`:
    ```json
    { "release": "v1", "goal": "這一版使用者能做什麼(一句)",
      "roadmap": "# 路線圖\n- v1 …(這一版)\n- v2 …\n- v3 …\n",
      "nodes": [
        { "id": "ledger/v1", "title": "…", "intent": "…(≤300 字)", "owns": ["packages/ledger/**"],
-         "depends_on": ["contracts@1"], "gherkin_file": ".dp/intake/ledger-v1.feature" },
+         "depends_on": ["contracts@1"], "gherkin_file": ".dlm/intake/ledger-v1.feature" },
        { "id": "I1", "kind": "integration", "title": "…", "intent": "…", "owns": ["apps/cli/**"],
-         "depends_on": ["ledger/v1"], "gherkin_file": ".dp/intake/i1.feature" } ] }
+         "depends_on": ["ledger/v1"], "gherkin_file": ".dlm/intake/i1.feature" } ] }
    ```
-   `node tools/dp.mjs intake bundle --spec .dp/intake/<release>.json`。路線圖會存成 `docs/ROADMAP.md`(換了 session 也找得到)。
+   `node tools/dlm.mjs intake bundle --spec .dlm/intake/<release>.json`。路線圖會存成 `docs/ROADMAP.md`(換了 session 也找得到)。
 7. 把提案重點(這一版做什麼、不做什麼、整合點怎麼試、路線圖)給使用者看,他說好才
    `decide node:<提案id> yes --verbatim "<原話>"`。**一版只批一次**。
 
 下一版:先讀 `docs/ROADMAP.md`,跟使用者確認方向還對(試用完常常會改),再照 3–7 提下一版的 bundle。
-dp 會自動讓下一版的起點依賴上一版的整合點。
-只加一個小節點(不是新的一版)時用 `dp intake feature --spec … --gherkin …`。
+dlm 會自動讓下一版的起點依賴上一版的整合點。
+只加一個小節點(不是新的一版)時用 `dlm intake feature --spec … --gherkin …`。
 施工中發現的必要小功能(v1.1)由 worker 提 spawn,不走這裡。
 
 ## 既有專案(brownfield)
 
 `project.mode` 是 `brownfield` 時,先讀 `docs/AS-IS.md`;還沒有就先做 `brownfield-onboard`。v1 是「現況 + 第一件要加的事」。
-- `owns` 只寫真的會改的檔(不是 `src/**`)。涵蓋到既有程式時,dp 會在提案裡自動加 `characterize`(先釘住現有行為的測試棒,
+- `owns` 只寫真的會改的檔(不是 `src/**`)。涵蓋到既有程式時,dlm 會在提案裡自動加 `characterize`(先釘住現有行為的測試棒,
   一次最多 10 個檔);刻意要改掉的行為寫進 gherkin,並在 `characterize.targets` 只列要保持不變的檔,整個要換掉就寫 `characterize.skip`。
 - 沒有 cucumber 的專案,每個節點都要寫 `accept`(專案的測試指令,只跑這個節點的測試),和 `tests`(測試檔放哪裡,例 `tests/test_export*.py`)。
 - 提案給使用者看時,講清楚哪些既有檔會被釘住、哪些行為會改。

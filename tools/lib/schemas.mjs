@@ -32,7 +32,7 @@ export const nodeSchema = {
     relation: { enum: ['prereq', 'followup'] },
     tier: { enum: ['strict', 'standard', 'loose'] },
     pipeline: { type: 'array', items: { enum: LEGS }, minItems: 1 },
-    // v4:這個節點屬於哪個版本(dp intake bundle 寫入,例 v1、v2)。只用來顯示與分組;版本之間的先後靠 depends_on 上一版的整合點
+    // v4:這個節點屬於哪個版本(dlm intake bundle 寫入,例 v1、v2)。只用來顯示與分組;版本之間的先後靠 depends_on 上一版的整合點
     release: str,
     // v4.5:這個節點的測試檔放哪裡(glob)。沒寫就從 owns 推(owns 目錄底下的 *.test.* / *.spec.*,加上專案語言的慣例)
     tests: strArr,
@@ -128,7 +128,7 @@ export const configSchema = {
       additionalProperties: false,
       properties: { gate_next_version: { type: 'boolean' }, precheck_green: { type: 'boolean' } },
     },
-    // v4:有新的待決事項時執行的指令(環境變數 DP_NOTIFY_TEXT 是內容)。null = 不通知
+    // v4:有新的待決事項時執行的指令(環境變數 DLM_NOTIFY_TEXT 是內容)。null = 不通知
     notify: {
       type: 'object',
       additionalProperties: false,
@@ -190,7 +190,7 @@ export const configSchema = {
     agent: {
       type: 'object',
       additionalProperties: false,
-      // v4.6:accounts = 這個角色輪流用的帳號(dp account add 建的);model = 那個 CLI 的模型名稱
+      // v4.6:accounts = 這個角色輪流用的帳號(dlm account add 建的);model = 那個 CLI 的模型名稱
       properties: { cmd: { type: ['string', 'null'] }, timeout_minutes: { type: 'integer', minimum: 1 }, accounts: strArr, model: str },
     },
   },
@@ -223,7 +223,7 @@ export const EVENT_FIELDS = {
   // class:infra(429、5xx、連線、沒啟動成功)不算 worker 的嘗試次數,改退避重派;quality 照常算一次
   worker_failed: {
     required: ['dispatch_id', 'reason'],
-    // halted(v4):dp halt 時收掉的 worker,不算嘗試次數、不退避
+    // halted(v4):dlm halt 時收掉的 worker,不算嘗試次數、不退避
     // limited_account / limited_until(v4.6):這次是帳號額度用完,那個帳號冷卻到 limited_until;switched = 有別的帳號可以換,不算連續失敗
     props: {
       dispatch_id: str, reason: str, class: { enum: ['infra', 'quality', 'halted'] }, retry_after: str,
@@ -277,7 +277,7 @@ export const EVENT_FIELDS = {
       recommendation: { type: 'string' }, reason: { type: 'string' }, blocks: strArr, from: str, detail_path: { type: 'string' },
       // v4.7.3:這份提案取代哪幾份還沒決定的提案(ref,例 node:p-001)。被取代的不再列為待決,也不能再批准
       supersedes: strArr,
-      // question 只放 dp 自己產生的文字;worker / 模型 / git 輸出放這裡,給 Front 看時一律加圍欄
+      // question 只放 dlm 自己產生的文字;worker / 模型 / git 輸出放這裡,給 Front 看時一律加圍欄
       untrusted_text: { type: 'string' }, untrusted_source: { type: 'string' },
     },
   },
@@ -296,18 +296,19 @@ export const EVENT_FIELDS = {
 };
 
 // manager / migration:v4.0 以前的帳本裡可能有,留著讓舊帳本重播得過
-export const ACTORS = ['orchestrator', 'user', 'critic', 'manager', 'verifier', 'dp-cli', 'migration'];
+// dp-cli:4.8.0 以前的名字(dp 改名 dlm)。舊帳本的事件不改寫,新事件一律寫 dlm-cli
+export const ACTORS = ['orchestrator', 'user', 'critic', 'manager', 'verifier', 'dlm-cli', 'dp-cli', 'migration'];
 
 /**
  * 哪些事件只能由哪些 actor 寫。批准權從角色搬到事件之後,這張表就是權責表的機械版。
- * 施工流程的事件只有 orchestrator 能寫;任何人手動補一筆 accept 都會被 `dp check ledger` 抓到。
+ * 施工流程的事件只有 orchestrator 能寫;任何人手動補一筆 accept 都會被 `dlm check ledger` 抓到。
  * 使用者解除封鎖(ref 以 user# 開頭)另外在 ledger.validateEvent 檢查。
  */
 export const EVENT_ACTORS = {
   decision: ['user', 'critic'],
   e2e_confirm: ['user'],
   resume: ['user'],
-  contract_bump: ['dp-cli'],
+  contract_bump: ['dlm-cli', 'dp-cli'],
   node_imported: ['migration'],
   dispatch: ['orchestrator'],
   launched: ['orchestrator'],
@@ -391,7 +392,7 @@ export const reportSchema = {
     summary: { type: 'string', minLength: 1, maxLength: 800 },
     claims: { type: 'array', items: claimSchema },
     ticket_problems: strArr,
-    // v4:實作棒發現測試或步驟定義本身寫錯(與 gherkin 矛盾)時填 "test",dp 會改派 test-fix 棒,不再重派實作棒
+    // v4:實作棒發現測試或步驟定義本身寫錯(與 gherkin 矛盾)時填 "test",dlm 會改派 test-fix 棒,不再重派實作棒
     fix_leg: { enum: ['test'] },
     spawn: spawnSchema,
     local_modifications: strArr,

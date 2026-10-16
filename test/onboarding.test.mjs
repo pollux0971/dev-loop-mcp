@@ -1,4 +1,4 @@
-// 新手引導:dp setup(互動問答)與 dp doctor(健康檢查)。
+// 新手引導:dlm setup(互動問答)與 dlm doctor(健康檢查)。
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 import { roleCmd } from '../tools/lib/accounts.mjs';
 import { keyPath } from '../tools/lib/auth.mjs';
 import { doctor, executableOf, renderDoctor } from '../tools/lib/doctor.mjs';
-import { DP_CLAUDE_HOOKS } from '../tools/lib/hooks.mjs';
+import { DLM_CLAUDE_HOOKS } from '../tools/lib/hooks.mjs';
 import { init } from '../tools/lib/install.mjs';
 import { loadConfig } from '../tools/lib/config.mjs';
 import { CLAUDE_CRITIC_CMD, CLAUDE_VERIFIER_CMD, CLAUDE_WORKER_CMD, setup } from '../tools/lib/setup.mjs';
@@ -15,7 +15,7 @@ import { REPO, cleanup, sh, tempDir } from './helpers.mjs';
 
 after(cleanup);
 
-const DP = join(REPO, 'tools', 'dp.mjs');
+const DLM = join(REPO, 'tools', 'dlm.mjs');
 const ENV = { claude: true };
 const fresh = () => {
   const proj = join(tempDir(), 'app');
@@ -30,14 +30,14 @@ const scripted = (answers) => {
 const quiet = () => {};
 
 test('payload 的 hooks 設定與 setup 合併用的是同一份', () => {
-  assert.deepEqual(readJson(join(REPO, 'payload/.claude/settings.json')).hooks, DP_CLAUDE_HOOKS);
+  assert.deepEqual(readJson(join(REPO, 'payload/.claude/settings.json')).hooks, DLM_CLAUDE_HOOKS);
 });
 
 test('setup 全用預設:Claude Code 施工、Haiku 當 Verifier、L1、commit', async () => {
   const proj = fresh();
   const { ask, asked } = scripted({ npm_install: 'n' });
   const r = await setup(proj, { ask, detect: ENV, log: quiet });
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   assert.equal(cfg.platform, 'claude');
   assert.equal(cfg.agents.worker.cmd, CLAUDE_WORKER_CMD);
   assert.match(cfg.agents.worker.cmd, /--disallowedTools "Bash\(rm -rf \*\)"/, '擋 rm -rf');
@@ -48,30 +48,30 @@ test('setup 全用預設:Claude Code 施工、Haiku 當 Verifier、L1、commit',
   assert.equal(sh(proj, 'git status --porcelain --untracked-files=no'), '', 'commit 之後根目錄乾淨,tick 才跑得動');
   assert.deepEqual(asked.filter((id) => ['platform', 'worker_cmd', 'verifier', 'autonomy'].includes(id)), ['platform', 'worker_cmd', 'verifier', 'autonomy']);
   // 原本 payload 設定裡的其他東西都還在
-  assert.deepEqual(cfg.gates.chain, ['check:dp', 'typecheck', 'test', 'accept']);
+  assert.deepEqual(cfg.gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
 });
 
 test('setup:自訂指令;看不懂的自治等級要重問;L2 開 Critic 用 Claude 的唯讀指令', async () => {
   const proj = fresh();
   let autonomyTries = 0;
-  const answers = { platform: 'custom', worker_cmd: 'my-agent < "$DP_PROMPT"', npm_install: 'n' };
+  const answers = { platform: 'custom', worker_cmd: 'my-agent < "$DLM_PROMPT"', npm_install: 'n' };
   const ask = async (q) => (q.id === 'autonomy' ? (++autonomyTries === 1 ? '4' : '') : answers[q.id] ?? '');
   await setup(proj, { ask, detect: ENV, log: quiet });
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   assert.equal(cfg.platform, 'generic');
-  assert.equal(cfg.agents.worker.cmd, 'my-agent < "$DP_PROMPT"');
+  assert.equal(cfg.agents.worker.cmd, 'my-agent < "$DLM_PROMPT"');
   assert.equal(cfg.autonomy.level, 1);
   assert.equal(autonomyTries, 2, '不存在的選項要重問');
 
   const proj2 = fresh();
   await setup(proj2, { ask: scripted({ autonomy: '2', critic: 'y', npm_install: 'n' }).ask, detect: ENV, log: quiet });
-  const c2 = readJson(join(proj2, 'dp.config.json'));
+  const c2 = readJson(join(proj2, 'dlm.config.json'));
   assert.equal(c2.autonomy.level, 2);
   assert.equal(c2.agents.critic.cmd, CLAUDE_CRITIC_CMD);
   assert.match(c2.agents.critic.cmd, /--disallowedTools "Edit" "Write"/, 'Critic 只能讀');
 });
 
-test('setup:已經有自己的 .claude/settings.json 時,把 dp 的 hooks 合併進去,原本的設定保留', async () => {
+test('setup:已經有自己的 .claude/settings.json 時,把 dlm 的 hooks 合併進去,原本的設定保留', async () => {
   const proj = fresh();
   writeFileSync(join(proj, '.claude/settings.json'), JSON.stringify({ permissions: { allow: ['Bash(npm test)'] }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }] } }));
   sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm mine');
@@ -85,7 +85,7 @@ test('setup:已經有自己的 .claude/settings.json 時,把 dp 的 hooks 合併
   assert.equal(readJson(join(proj, '.claude/settings.json')).hooks.UserPromptSubmit.length, 1);
 });
 
-test('setup:還沒裝 dp 的目錄 → 告訴你先 init', async () => {
+test('setup:還沒裝 dlm 的目錄 → 告訴你先 init', async () => {
   await assert.rejects(() => setup(tempDir(), { ask: async () => '', detect: ENV, log: quiet }), /先跑.*init/);
 });
 
@@ -95,17 +95,17 @@ test('doctor:剛 init 的專案 → worker 沒設定是 ✗,附修法;隔離 ⚠
   assert.equal(rep.ok, false);
   const worker = rep.results.find((r) => r.name === 'worker 指令');
   assert.equal(worker.status, 'fail');
-  assert.match(worker.fix, /dp setup/);
+  assert.match(worker.fix, /dlm setup/);
   assert.equal(rep.results.find((r) => r.name === '隔離').status, 'warn');
-  assert.match(renderDoctor(rep), /最快的方法:node tools\/dp\.mjs setup/);
+  assert.match(renderDoctor(rep), /最快的方法:node tools\/dlm\.mjs setup/);
 });
 
 test('doctor:設定好之後通過;gate 少了 script 是 ✗;hooks 不見是 ⚠', async () => {
   const proj = fresh();
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.worker.cmd = 'FOO=1 node -e 0';
-  cfg.gates.chain = ['check:dp', 'test'];
-  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  cfg.gates.chain = ['check:dlm', 'test'];
+  writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg));
   const pkg = readJson(join(proj, 'package.json'));
   pkg.devDependencies = {};
   writeFileSync(join(proj, 'package.json'), JSON.stringify(pkg));
@@ -113,9 +113,9 @@ test('doctor:設定好之後通過;gate 少了 script 是 ✗;hooks 不見是 �
   const good = await doctor(proj);
   assert.ok(good.ok, renderDoctor(good));
 
-  cfg.gates.chain = ['check:dp', 'test', 'nope'];
+  cfg.gates.chain = ['check:dlm', 'test', 'nope'];
   cfg.autonomy.level = 2;
-  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg));
   writeFileSync(join(proj, '.claude/settings.json'), '{}');
   const bad = await doctor(proj);
   const status = (rep, n) => rep.results.find((r) => r.name === n)?.status;
@@ -128,20 +128,20 @@ test('doctor:設定好之後通過;gate 少了 script 是 ✗;hooks 不見是 �
 
 test('舊設定檔裡已移除的設定:讀得進來,doctor 逐條提醒;只是預設值的不提醒', async () => {
   const proj = fresh();
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.worker.cmd = 'node -e 0';
-  cfg.sandbox = { backend: 'docker', image: 'dp-worker:latest', pass_env: ['CLAUDE_CODE_OAUTH_TOKEN'] };
+  cfg.sandbox = { backend: 'docker', image: 'dlm-worker:latest', pass_env: ['CLAUDE_CODE_OAUTH_TOKEN'] };
   cfg.agents.manager = { cmd: 'claude -p' };
   cfg.auth = { mode: 'signed', window_minutes: 30 };
   cfg.front = { guard: 'light' };
   cfg.agents.verifier = { backend: 'http', url: 'http://localhost:11434/v1/chat/completions', model: 'qwen3:4b' };
   cfg.autonomy = { level: 3 };
-  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg));
   const c = loadConfig(proj);
   assert.equal(c.autonomy.level, 2, 'L3 當成 L2');
   assert.equal(c.agents.verifier.backend, 'none', 'http 的 Verifier 停用');
   assert.equal(c.agents.manager, undefined);
-  const warned = (await doctor(proj)).results.filter((r) => r.name === 'dp.config.json' && r.status === 'warn').map((r) => r.detail.split(':')[0]);
+  const warned = (await doctor(proj)).results.filter((r) => r.name === 'dlm.config.json' && r.status === 'warn').map((r) => r.detail.split(':')[0]);
   for (const k of ['agents.manager', 'sandbox', 'auth.mode', 'agents.verifier.url', 'agents.verifier.model', 'agents.verifier.backend', 'autonomy.level']) assert.ok(warned.includes(k), k);
   assert.equal(c.agents.verifier.model, undefined, 'Ollama 的模型名拿掉');
   assert.ok(!warned.includes('front'), 'front.guard=light 是當時的預設,不用提醒');
@@ -149,45 +149,45 @@ test('舊設定檔裡已移除的設定:讀得進來,doctor 逐條提醒;只是�
 
 test('帳號模式的 Verifier 模型(agents.verifier.model)留著、不提醒;派工指令帶上它', async () => {
   const proj = fresh();
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.verifier = { backend: 'cmd', accounts: ['max-a'], model: 'sonnet' };
-  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg));
   const c = loadConfig(proj);
   assert.equal(c.agents.verifier.model, 'sonnet', 'v4.6 的帳號模式用這個欄位選模型');
-  const warned = (await doctor(proj)).results.filter((r) => r.name === 'dp.config.json' && r.status === 'warn').map((r) => r.detail.split(':')[0]);
+  const warned = (await doctor(proj)).results.filter((r) => r.name === 'dlm.config.json' && r.status === 'warn').map((r) => r.detail.split(':')[0]);
   assert.ok(!warned.includes('agents.verifier.model'), '不是舊的 http 設定,不用提醒');
   assert.match(roleCmd(c.agents.verifier, 'verifier', { cli: 'claude' }), /--model sonnet/);
 });
 
 test('doctor:Verifier 指令找不到 → ✗', async () => {
   const proj = fresh();
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.agents.verifier = { backend: 'cmd', cmd: 'no-such-verifier-xyz --json' };
-  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg));
   const v = (await doctor(proj)).results.find((r) => r.name === 'Verifier 小模型');
   assert.equal(v.status, 'fail');
   assert.match(v.detail, /找不到 no-such-verifier-xyz/);
 });
 
-test('CLI:dp setup --answers 不互動跑完並接著做健康檢查;非終端機又沒給答案就說明怎麼做', () => {
+test('CLI:dlm setup --answers 不互動跑完並接著做健康檢查;非終端機又沒給答案就說明怎麼做', () => {
   const proj = fresh();
   const ans = join(tempDir(), 'a.json');
   writeFileSync(ans, JSON.stringify({ npm_install: 'n', platform: 'custom', worker_cmd: 'node -e 0' }));
-  const r = run(`node ${DP} setup --answers ${ans} --root ${proj}`);
+  const r = run(`node ${DLM} setup --answers ${ans} --root ${proj}`);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /— 健康檢查 —/);
-  assert.equal(readJson(join(proj, 'dp.config.json')).agents.worker.cmd, 'node -e 0');
-  const n = run(`node ${DP} setup --root ${proj} < /dev/null`);
+  assert.equal(readJson(join(proj, 'dlm.config.json')).agents.worker.cmd, 'node -e 0');
+  const n = run(`node ${DLM} setup --root ${proj} < /dev/null`);
   assert.notEqual(n.code, 0);
   assert.match(n.stderr, /--yes/);
-  const d = run(`node ${DP} doctor --json --root ${proj}`);
+  const d = run(`node ${DLM} doctor --json --root ${proj}`);
   assert.ok(Array.isArray(JSON.parse(d.stdout).results));
 });
 
 test('init 之後的下一步指向 setup', () => {
   const dir = join(tempDir(), 'x');
-  const r = run(`node ${DP} init ${dir} --name x`);
-  assert.match(r.stdout, /tools\/dp\.mjs setup/);
+  const r = run(`node ${DLM} init ${dir} --name x`);
+  assert.match(r.stdout, /tools\/dlm\.mjs setup/);
 });
 
 test('executableOf 跳過環境變數設定', () => {
@@ -196,8 +196,8 @@ test('executableOf 跳過環境變數設定', () => {
 });
 
 test('Front 的 hook:Bash 照常放行;檔案工具讀不到金鑰目錄', () => {
-  assert.equal(run(`echo '{"tool_name":"Bash","tool_input":{"command":"node tools/dp.mjs doctor"}}' | node ${DP} hook pre-tool`).code, 0);
-  const r = run(`echo '{"tool_name":"Read","tool_input":{"file_path":"${join(dirname(keyPath()), 'anything')}"}}' | node ${DP} hook pre-tool`);
+  assert.equal(run(`echo '{"tool_name":"Bash","tool_input":{"command":"node tools/dlm.mjs doctor"}}' | node ${DLM} hook pre-tool`).code, 0);
+  const r = run(`echo '{"tool_name":"Read","tool_input":{"file_path":"${join(dirname(keyPath()), 'anything')}"}}' | node ${DLM} hook pre-tool`);
   assert.equal(r.code, 2);
 });
 
@@ -205,13 +205,13 @@ test('payload 沒有已移除功能的殘留檔', () => {
   for (const p of ['payload/.codex', 'payload/.agents', 'payload/prompts/manager.md', 'tools/lib/migrate.mjs']) {
     assert.equal(run(`test -e ${join(REPO, p)}`).code, 1, p);
   }
-  assert.doesNotMatch(readFileSync(join(REPO, 'payload/dp.config.json'), 'utf8'), /"(sandbox|manager|front)"/);
+  assert.doesNotMatch(readFileSync(join(REPO, 'payload/dlm.config.json'), 'utf8'), /"(sandbox|manager|front)"/);
 });
 
-test('改設定:dp settings 與 set_settings 只改有給的那幾項並 commit(訊息帶原話);格式不對拒絕;L2 沒設 Critic 會提醒', () => {
+test('改設定:dlm settings 與 set_settings 只改有給的那幾項並 commit(訊息帶原話);格式不對拒絕;L2 沒設 Critic 會提醒', () => {
   const proj = fresh();
   const before = loadConfig(proj);
-  const cli = run(`node ${DP} settings --budget 8 --verbatim "預算改成每天 8 塊" --root ${proj}`);
+  const cli = run(`node ${DLM} settings --budget 8 --verbatim "預算改成每天 8 塊" --root ${proj}`);
   assert.equal(cli.code, 0, cli.stdout + cli.stderr);
   assert.match(cli.stdout, /daily_usd:5 → 8/);
   const after = loadConfig(proj);
@@ -220,8 +220,8 @@ test('改設定:dp settings 與 set_settings 只改有給的那幾項並 commit(
   assert.equal(after.caps.parallel, before.caps.parallel);
   assert.deepEqual(after.agents, before.agents, 'worker / Verifier 的設定不動(重跑 setup 會動到)');
   assert.match(sh(proj, 'git log -1 --format=%B'), /daily_usd 5 → 8[\s\S]*使用者原話:預算改成每天 8 塊/);
-  assert.equal(sh(proj, 'git status --porcelain dp.config.json'), '', '改完就 commit');
-  const op = (args) => JSON.parse(run(`node ${DP} op set_settings`, { cwd: proj, input: JSON.stringify(args) }).stdout.trim().split('\n').at(-1));
+  assert.equal(sh(proj, 'git status --porcelain dlm.config.json'), '', '改完就 commit');
+  const op = (args) => JSON.parse(run(`node ${DLM} op set_settings`, { cwd: proj, input: JSON.stringify(args) }).stdout.trim().split('\n').at(-1));
   const l2 = op({ autonomy_level: 2, parallel: 2, verbatim: '改 L2' });
   assert.ok(l2.ok, JSON.stringify(l2));
   assert.deepEqual(l2.result.changed, { autonomy_level: { from: 1, to: 2 }, parallel: { from: 3, to: 2 } });
@@ -232,18 +232,18 @@ test('改設定:dp settings 與 set_settings 只改有給的那幾項並 commit(
 
 test('重跑 setup 不會把 worker 的帳號換成固定指令;明確給了 worker_cmd 才換', async () => {
   const proj = fresh();
-  const cfg = readJson(join(proj, 'dp.config.json'));
+  const cfg = readJson(join(proj, 'dlm.config.json'));
   cfg.platform = 'claude';
   cfg.agents.worker = { accounts: ['max-a'], timeout_minutes: 90 };
-  writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg));
+  writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg));
   const s1 = scripted({ mode: 'greenfield', budget: '8', npm_install: 'n', commit: 'n' });
   await setup(proj, { ask: s1.ask, detect: { claude: true }, log: quiet });
-  const raw = readJson(join(proj, 'dp.config.json'));
+  const raw = readJson(join(proj, 'dlm.config.json'));
   assert.ok(s1.asked.includes('worker_cmd'));
   assert.equal(raw.agents.worker.cmd, undefined, '維持用帳號那個 CLI 的預設指令');
   assert.deepEqual(raw.agents.worker.accounts, ['max-a']);
   assert.equal(raw.budget.daily_usd, 8);
-  const s2 = scripted({ mode: 'greenfield', worker_cmd: 'my-agent < "$DP_PROMPT"', npm_install: 'n', commit: 'n' });
+  const s2 = scripted({ mode: 'greenfield', worker_cmd: 'my-agent < "$DLM_PROMPT"', npm_install: 'n', commit: 'n' });
   await setup(proj, { ask: s2.ask, detect: { claude: true }, log: quiet });
-  assert.equal(readJson(join(proj, 'dp.config.json')).agents.worker.cmd, 'my-agent < "$DP_PROMPT"');
+  assert.equal(readJson(join(proj, 'dlm.config.json')).agents.worker.cmd, 'my-agent < "$DLM_PROMPT"');
 });

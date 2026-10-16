@@ -1,12 +1,12 @@
 # contracts/ — 跨模組約定(可執行)
 
 平行開發的支點:兩個功能要能同時開工,唯一的障礙是「A 需要 B 的格式」。先把格式定案,障礙就消失。
-v2 的契約**是可執行的**:`schema/*.schema.json` 是唯一正本,`dp check contracts` 用 fixture 驗它。
+v2 的契約**是可執行的**:`schema/*.schema.json` 是唯一正本,`dlm check contracts` 用 fixture 驗它。
 
 ## 版本
 
 `VERSION` 是契約的 major。節點用 `contracts@<major>` 表示依賴。major 變更只有使用者能批准:
-在單一窗口提出 → 使用者批准 → 改 `VERSION`(v4.1 拿掉了 `dp contract bump`,第一次真的要升 major 時再加回來;
+在單一窗口提出 → 使用者批准 → 改 `VERSION`(v4.1 拿掉了 `dlm contract bump`,第一次真的要升 major 時再加回來;
 它會把已完成且依賴舊版的節點標成 `stale` 重驗,帳本仍讀得懂舊的 `contract_bump` 事件)。
 實際改 schema 的工作由 `shared/contracts*` 節點做(它是唯一能寫 `contracts/` 的節點)。
 

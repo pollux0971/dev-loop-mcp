@@ -34,7 +34,7 @@ import { runArgv } from './util.mjs';
 
 export const STATE_PATHS = ['ledger', 'dag.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json'];
 
-/** 因 git 設定被改而停機時,halt 的 reason 以此開頭;使用者 resume 時 dp 才會把現在的設定記成新基準。 */
+/** 因 git 設定被改而停機時,halt 的 reason 以此開頭;使用者 resume 時 dlm 才會把現在的設定記成新基準。 */
 export const GIT_CONFIG_HALT = '[git-config]';
 
 export class Ctx {
@@ -82,36 +82,36 @@ export function commitState(ctx, message) {
 
 // ---------------------------------------------------------------- 沙箱副本(worker 不碰 .git)
 //
-// worker 不在 git worktree 裡施工:dp 把 worktree 匯出成一份沒有 .git 的副本(.dp/sandboxes/<dispatch>/),
-// worker 只看得到這份。結束後 dp 在沙箱外比對「副本 vs 派工時的清單」(含被 ignore 的檔),
-// 範圍內的變動同步回 worktree、由 dp commit;碰到 .git、.dp、node_modules、symlink 的一律記成違規。
+// worker 不在 git worktree 裡施工:dlm 把 worktree 匯出成一份沒有 .git 的副本(.dlm/sandboxes/<dispatch>/),
+// worker 只看得到這份。結束後 dlm 在沙箱外比對「副本 vs 派工時的清單」(含被 ignore 的檔),
+// 範圍內的變動同步回 worktree、由 dlm commit;碰到 .git、.dlm、node_modules、symlink 的一律記成違規。
 
-// 沙箱副本裡 dp 自己管理的檔(工單、prompt、report、log),不算 worker 的變動
-const SANDBOX_DP_FILES = ['.dp/envelope.json', '.dp/prompt.md', '.dp/report.json', '.dp/worker.log'];
-const manifestPath = (ctx, id) => join(ctx.root, '.dp', 'manifests', `${id}.json`);
+// 沙箱副本裡 dlm 自己管理的檔(工單、prompt、report、log),不算 worker 的變動
+const SANDBOX_DLM_FILES = ['.dlm/envelope.json', '.dlm/prompt.md', '.dlm/report.json', '.dlm/worker.log'];
+const manifestPath = (ctx, id) => join(ctx.root, '.dlm', 'manifests', `${id}.json`);
 
 function prepareSandbox(ctx, wt, dispatchId, envelope, prompt) {
-  const sbx = join(ctx.root, '.dp', 'sandboxes', dispatchId);
-  // .mcp.json 不給 worker(v4.6):裡面註冊了 dp 自己的 MCP,worker 的 CLI 載入它就能替使用者 decide
-  copyTree(wt, sbx, { skip: ['.git', 'node_modules', '.dp', '.mcp.json'] });
-  ensureDir(join(sbx, '.dp'));
-  writeJson(join(sbx, '.dp', 'envelope.json'), envelope);
-  atomicWrite(join(sbx, '.dp', 'prompt.md'), prompt);
+  const sbx = join(ctx.root, '.dlm', 'sandboxes', dispatchId);
+  // .mcp.json 不給 worker(v4.6):裡面註冊了 dlm 自己的 MCP,worker 的 CLI 載入它就能替使用者 decide
+  copyTree(wt, sbx, { skip: ['.git', 'node_modules', '.dlm', '.mcp.json'] });
+  ensureDir(join(sbx, '.dlm'));
+  writeJson(join(sbx, '.dlm', 'envelope.json'), envelope);
+  atomicWrite(join(sbx, '.dlm', 'prompt.md'), prompt);
   linkDeps(ctx.root, sbx);
-  writeJson(manifestPath(ctx, dispatchId), treeManifest(sbx, { skipPaths: SANDBOX_DP_FILES }));
+  writeJson(manifestPath(ctx, dispatchId), treeManifest(sbx, { skipPaths: SANDBOX_DLM_FILES }));
   return sbx;
 }
 
-/** worker 結束後:比對副本、同步範圍內的變動、dp commit。回傳 { changed, violations }。 */
+/** worker 結束後:比對副本、同步範圍內的變動、dlm commit。回傳 { changed, violations }。 */
 function syncSandbox(ctx, d, message) {
   const before = readJson(manifestPath(ctx, d.dispatch_id), {});
-  const after = treeManifest(d.sandbox, { skipPaths: SANDBOX_DP_FILES });
+  const after = treeManifest(d.sandbox, { skipPaths: SANDBOX_DLM_FILES });
   const changed = diffManifest(before, after);
   const violations = [];
   const safe = [];
   for (const p of changed) {
     if (p === '.git' || p.startsWith('.git/')) violations.push(`${p}(在副本裡建立 .git)`);
-    else if (p.startsWith('.dp/')) violations.push(`${p}(寫到 dp 的工作目錄)`);
+    else if (p.startsWith('.dlm/')) violations.push(`${p}(寫到 dlm 的工作目錄)`);
     else if (p === 'node_modules/' || p.startsWith('node_modules/')) violations.push(`${p}(把 node_modules 換掉了)`);
     else if (String(after[p] ?? '').startsWith('link:')) violations.push(`${p}(建立 symlink,可能指到範圍外)`);
     else safe.push(p);
@@ -134,7 +134,7 @@ function syncSandbox(ctx, d, message) {
     // -f:被 ignore 的檔也要進 commit,這樣 paths 檢查才看得到(worker 寫到 dist/ 之類的地方不會被漏掉)
     git(d.worktree, `add -A -f -- ${safe.map((x) => `'${x.replace(/'/g, `'\\''`)}'`).join(' ')}`);
     const staged = git(d.worktree, 'diff --cached --quiet', { allowFail: true });
-    if (staged.code !== 0) git(d.worktree, `-c user.name=dp -c user.email=dp@localhost commit --quiet -m '${message.replace(/'/g, '')}'`);
+    if (staged.code !== 0) git(d.worktree, `-c user.name=dlm -c user.email=dlm@localhost commit --quiet -m '${message.replace(/'/g, '')}'`);
   }
   return { changed, violations };
 }
@@ -172,7 +172,7 @@ export function classifyFailure(logText) {
 const workDir = (d) => d.sandbox ?? d.worktree;
 
 function readWorkerLog(d) {
-  const p = join(workDir(d), '.dp', 'worker.log');
+  const p = join(workDir(d), '.dlm', 'worker.log');
   return existsSync(p) ? readFileSync(p, 'utf8') : '';
 }
 
@@ -184,7 +184,7 @@ function workerFailed(ctx, d, reason, cls) {
   if (cls === 'auth') {
     ctx.append('orchestrator', 'worker_failed', { dispatch_id: d.dispatch_id, reason: `${reason}(worker 沒登入或金鑰無效)`, class: 'infra' });
     if (!ctx.state.halted) {
-      const where = d.account ? `執行 node tools/dp.mjs account login ${d.account}` : '在這台電腦上執行 claude 並登入';
+      const where = d.account ? `執行 node tools/dlm.mjs account login ${d.account}` : '在這台電腦上執行 claude 並登入';
       ctx.append('orchestrator', 'halt', { reason: `[auth] worker 沒登入(log:Not logged in / 金鑰無效)。重試沒有用,先停下來。請${where},再說「繼續」` });
     }
     return;
@@ -224,7 +224,7 @@ function workerFailed(ctx, d, reason, cls) {
 }
 
 function saveLogTail(ctx, d) {
-  const log = join(workDir(d), '.dp', 'worker.log');
+  const log = join(workDir(d), '.dlm', 'worker.log');
   if (existsSync(log)) atomicWrite(join(ctx.dispatchDir(d.dispatch_id), 'worker.log.tail'), tail(readFileSync(log, 'utf8'), 6000));
 }
 
@@ -239,7 +239,7 @@ export function haltWorkers(ctx) {
     if (!['dispatched', 'running'].includes(d.state)) continue;
     if (d.pid) killSandboxed({ pid: d.pid });
     saveLogTail(ctx, d);
-    ctx.append('orchestrator', 'worker_failed', { dispatch_id: d.dispatch_id, reason: '使用者停機,dp 終止了這個 worker(不算嘗試次數)', class: 'halted' });
+    ctx.append('orchestrator', 'worker_failed', { dispatch_id: d.dispatch_id, reason: '使用者停機,dlm 終止了這個 worker(不算嘗試次數)', class: 'halted' });
     cleanupSandbox(ctx, ctx.state.dispatches.get(d.dispatch_id));
     stopped.push(d.dispatch_id);
   }
@@ -255,8 +255,8 @@ export function awaitingKeys(state) {
 }
 
 /**
- * v4:有新的事要使用者處理時,跑 dp.config.json 的 notify.cmd(例:`osascript -e 'display notification ...'`、
- * `curl -d @- https://ntfy.sh/xxx`)。內容走環境變數 DP_NOTIFY_TEXT 與 stdin,不會被拼進指令字串。
+ * v4:有新的事要使用者處理時,跑 dlm.config.json 的 notify.cmd(例:`osascript -e 'display notification ...'`、
+ * `curl -d @- https://ntfy.sh/xxx`)。內容走環境變數 DLM_NOTIFY_TEXT 與 stdin,不會被拼進指令字串。
  * 通知失敗不影響 tick。
  */
 export function notifyNew(ctx, before) {
@@ -265,8 +265,8 @@ export function notifyNew(ctx, before) {
   const seen = new Set(before);
   const fresh = awaitingKeys(ctx.state).filter((k) => !seen.has(k));
   if (!fresh.length) return null;
-  const text = `dp:${fresh.length} 件新的事等你處理(${fresh.slice(0, 3).join('、')}${fresh.length > 3 ? '…' : ''})。在 Front 說「看收件匣」`;
-  const r = runArgv('sh', ['-c', cmd], { cwd: ctx.root, env: { ...process.env, DP_NOTIFY_TEXT: text }, input: text, timeoutMs: 15000 });
+  const text = `dlm:${fresh.length} 件新的事等你處理(${fresh.slice(0, 3).join('、')}${fresh.length > 3 ? '…' : ''})。在 Front 說「看收件匣」`;
+  const r = runArgv('sh', ['-c', cmd], { cwd: ctx.root, env: { ...process.env, DLM_NOTIFY_TEXT: text }, input: text, timeoutMs: 15000 });
   ctx.log(`notify exit=${r.code}`);
   return { text, code: r.code };
 }
@@ -284,7 +284,7 @@ export async function harvest(ctx) {
 }
 
 async function harvestOne(ctx, d) {
-  const reportPath = join(workDir(d), '.dp', 'report.json');
+  const reportPath = join(workDir(d), '.dlm', 'report.json');
   const alive = d.pid ? pidAlive(d.pid) : false;
   const leaseOver = Date.now() > Date.parse(d.lease_until);
   if (alive && !leaseOver) return;
@@ -311,7 +311,7 @@ async function harvestOne(ctx, d) {
     workerFailed(ctx, d, {
       infra: 'worker 沒交 report,log 顯示是限流/服務端錯誤/連線問題',
       auth: 'worker 沒交 report',
-      quality: 'worker 結束了但沒有交 report(.dp/report.json)',
+      quality: 'worker 結束了但沒有交 report(.dlm/report.json)',
     }[cls], cls);
     return;
   }
@@ -334,7 +334,7 @@ async function harvestOne(ctx, d) {
   writeJson(join(ctx.root, stored), report);
   let extra = {};
   if (d.sandbox) {
-    const sy = syncSandbox(ctx, d, `dp: ${d.dispatch_id} ${d.leg} 交件(worker 在沙箱副本施工,由 dp commit)`);
+    const sy = syncSandbox(ctx, d, `dlm: ${d.dispatch_id} ${d.leg} 交件(worker 在沙箱副本施工,由 dlm commit)`);
     extra = { changes: sy.changed.length };
     if (sy.violations.length) {
       const vp = `ledger/dispatch/${d.dispatch_id}/violations.json`;
@@ -493,7 +493,7 @@ function applySpawn(ctx, d, spawn, approvedBy) {
   saveDag(ctx.root, dag);
   ctx.refresh();
   ctx.append('orchestrator', 'node_added', { node_id: child.id, approved_by: approvedBy, spec_sha: sha256(stableJson(child)).slice(0, 12) });
-  commitAll(ctx.root, [child.gherkin], `dp: 新增子節點 ${child.id} 的 gherkin`);
+  commitAll(ctx.root, [child.gherkin], `dlm: 新增子節點 ${child.id} 的 gherkin`);
   ctx.append('orchestrator', 'unblock', {
     node_id: d.node_id,
     ref: `spawn:${child.id}`,
@@ -559,10 +559,10 @@ function callCritic(ctx, d, node, extra) {
 /** 被退回或失敗的一次嘗試:留標籤、把 worktree 退回這次嘗試開始前的樣子。越界的改動不會跟著下一次進主線。 */
 function resetAttempt(ctx, d) {
   if (!existsSync(d.worktree)) return null;
-  const tagName = `dp-rejected/${d.dispatch_id}`;
+  const tagName = `dlm-rejected/${d.dispatch_id}`;
   git(d.worktree, `tag -f ${tagName} HEAD`, { allowFail: true });
   git(d.worktree, `reset --hard ${d.base_sha}`, { allowFail: true });
-  git(d.worktree, 'clean -fd -e .dp', { allowFail: true });
+  git(d.worktree, 'clean -fd -e .dlm', { allowFail: true });
   return tagName;
 }
 
@@ -611,7 +611,7 @@ function installDeps(ctx, dir) {
 }
 
 function runMergeGates(ctx, d) {
-  const dir = join(ctx.root, '.dp', 'merge-tree');
+  const dir = join(ctx.root, '.dlm', 'merge-tree');
   const mainSha = headSha(ctx.root, ctx.config.main_branch);
   const g = withMergeTree(ctx.root, dir, mainSha, d.branch, (t) => {
     if (!t.ok) return { ok: false, results: [], output_tail: `和主線合併就衝突:\n${tail(t.output, 2000)}` };
@@ -627,7 +627,7 @@ function runMergeGates(ctx, d) {
 }
 
 /**
- * gate 結果過期了嗎:跑 gate 之後主線的程式碼有沒有變。只有 dp 狀態檔(ledger、STATUS.md…)變動不算,
+ * gate 結果過期了嗎:跑 gate 之後主線的程式碼有沒有變。只有 dlm 狀態檔(ledger、STATUS.md…)變動不算,
  * 否則每次 tick 存檔都會讓結果過期。沒有 main_sha 的舊紀錄一律當過期。
  */
 function gatesStale(ctx, d) {
@@ -656,12 +656,12 @@ function finalize(ctx, d, node) {
       return;
     }
   }
-  commitState(ctx, `dp: 合併前存檔 ${d.dispatch_id}`);
+  commitState(ctx, `dlm: 合併前存檔 ${d.dispatch_id}`);
   let mergeSha;
   if (isAncestor(ctx.root, d.branch, main)) {
     mergeSha = headSha(ctx.root);
   } else {
-    const m = mergeNoFf(ctx.root, d.branch, `dp: accept ${node.id} (${d.dispatch_id}, ledger#${ctx.state.maxSeq})`);
+    const m = mergeNoFf(ctx.root, d.branch, `dlm: accept ${node.id} (${d.dispatch_id}, ledger#${ctx.state.maxSeq})`);
     if (!m.ok) {
       reject(ctx, d, '合併進主線衝突', [{ check: 'merge', detail: '跟主線衝突;下一次派工會先同步主線再請你解', evidence: m.output }]);
       return;
@@ -669,7 +669,7 @@ function finalize(ctx, d, node) {
     mergeSha = m.sha;
   }
   ctx.append('orchestrator', 'accept', { dispatch_id: d.dispatch_id, node_id: node.id, merge_sha: mergeSha });
-  tag(ctx.root, `dp-archive/${d.dispatch_id}`, d.branch);
+  tag(ctx.root, `dlm-archive/${d.dispatch_id}`, d.branch);
   removeWorktree(ctx.root, d.worktree);
   deleteBranch(ctx.root, d.branch);
   if (node.kind === 'integration') {
@@ -801,7 +801,7 @@ export function applyDecisions(ctx) {
           ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: `使用者決定跳過測試棒:${skipReason(g)}` });
           ctx.append('orchestrator', 'leg_done', { dispatch_id: d.dispatch_id, node_id: nodeId, leg: 'test' });
         } else {
-          ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: `使用者要跳過測試棒,但 dp 重跑驗收不是綠的${g ? `(${g.cmd} → exit ${g.exit})` : ''}:照原本的測試棒做,寫出紅的測試` });
+          ctx.append('orchestrator', 'unblock', { node_id: nodeId, ref, note: `使用者要跳過測試棒,但 dlm 重跑驗收不是綠的${g ? `(${g.cmd} → exit ${g.exit})` : ''}:照原本的測試棒做,寫出紅的測試` });
         }
       }
       if (choice === 'reopen') {
@@ -902,7 +902,7 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
     forbidden_paths: [...new Set(forbidden)],
     acceptance,
     done_when: doneWhen,
-    report_path: '.dp/report.json',
+    report_path: '.dlm/report.json',
     ...(cand.findings?.length ? { findings: cand.findings } : {}),
   };
   return envelope;
@@ -941,7 +941,7 @@ export function buildWorkerPrompt(ctx, node, envelope, wt) {
 /**
  * v4.7.3 整合點的測試棒做不出紅燈:能力節點已經把整合 gherkin 全部做到了(驗收在動手前就是綠的)。
  * 測試棒只能造假(重複定義步驟弄成 ambiguous、寫故意失敗的測試);誠實的 worker 會回報卡住,重試也一樣,版本永遠到不了試用。
- * dp 自己在這一棒的樹上重跑驗收(用完即丟的副本):綠的才多給使用者一個選項「跳過測試棒」(記 leg_done,接著跑整合棒)。
+ * dlm 自己在這一棒的樹上重跑驗收(用完即丟的副本):綠的才多給使用者一個選項「跳過測試棒」(記 leg_done,接著跑整合棒)。
  * 只限整合點的測試棒:能力節點的驗收一開始就綠,代表 gherkin 沒寫到新東西,該回頭改規格。
  * 實測:todo-cli 的 I1。只看得到 MCP 的 AI 把命令列入口放在能力節點裡,整合 gherkin 又沿用能力的句子,I1 的測試棒卡住。
  */
@@ -975,8 +975,8 @@ function integrationGreenBeforeTest(ctx, node, cand, wt) {
   }
 }
 
-const SKIP_TEST_LEG = { key: 'skip', label: '驗收已經是綠的(dp 重跑過):跳過測試棒,接著跑整合棒' };
-const skipReason = (g) => `dp 在這一棒的樹上重跑 ${g.cmd},exit 0:整合點的驗收在動手前就是綠的(能力節點已經做到),測試棒做不出誠實的紅燈`;
+const SKIP_TEST_LEG = { key: 'skip', label: '驗收已經是綠的(dlm 重跑過):跳過測試棒,接著跑整合棒' };
+const skipReason = (g) => `dlm 在這一棒的樹上重跑 ${g.cmd},exit 0:整合點的驗收在動手前就是綠的(能力節點已經做到),測試棒做不出誠實的紅燈`;
 
 function blockStuck(ctx, cand) {
   const s = ctx.state.nodes.get(cand.id);
@@ -1054,11 +1054,11 @@ export async function dispatchPhase(ctx) {
       }
     }
     const dispatchId = `d-${String(ctx.state.dispatches.size + 1).padStart(4, '0')}`;
-    const branch = `dp/${slug(node.id)}`;
+    const branch = `dlm/${slug(node.id)}`;
     const wt = resolve(ctx.root, cfg.worktree_dir, slug(node.id));
     try {
       addWorktree(ctx.root, wt, branch, main);
-      ensureDir(join(wt, '.dp'));
+      ensureDir(join(wt, '.dlm'));
       if (behindCount(ctx.root, branch, main) > 0) {
         const sy = syncWithMain(wt, main);
         if (!sy.ok) {
@@ -1088,9 +1088,9 @@ export async function dispatchPhase(ctx) {
       const ddir = ctx.dispatchDir(dispatchId);
       writeJson(join(ddir, 'envelope.json'), envelope);
       atomicWrite(join(ddir, 'prompt.md'), prompt);
-      writeJson(join(wt, '.dp', 'envelope.json'), envelope);
-      atomicWrite(join(wt, '.dp', 'prompt.md'), prompt);
-      if (existsSync(join(wt, '.dp', 'report.json'))) unlinkSync(join(wt, '.dp', 'report.json'));
+      writeJson(join(wt, '.dlm', 'envelope.json'), envelope);
+      atomicWrite(join(wt, '.dlm', 'prompt.md'), prompt);
+      if (existsSync(join(wt, '.dlm', 'report.json'))) unlinkSync(join(wt, '.dlm', 'report.json'));
       const sbx = prepareSandbox(ctx, wt, dispatchId, envelope, prompt);
       // worker 的時限:lease 與 agents.worker.timeout_minutes 取小的
       const leaseMin = Math.min(cfg.caps.lease_minutes, cfg.agents.worker.timeout_minutes ?? cfg.caps.lease_minutes);
@@ -1104,8 +1104,8 @@ export async function dispatchPhase(ctx) {
       });
       const nm = nodeModulesFingerprint(ctx.root);
       const launched = launchWorker(cfg, {
-        cwd: sbx, promptPath: join(sbx, '.dp', 'prompt.md'), reportPath: join(sbx, '.dp', 'report.json'),
-        logPath: join(sbx, '.dp', 'worker.log'), dispatchId, account,
+        cwd: sbx, promptPath: join(sbx, '.dlm', 'prompt.md'), reportPath: join(sbx, '.dlm', 'report.json'),
+        logPath: join(sbx, '.dlm', 'worker.log'), dispatchId, account,
       });
       ctx.append('orchestrator', 'launched', {
         dispatch_id: dispatchId, pid: launched.pid ?? 0,
@@ -1115,7 +1115,7 @@ export async function dispatchPhase(ctx) {
       started++;
     } catch (e) {
       // 還沒記 dispatch 就失敗的話,沙箱副本沒人會收,在這裡清掉
-      if (!ctx.state.dispatches.has(dispatchId)) removeTree(join(ctx.root, '.dp', 'sandboxes', dispatchId));
+      if (!ctx.state.dispatches.has(dispatchId)) removeTree(join(ctx.root, '.dlm', 'sandboxes', dispatchId));
       ctx.append('orchestrator', 'block', { node_id: id, reason: `派工失敗:${String(e.message).slice(0, 300)}` });
     }
   }
@@ -1125,11 +1125,11 @@ export async function dispatchPhase(ctx) {
 // ---------------------------------------------------------------- tick
 
 /**
- * 整個 tick 在一把鎖裡:daemon 在跑時手動再 `dp tick`,兩個 tick 會同時處理同一個交件(重複 merge、重複派工)。
+ * 整個 tick 在一把鎖裡:daemon 在跑時手動再 `dlm tick`,兩個 tick 會同時處理同一個交件(重複 merge、重複派工)。
  * 拿不到鎖就直接跳過(ok,不是錯誤)。
  */
 export async function tick(root, { log = () => {} } = {}) {
-  const lockPath = join(root, '.dp', 'tick.lock');
+  const lockPath = join(root, '.dlm', 'tick.lock');
   const release = tryLock(lockPath);
   if (!release) return { ok: true, code: 0, busy: true, reason: `另一個 tick 正在執行(pid ${lockHolder(lockPath) ?? '?'}),這次跳過` };
   try {
@@ -1159,7 +1159,7 @@ async function tickLocked(root, log) {
   const branch = currentBranch(root);
   if (branch !== config.main_branch) return { ok: false, code: 2, reason: `根目錄不在 ${config.main_branch}(目前 ${branch})` };
   const dirty = dirtyTracked(root, STATE_PATHS);
-  if (dirty.length) return { ok: false, code: 2, reason: `根目錄有未 commit 的變更(不是 dp 寫的):${dirty.join(', ')}。是你或 Front 改的就先 commit(git add <檔> && git commit),背景迴圈才會繼續` };
+  if (dirty.length) return { ok: false, code: 2, reason: `根目錄有未 commit 的變更(不是 dlm 寫的):${dirty.join(', ')}。是你或 Front 改的就先 commit(git add <檔> && git commit),背景迴圈才會繼續` };
   const problems = validateDag(loadDag(root), contractMajor(root));
   if (problems.length) return { ok: false, code: 2, reason: `dag.json 不合法:${problems.join('; ')}` };
   if (config.autonomy.level >= 1 && !hasTestGate(config.gates.chain)) return { ok: false, code: 2, reason: NO_TEST_GATE };
@@ -1167,7 +1167,7 @@ async function tickLocked(root, log) {
   if (existsSync(ledgerFile)) {
     const chain = verifyChain(readFileSync(ledgerFile, 'utf8'));
     if (chain.problems.length) {
-      return { ok: false, code: 3, reason: `帳本簽章鏈壞了,不執行任何事(可能有人直接寫了 ledger):${chain.problems.slice(0, 3).join('; ')}。查 \`dp check ledger\`` };
+      return { ok: false, code: 3, reason: `帳本簽章鏈壞了,不執行任何事(可能有人直接寫了 ledger):${chain.problems.slice(0, 3).join('; ')}。查 \`dlm check ledger\`` };
     }
   }
   applyApprovedProposals(root, log);
@@ -1187,10 +1187,10 @@ async function tickLocked(root, log) {
     const r = await dispatchPhase(ctx);
     log(`dispatch: ${r}`);
   } else {
-    log(`停機中:${ctx.state.halted.reason}(使用者 \`dp resume\` 才會繼續)`);
+    log(`停機中:${ctx.state.halted.reason}(使用者 \`dlm resume\` 才會繼續)`);
   }
   writePendingFeatures(root, pendingFeatures(ctx.dag, ctx.state));
-  commitState(ctx, `dp: tick @${ctx.state.maxSeq}`);
+  commitState(ctx, `dlm: tick @${ctx.state.maxSeq}`);
   notifyNew(ctx, awaitingBefore);
   const snap = computeSnapshot({ root, config: ctx.config, dag: ctx.dag, state: ctx.state });
   return { ok: true, code: 0, snapshot: snap };

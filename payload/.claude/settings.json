@@ -1,12 +1,12 @@
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tools/dp.mjs\" hook user-prompt" }] }
+      { "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tools/dlm.mjs\" hook user-prompt" }] }
     ],
     "PreToolUse": [
       {
         "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Grep|Glob",
-        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tools/dp.mjs\" hook pre-tool" }]
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/tools/dlm.mjs\" hook pre-tool" }]
       }
     ]
   }

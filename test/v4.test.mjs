@@ -1,4 +1,4 @@
-// v4 的改動:每一條都對應 v3 實測報告裡的一個問題(見 docs/dp/CHANGELOG.md 的 4.0.0)。
+// v4 的改動:每一條都對應 v3 實測報告裡的一個問題(見 docs/dlm/CHANGELOG.md 的 4.0.0)。
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -21,7 +21,7 @@ after(cleanup);
 const FAKE_AGENT = join(REPO, 'test', 'fixtures', 'fake-agent.mjs');
 const agentCmd = (out) => `FAKE_OUT='${JSON.stringify(out)}' node ${FAKE_AGENT}`;
 const openRequests = (s) => [...s.decisions.values()].filter((r) => r.request && !r.answer).map((r) => r.request);
-const DP = join(REPO, 'tools', 'dp.mjs');
+const DLM = join(REPO, 'tools', 'dlm.mjs');
 
 test('test-fix:實作棒說測試寫錯 → 問使用者(推薦退回)→ 退回測試棒修正 → 實作棒重來 → 合併', async () => {
   const proj = makeProject({ mode: 'badtest' });
@@ -116,9 +116,9 @@ test('payload 的 cucumber.js:命令列給了路徑就只跑那些;沒給就跳�
     spawnSync('mkdir', ['-p', join(dir, f, '..')]);
     writeFile(join(dir, f), 'Feature: x\n');
   }
-  spawnSync('mkdir', ['-p', join(dir, '.dp')]);
+  spawnSync('mkdir', ['-p', join(dir, '.dlm')]);
   const load = (args, pending) => {
-    writeFile(join(dir, '.dp', 'pending-features.json'), JSON.stringify(pending));
+    writeFile(join(dir, '.dlm', 'pending-features.json'), JSON.stringify(pending));
     const r = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(join(REPO, 'payload', 'cucumber.js'))}); console.log(JSON.stringify(m.default.paths))`, 'cucumber-js', ...args], { cwd: dir, encoding: 'utf8' });
     return JSON.parse(r.stdout);
   };
@@ -165,7 +165,7 @@ test('新專案的節點把程式放在 packages/ 與 apps/ 以外 → 提案照
   const req = readEvents(proj).filter((e) => e.type === 'decision_request').at(-1);
   assert.match(req.reason, /^提醒:todo\/v1/, '使用者在收件匣也看得到');
   assert.deepEqual(JSON.parse(readFileSync(join(proj, p.path), 'utf8')).warnings, p.warnings);
-  const viaOp = spawnSync(process.execPath, [DP, 'op', 'propose_feature'], {
+  const viaOp = spawnSync(process.execPath, [DLM, 'op', 'propose_feature'], {
     cwd: proj, encoding: 'utf8', input: JSON.stringify({ spec: { ...off, id: 'todo2/v1', owns: ['lib/todo2/**'] }, gherkin: CALC_GHERKIN }),
   });
   const out = JSON.parse(viaOp.stdout.trim().split('\n').at(-1));
@@ -273,11 +273,11 @@ test('改提案:新提案帶 supersedes 取代還沒決定的舊提案(舊的不
   decide(proj, `node:${p3.id}`, 'no', '不要這份');
   assert.throws(() => proposeFeature(proj, CALC, CALC_GHERKIN, { supersedes: [p3.id] }), /已經決定過了/);
   decide(proj, `node:${p2.id}`, 'yes', '好');
-  const viaOp = spawnSync(process.execPath, [DP, 'op', 'propose_feature'], { cwd: proj, encoding: 'utf8', input: JSON.stringify({ spec: { ...CALC, id: 'calc2/v1', owns: ['packages/calc2/**'] }, gherkin: CALC_GHERKIN, supersedes: ['p-009'] }) });
+  const viaOp = spawnSync(process.execPath, [DLM, 'op', 'propose_feature'], { cwd: proj, encoding: 'utf8', input: JSON.stringify({ spec: { ...CALC, id: 'calc2/v1', owns: ['packages/calc2/**'] }, gherkin: CALC_GHERKIN, supersedes: ['p-009'] }) });
   assert.match(viaOp.stdout, /node:p-009 不是一份提案/);
 });
 
-test('宣稱的證據就是驗收指令、dp 已經重跑確認:不再問小模型,兩種問法不一致也不會變成沒把握;其他宣稱照舊問', async () => {
+test('宣稱的證據就是驗收指令、dlm 已經重跑確認:不再問小模型,兩種問法不一致也不會變成沒把握;其他宣稱照舊問', async () => {
   const proj = makeProject({ config: { agents: { verifier: { backend: 'cmd', cmd: `FV=disagree node ${FAKE_VERIFIER}` } } } });
   addNode(proj, CALC, CALC_GHERKIN);
   const s = await tickUntil(proj, (st) => [...st.dispatches.values()].some((d) => d.leg === 'test' && d.verify));
@@ -299,7 +299,7 @@ test('intake bundle:一版一次批准;沒有整合點就拒絕;下一版自動�
   assert.throws(() => proposeBundle(proj, { release: 'v1', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }, { ...I1, depends_on: [], gherkin_text: I1_GHERKIN }] }), /沒有依賴這一版的 calc\/v1/);
   const p1 = proposeBundle(proj, { release: 'v1', goal: '能算加法', roadmap: '# 路線\n- v1 加法\n- v2 減法\n', nodes: [{ ...CALC, gherkin_text: CALC_GHERKIN }, { ...I1, gherkin_text: I1_GHERKIN }] });
   decide(proj, `node:${p1.id}`, 'yes', '好');
-  const ctxTick = spawnSync(process.execPath, [DP, 'intake', 'apply', p1.id], { cwd: proj, encoding: 'utf8' });
+  const ctxTick = spawnSync(process.execPath, [DLM, 'intake', 'apply', p1.id], { cwd: proj, encoding: 'utf8' });
   assert.equal(ctxTick.status, 0, ctxTick.stderr);
   assert.match(readFileSync(join(proj, 'docs/ROADMAP.md'), 'utf8'), /v2 減法/);
   const sub = { id: 'sub/v1', kind: 'phase', title: '減法', intent: '提供 sub(a,b)', owns: ['packages/sub/**'], depends_on: ['contracts@1'], accept: 'node --test packages/sub/src/sub.test.mjs' };
@@ -321,40 +321,40 @@ test('版本閘門:依賴的整合點合併了但使用者還沒試用 → 下�
   assert.deepEqual(depsStatus(node, state, 1, { dag, gateE2e: true }), []);
 });
 
-test('dp run --help 只印說明,不啟動背景迴圈;不認得的旗標直接拒絕', () => {
+test('dlm run --help 只印說明,不啟動背景迴圈;不認得的旗標直接拒絕', () => {
   const proj = makeProject();
-  const r = spawnSync(process.execPath, [DP, 'run', '--help'], { cwd: proj, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [DLM, 'run', '--help'], { cwd: proj, encoding: 'utf8' });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /dp run/);
-  assert.ok(!existsSync(join(proj, '.dp', 'run.lock')));
-  assert.ok(!existsSync(join(proj, '.dp', 'run.log')));
-  const bad = spawnSync(process.execPath, [DP, 'run', '--deamon'], { cwd: proj, encoding: 'utf8' });
+  assert.match(r.stdout, /dlm run/);
+  assert.ok(!existsSync(join(proj, '.dlm', 'run.lock')));
+  assert.ok(!existsSync(join(proj, '.dlm', 'run.log')));
+  const bad = spawnSync(process.execPath, [DLM, 'run', '--deamon'], { cwd: proj, encoding: 'utf8' });
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /不認得 --deamon/);
 });
 
 test('notify.cmd:有新的事等使用者時通知一次;user-prompt hook 附一行提醒', async () => {
   const out = join(tempDir(), 'notify.txt');
-  const proj = makeProject({ level: 0, config: { notify: { cmd: `printf '%s' "$DP_NOTIFY_TEXT" >> ${out}` } } });
+  const proj = makeProject({ level: 0, config: { notify: { cmd: `printf '%s' "$DLM_NOTIFY_TEXT" >> ${out}` } } });
   addNode(proj, CALC, CALC_GHERKIN); // 提案是 Front 當著使用者的面提的:不通知
   await tickUntil(proj, (st) => openRequests(st).some((r) => r.ref.startsWith('accept:')));
   assert.match(readFileSync(out, 'utf8'), /1 件新的事.*accept:/);
   const before = readFileSync(out, 'utf8');
   await tick(proj);
   assert.equal(readFileSync(out, 'utf8'), before, '同一件事不重複通知');
-  const h = spawnSync(process.execPath, [DP, 'hook', 'user-prompt'], { cwd: proj, encoding: 'utf8', input: JSON.stringify({ prompt: '你好', cwd: proj }), env: { ...process.env, CLAUDE_PROJECT_DIR: proj } });
+  const h = spawnSync(process.execPath, [DLM, 'hook', 'user-prompt'], { cwd: proj, encoding: 'utf8', input: JSON.stringify({ prompt: '你好', cwd: proj }), env: { ...process.env, CLAUDE_PROJECT_DIR: proj } });
   assert.equal(h.status, 0);
-  assert.match(h.stdout, /【dp】有 1 件決定/);
+  assert.match(h.stdout, /【dlm】有 1 件決定/);
 });
 
-test('dp decide 一次決定多件(accept:* 與逗號清單)', async () => {
+test('dlm decide 一次決定多件(accept:* 與逗號清單)', async () => {
   const proj = makeProject({ level: 0, config: { caps: { parallel: 2 } } });
   const spec = (id) => ({ ...CALC, id, owns: [`packages/${id.split('/')[0]}/**`], accept: `node --test packages/${id.split('/')[0]}/src/${id.split('/')[0]}.test.mjs` });
   addNode(proj, spec('a/v1'), CALC_GHERKIN.replace('calc', 'a'));
   addNode(proj, spec('b/v1'), CALC_GHERKIN.replace('calc', 'b'));
   await tickUntil(proj, (st) => openRequests(st).filter((r) => r.ref.startsWith('accept:')).length === 2 || openRequests(st).filter((r) => r.ref.startsWith('accept:')).length >= 1 && [...st.nodes.values()].every((n) => n.status !== 'todo' && n.status !== 'in-progress'), { max: 10 });
   const n = openRequests(stateOf(proj)).filter((r) => r.ref.startsWith('accept:')).length;
-  const r = spawnSync(process.execPath, [DP, 'decide', 'accept:*', 'yes', '--verbatim', '都合併'], { cwd: proj, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [DLM, 'decide', 'accept:*', 'yes', '--verbatim', '都合併'], { cwd: proj, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.equal((r.stdout.match(/已記錄/g) ?? []).length, n);
   assert.equal(openRequests(stateOf(proj)).filter((x) => x.ref.startsWith('accept:')).length, 0);

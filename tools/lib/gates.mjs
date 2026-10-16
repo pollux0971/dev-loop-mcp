@@ -1,6 +1,6 @@
 // 全 gate 單一入口。chain 是 package.json scripts 的名字(v4.5:或 gates.commands 對應的指令);
 // 空 chain、找不到指令都算失敗——「清單沒填」不是「沒事可做」。
-// v4.5:既有專案有測試基線(docs/dp-baseline.json)時,紅的測試全都是基線裡本來就紅的,這個 gate 算通過(known-red)。
+// v4.5:既有專案有測試基線(docs/dlm-baseline.json)時,紅的測試全都是基線裡本來就紅的,這個 gate 算通過(known-red)。
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { gateCommand, knownRed, readBaseline } from './brownfield.mjs';
@@ -12,7 +12,7 @@ export function hasTestGate(chain) {
   return (chain ?? []).some((name) => name === 'test' || name.startsWith('test:') || name.startsWith('accept'));
 }
 
-export const NO_TEST_GATE = 'gates.chain 沒有任何測試類 script(test、test:*、accept*):合併前不會跑專案測試,自治等級 >= 1 時 dp 拒絕執行 tick。請把 test 加進 dp.config.json 的 gates.chain';
+export const NO_TEST_GATE = 'gates.chain 沒有任何測試類 script(test、test:*、accept*):合併前不會跑專案測試,自治等級 >= 1 時 dlm 拒絕執行 tick。請把 test 加進 dlm.config.json 的 gates.chain';
 
 /** 在 gates profile 的沙箱裡跑(沒有網路、看不到家目錄);root 用來找要唯讀掛載的 node_modules。 */
 export function runGates(cwd, config, { log = () => {}, root = cwd } = {}) {

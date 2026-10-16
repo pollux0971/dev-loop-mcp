@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validate } from './schema.mjs';
 import { CONTRACT_REF, NODE_ID, nodeSchema } from './schemas.mjs';
-import { DpError, globPrefix, matchGlob, readJson, sha256, stableJson, writeJson } from './util.mjs';
+import { DlmError, globPrefix, matchGlob, readJson, sha256, stableJson, writeJson } from './util.mjs';
 
 export const DAG_REL = 'dag.json';
 
@@ -18,7 +18,7 @@ export function loadDag(root) {
 
 export function saveDag(root, dag) {
   const problems = validateDag(dag, contractMajor(root));
-  if (problems.length) throw new DpError(`dag.json 不合法,拒絕寫入:\n  - ${problems.join('\n  - ')}`);
+  if (problems.length) throw new DlmError(`dag.json 不合法,拒絕寫入:\n  - ${problems.join('\n  - ')}`);
   writeJson(join(root, DAG_REL), dag);
 }
 
@@ -180,7 +180,7 @@ export function layers(dag) {
   const remaining = new Set(deps.keys());
   while (remaining.size) {
     const layer = [...remaining].filter((id) => [...deps.get(id)].every((d) => !remaining.has(d))).sort();
-    if (!layer.length) throw new DpError('有環,無法分層');
+    if (!layer.length) throw new DlmError('有環,無法分層');
     out.push(layer);
     layer.forEach((id) => remaining.delete(id));
   }
@@ -221,7 +221,7 @@ export function scopeContained(child, parent) {
  */
 export function withSpawn(dag, parentId, spec) {
   const parent = getNode(dag, parentId);
-  if (!parent) throw new DpError(`父節點 ${parentId} 不存在`);
+  if (!parent) throw new DlmError(`父節點 ${parentId} 不存在`);
   const next = structuredClone(dag);
   const p = getNode(next, parentId);
   const child = {

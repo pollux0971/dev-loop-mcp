@@ -1,8 +1,8 @@
-// v4.7 `dp hub`:一台電腦上所有 dp 專案的總覽、監控與 API(定義在 api.mjs)。只綁 127.0.0.1。
+// v4.7 `dlm hub`:一台電腦上所有 dlm 專案的總覽、監控與 API(定義在 api.mjs)。只綁 127.0.0.1。
 //
-// - 專案的操作一律交給「那個專案自己的 tools/dp.mjs」執行(`dp op <名稱>`,stdin 進 JSON、stdout 出 JSON),
-//   專案裝的 dp 版本不同也不會讀錯格式;hub 自己只管專案清單、帳號、路由、快取與事件串流。
-// - 每個請求都要帶 token(~/.config/dp/hub-token,權限 600;`dp hub token` 看):Authorization: Bearer <token>。
+// - 專案的操作一律交給「那個專案自己的 tools/dlm.mjs」執行(`dlm op <名稱>`,stdin 進 JSON、stdout 出 JSON),
+//   專案裝的 dlm 版本不同也不會讀錯格式;hub 自己只管專案清單、帳號、路由、快取與事件串流。
+// - 每個請求都要帶 token(~/.config/dlm/hub-token,權限 600;`dlm hub token` 看):Authorization: Bearer <token>。
 //   Host / Origin 不是 127.0.0.1 或 localhost 就拒絕(擋 DNS rebinding 與別的網站)。頁面本身內嵌 token,別的網站讀不到它。
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { renderDashboard } from './dashboard.mjs';
 import { VERSION, accountRows } from './ops.mjs';
 import { loadProjects } from './projects.mjs';
 import { cachedOp, clearCache, execRoute, findProject, health, overview, projectOp } from './service.mjs';
-import { DpError } from './util.mjs';
+import { DlmError } from './util.mjs';
 
 export const hubTokenFile = () => join(configDir(), 'hub-token');
 
@@ -84,7 +84,7 @@ const sse = (n, e, recent) => `id: ${n}:${e.seq}\nevent: ledger\ndata: ${JSON.st
 
 function stream(req, res, names, recent = 0) {
   res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive' });
-  res.write(`: dp hub ${VERSION}\n\n`);
+  res.write(`: dlm hub ${VERSION}\n\n`);
   const tails = new Map();
   const sync = () => {
     const projects = loadProjects();
@@ -132,7 +132,7 @@ async function readBody(req) {
 
 const fail = (e) => {
   if (e instanceof HttpError) return { status: e.status, message: e.message };
-  if (e instanceof DpError) return { status: e.code === 3 ? 404 : e.code === 2 ? 409 : 400, message: e.message };
+  if (e instanceof DlmError) return { status: e.code === 3 ? 404 : e.code === 2 ? 409 : 400, message: e.message };
   return { status: 500, message: String(e?.message ?? e) };
 };
 
@@ -171,14 +171,14 @@ async function legacyAccountApi(req, res, project) {
   try {
     switch (body?.action) {
       case 'list': return send({ ok: true, out: JSON.stringify({ accounts: accountRows(project.path, { login: true }) }) });
-      case 'add': { const a = addAccount(body.name, { cli: body.cli, plan: body.plan || null }); return send({ ok: true, out: `✓ 帳號 ${a.name} 登記好了。下一步在終端機:node tools/dp.mjs account login ${a.name}` }); }
+      case 'add': { const a = addAccount(body.name, { cli: body.cli, plan: body.plan || null }); return send({ ok: true, out: `✓ 帳號 ${a.name} 登記好了。下一步在終端機:node tools/dlm.mjs account login ${a.name}` }); }
       case 'rm': { removeAccount(body.name); return send({ ok: true, out: `已移除 ${body.name}` }); }
       case 'use': {
         const r = await projectOp(project.path, 'set_role', { role: body.role, accounts: body.accounts ?? [], model: body.model || null });
         clearCache();
         if (!r.ok) return send({ ok: false, out: r.error });
         const x = r.result;
-        return send({ ok: true, out: `${x.accounts.length ? `✓ ${x.role} 輪流用 ${x.accounts.join('、')}${x.model ? `(模型 ${x.model})` : ''}` : `✓ ${x.role} 不用帳號了`}${x.not_logged_in.length ? `\n  還沒登入:${x.not_logged_in.map((n) => `dp account login ${n}`).join(';')}` : ''}` });
+        return send({ ok: true, out: `${x.accounts.length ? `✓ ${x.role} 輪流用 ${x.accounts.join('、')}${x.model ? `(模型 ${x.model})` : ''}` : `✓ ${x.role} 不用帳號了`}${x.not_logged_in.length ? `\n  還沒登入:${x.not_logged_in.map((n) => `dlm account login ${n}`).join(';')}` : ''}` });
       }
       default: return send({ ok: false, out: '不支援的動作' });
     }
@@ -201,8 +201,8 @@ export function serveHub({ port = 7170, intervalMs = 5000, log = console.log } =
       if (path.startsWith('/api/')) {
         const open = path === '/api/v1/health' || path === '/api/v1/openapi.json';
         const auth = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-        const given = auth || req.headers['x-dp-token'] || (path.endsWith('/stream') ? url.searchParams.get('token') : null);
-        if (!open && !sameToken(given, token)) return deny(401, '沒有或錯誤的 token(Authorization: Bearer <token>;dp hub token 看)');
+        const given = auth || req.headers['x-dlm-token'] || (path.endsWith('/stream') ? url.searchParams.get('token') : null);
+        if (!open && !sameToken(given, token)) return deny(401, '沒有或錯誤的 token(Authorization: Bearer <token>;dlm hub token 看)');
         return await handleApi(req, res, url, { port: bound });
       }
       if (path === '/favicon.ico') return res.writeHead(204).end();
@@ -216,7 +216,7 @@ export function serveHub({ port = 7170, intervalMs = 5000, log = console.log } =
         const sub = pm[2] ?? '';
         if (sub === '') return res.writeHead(302, { location: `/p/${encodeURIComponent(project.name)}/` }).end();
         if (req.method === 'POST' && sub === '/api/account') {
-          if (!sameToken(req.headers['x-dp-token'], token)) return deny(403, 'token 不對(重新整理頁面)');
+          if (!sameToken(req.headers['x-dlm-token'], token)) return deny(403, 'token 不對(重新整理頁面)');
           return await legacyAccountApi(req, res, project);
         }
         if (req.method !== 'GET') return deny(405, '只接受 GET');
@@ -249,7 +249,7 @@ export function serveHub({ port = 7170, intervalMs = 5000, log = console.log } =
     server.once('error', reject);
     server.listen(port, '127.0.0.1', () => {
       bound = server.address().port;
-      log(`dp hub:http://127.0.0.1:${bound}/ (所有專案的總覽;API 在 /api/v1,規格 /api/v1/openapi.json;Ctrl+C 結束)`);
+      log(`dlm hub:http://127.0.0.1:${bound}/ (所有專案的總覽;API 在 /api/v1,規格 /api/v1/openapi.json;Ctrl+C 結束)`);
       resolveP(server);
     });
   });

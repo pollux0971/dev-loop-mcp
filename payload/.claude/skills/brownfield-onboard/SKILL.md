@@ -1,6 +1,6 @@
 ---
 name: brownfield-onboard
-description: 既有專案(brownfield)第一次接上 dp 時用一次:記測試基線、讀程式寫 docs/AS-IS.md、建 ROADMAP v0。dp.config.json 的 project.mode 是 brownfield、而且還沒有 docs/AS-IS.md 時,Front 開場先做這個。
+description: 既有專案(brownfield)第一次接上 dlm 時用一次:記測試基線、讀程式寫 docs/AS-IS.md、建 ROADMAP v0。dlm.config.json 的 project.mode 是 brownfield、而且還沒有 docs/AS-IS.md 時,Front 開場先做這個。
 ---
 
 # Brownfield onboard:先弄清楚現況,再加東西
@@ -9,10 +9,10 @@ description: 既有專案(brownfield)第一次接上 dp 時用一次:記測試�
 
 ## 步驟
 
-1. `node tools/dp.mjs doctor`。「合併 gate」要是 ✓(gate 跑的是專案自己的測試指令)。不是的話請使用者在自己的終端機跑
-   `node tools/dp.mjs setup`,選 Brownfield、確認測試指令。
-2. `node tools/dp.mjs onboard`。它會:
-   - 在主線的乾淨副本跑一次專案的測試,把**本來就紅**的測試記進 `docs/dp-baseline.json`(之後合併時,紅的只要都在基線裡就不算 worker 弄壞的;
+1. `node tools/dlm.mjs doctor`。「合併 gate」要是 ✓(gate 跑的是專案自己的測試指令)。不是的話請使用者在自己的終端機跑
+   `node tools/dlm.mjs setup`,選 Brownfield、確認測試指令。
+2. `node tools/dlm.mjs onboard`。它會:
+   - 在主線的乾淨副本跑一次專案的測試,把**本來就紅**的測試記進 `docs/dlm-baseline.json`(之後合併時,紅的只要都在基線裡就不算 worker 弄壞的;
      多出一個新的紅就擋)。看不出是哪些測試紅的 gate,修好前每次合併都會擋,要跟使用者講清楚;
    - 產生 `docs/AS-IS.md` 草稿(機器寫得出來的部分:語言、測試指令、進入點、目錄、基線)與 `docs/ROADMAP.md` 的 v0「現況」;已經有的不覆蓋;
    - commit。
@@ -26,9 +26,9 @@ description: 既有專案(brownfield)第一次接上 dp 時用一次:記測試�
 
 ## 之後加功能時要記得(intake 會檢查)
 
-- `owns` 寫**真的會改的檔**,不要寫 `src/**`:dp 會替 owns 涵蓋的既有程式檔加一棒 characterize(先寫測試釘住現有行為,在現在的程式上必須綠),
+- `owns` 寫**真的會改的檔**,不要寫 `src/**`:dlm 會替 owns 涵蓋的既有程式檔加一棒 characterize(先寫測試釘住現有行為,在現在的程式上必須綠),
   一次最多 10 個檔。不想釘(例:整個要換掉)就在節點寫 `"characterize": { "skip": "理由" }`。
 - 專案沒有 cucumber 時,`accept` 要寫專案自己的測試指令只跑這個節點的測試(例 `python3 -m unittest tests/test_export.py`);
   gherkin 仍是規格,測試棒照每個場景各寫一個測試。
 - 新功能**刻意**要改掉某個既有行為時,寫進 gherkin,並把那個檔從 characterize 拿掉(characterize.targets 自己列);不然實作棒會被釘住的測試擋下。
-- 基線過時了(有人修好了舊的紅測試)就 `node tools/dp.mjs baseline` 重記。
+- 基線過時了(有人修好了舊的紅測試)就 `node tools/dlm.mjs baseline` 重記。

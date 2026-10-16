@@ -1,15 +1,15 @@
 // 事件帳:ledger/events.jsonl。只 append、不改寫。
-// 單一寫入者規則:LLM 永遠不直接寫這個檔;它們產出檔案,dp 驗證後代為 append。
+// 單一寫入者規則:LLM 永遠不直接寫這個檔;它們產出檔案,dlm 驗證後代為 append。
 //
 // 簽章鏈:每筆事件帶 prev_hash(前一行原文的 sha256)與 mac(repo 外金鑰的 HMAC)。
-// 「只增不改」由 git 的已 commit 前綴保證;「尾巴這筆是 dp 寫的」由 mac 保證——任何能寫檔的程序都能附加一行,
+// 「只增不改」由 git 的已 commit 前綴保證;「尾巴這筆是 dlm 寫的」由 mac 保證——任何能寫檔的程序都能附加一行,
 // 但拿不到金鑰就算不出 mac。舊帳本從第一筆有 mac 的事件(chain_start)開始上鏈,之前的照舊只驗 seq。
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { keyPath, loadKey, mac, macEqual } from './auth.mjs';
 import { validate } from './schema.mjs';
 import { EVENT_ACTORS, eventSchema } from './schemas.mjs';
-import { DpError, ensureDir, nowIso, run, sha256, withLock } from './util.mjs';
+import { DlmError, ensureDir, nowIso, run, sha256, withLock } from './util.mjs';
 
 export const LEDGER_REL = 'ledger/events.jsonl';
 
@@ -26,7 +26,7 @@ export function parseLedger(text, label = LEDGER_REL) {
     try {
       ev = JSON.parse(line);
     } catch (e) {
-      throw new DpError(`${label}:${i + 1} 不是合法 JSON(帳本損毀不會被跳過):${e.message}`);
+      throw new DlmError(`${label}:${i + 1} 不是合法 JSON(帳本損毀不會被跳過):${e.message}`);
     }
     events.push(ev);
   });
@@ -74,7 +74,7 @@ export function append(root, actor, type, fields) {
     const last = events.at(-1);
     let ev = { seq: (last?.seq ?? 0) + 1, ts: nowIso(), actor, type, ...fields };
     const errors = validateEvent(ev);
-    if (errors.length) throw new DpError(`拒絕寫入事件 ${type}:\n  - ${errors.join('\n  - ')}`);
+    if (errors.length) throw new DlmError(`拒絕寫入事件 ${type}:\n  - ${errors.join('\n  - ')}`);
     const lastLine = ledgerLines(text).at(-1);
     ev = { ...ev, prev_hash: lastLine ? sha256(lastLine) : 'genesis', ...(events.some((e) => e.mac) ? {} : { chain_start: true }) };
     ev.mac = mac(loadKey({ create: true }), macPayload(ev));
@@ -109,7 +109,7 @@ export function verifyChain(text) {
     started = true;
     const expectPrev = i === 0 ? 'genesis' : sha256(lines[i - 1]);
     if (ev.prev_hash !== expectPrev) problems.push(`seq ${ev.seq}: prev_hash 跟前一行對不上(中間被插入、刪除或改寫)`);
-    if (key && !macEqual(ev.mac, mac(key, macPayload(ev)))) problems.push(`seq ${ev.seq}: mac 不符(不是持有金鑰的 dp 寫的,或內容被改過)`);
+    if (key && !macEqual(ev.mac, mac(key, macPayload(ev)))) problems.push(`seq ${ev.seq}: mac 不符(不是持有金鑰的 dlm 寫的,或內容被改過)`);
   });
   const note = started && !key ? `找不到金鑰 ${keyPath()},只驗了 prev_hash 鏈,沒驗 mac` : null;
   return { problems, note };

@@ -70,7 +70,7 @@ const NO_ROOT_FLAG: Record<string, string> = {
 /** `check-dag.ts` 不套下面既有 gate 的共用探針表,放在專屬 describe——不是因為它的退出碼語意不同
  * (1.11.0 起它跟其他掃描器一樣,零輸入一律 FAIL),而是它**不讀 `gates.config.json`**,探針 (c)
  * (malformed config)對它天生不適用,套上去驗的東西是假的。 */
-// v2:check-dag / check-skills-mirror 已由 `dp check dag` / `dp check mirror` 取代(零依賴、有陽性對照)。
+// v2:check-dag / check-skills-mirror 已由 `dlm check dag` / `dlm check mirror` 取代(零依賴、有陽性對照)。
 const SPECIAL_ZERO_INPUT_GATE_FILES: string[] = [];
 
 /** `scripts/` 底下所有 `check-*.ts`(不含 `.test.ts`)——目錄列舉,不是手抄清單,

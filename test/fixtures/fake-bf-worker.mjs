@@ -6,11 +6,11 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const env = JSON.parse(readFileSync('.dp/envelope.json', 'utf8'));
+const env = JSON.parse(readFileSync('.dlm/envelope.json', 'utf8'));
 const mode = process.env.FAKE_MODE ?? 'good';
 const sh = (c) => { try { execSync(c, { stdio: 'pipe' }); return 0; } catch (e) { return e.status ?? 1; } };
 const write = (p, t) => { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, t); };
-const report = (r) => writeFileSync('.dp/report.json', JSON.stringify({ dispatch_id: env.dispatch_id, ...r }, null, 2));
+const report = (r) => writeFileSync('.dlm/report.json', JSON.stringify({ dispatch_id: env.dispatch_id, ...r }, null, 2));
 const done = (summary, text) => {
   const cmd = env.acceptance[0].cmd;
   report({ kind: 'done', summary, claims: [{ text, evidence: { cmd, exit: sh(cmd) } }] });

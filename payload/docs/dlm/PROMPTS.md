@@ -17,5 +17,5 @@
 - 規則、工單、提醒裡有未填的 `{{PLACEHOLDER}}` → 拒絕送出。
 - 平台專屬段落用 `<!-- CLAUDE-ONLY-BEGIN -->…<!-- CLAUDE-ONLY-END -->`,依 `platform` 設定剝除。
 - 超過 `limits.prompt_bytes` → 拒絕送出(切片太大應該讓 script 先篩)。
-- 規則檔各自不超過 `limits.rules_bytes`(`dp check rule-size`)。
+- 規則檔各自不超過 `limits.rules_bytes`(`dlm check rule-size`)。
 - 看實際送出的內容:`ledger/dispatch/<d-id>/prompt.md`。

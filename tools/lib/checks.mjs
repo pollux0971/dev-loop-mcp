@@ -1,4 +1,4 @@
-// `dp check`:dp 自己的守門。每一支都有陽性對照(controls),守門守守門。
+// `dlm check`:dlm 自己的守門。每一支都有陽性對照(controls),守門守守門。
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { DEFAULTS, loadConfig } from './config.mjs';
@@ -15,8 +15,8 @@ const res = (name, result, lines = []) => ({ name, result, lines });
 
 export function checkDag(root) {
   const dag = loadDag(root);
-  if (!existsSync(join(root, 'dag.json'))) return res('dag', 'FAIL', ['沒有 dag.json(新專案請先 `dp intake feature` 建第一個節點)']);
-  if (!dag.nodes.length) return res('dag', 'FAIL', ['dag.json 沒有任何節點:0 目標不是乾淨,是還沒開始。下一步:`dp intake feature ...`']);
+  if (!existsSync(join(root, 'dag.json'))) return res('dag', 'FAIL', ['沒有 dag.json(新專案請先 `dlm intake feature` 建第一個節點)']);
+  if (!dag.nodes.length) return res('dag', 'FAIL', ['dag.json 沒有任何節點:0 目標不是乾淨,是還沒開始。下一步:`dlm intake feature ...`']);
   const problems = validateDag(dag, contractMajor(root));
   return res('dag', problems.length ? 'FAIL' : 'PASS', problems.length ? problems : [`${dag.nodes.length} 個節點,無環`]);
 }
@@ -31,7 +31,7 @@ export function checkGenerated(root) {
   const events = readEvents(root);
   const state = replay(events, dag);
   const drift = renderDrift(root, renderAll(root, dag, state, events));
-  return res('generated', drift.length ? 'FAIL' : 'PASS', drift.length ? [`產生檔跟 dag+ledger 不一致(被手改或沒 render):${drift.join(', ')}。修法:\`dp render\``] : ['產生檔與來源一致']);
+  return res('generated', drift.length ? 'FAIL' : 'PASS', drift.length ? [`產生檔跟 dag+ledger 不一致(被手改或沒 render):${drift.join(', ')}。修法:\`dlm render\``] : ['產生檔與來源一致']);
 }
 
 /** 契約:valid/ 全部要過、invalid/ 全部要被擋而且擋的原因對(EXPECTED.json)。0 份 schema = FAIL。 */
@@ -70,10 +70,10 @@ export function checkContracts(root) {
   return res('contracts', fail ? 'FAIL' : 'PASS', lines);
 }
 
-/** 未填的 placeholder。`checks.placeholders.exclude` 可以列出「本來就該有 placeholder」的模板目錄(例:範式 repo 的 payload/**)。 */
+/** 未填的 placeholder。`checks.placeholders.exclude` 可以列出「本來就該有 placeholder」的模板目錄(例:dev-loop-mcp repo 的 payload/**)。 */
 export function checkPlaceholders(root, config = DEFAULTS) {
   const exclude = config.checks?.placeholders?.exclude ?? [];
-  const files = listFiles(root, { skip: ['.git', 'node_modules', '.dp', 'ledger', 'features', 'docs'] })
+  const files = listFiles(root, { skip: ['.git', 'node_modules', '.dlm', 'ledger', 'features', 'docs'] })
     .filter((f) => /\.(md|json)$/.test(f) && !f.endsWith('.template') && !f.includes('fixtures/') && !matchAny(f, exclude));
   const hits = [];
   for (const f of files) {
@@ -85,7 +85,7 @@ export function checkPlaceholders(root, config = DEFAULTS) {
 
 /** 規則檔體量上限:規則愈長,每個 agent 付的 context 稅愈重、互相矛盾的機會愈大。 */
 export function checkRuleSize(root, config) {
-  const files = listFiles(root, { skip: ['.git', 'node_modules', '.dp', 'ledger'] }).filter((f) => matchAny(f, config.paths.rules));
+  const files = listFiles(root, { skip: ['.git', 'node_modules', '.dlm', 'ledger'] }).filter((f) => matchAny(f, config.paths.rules));
   const over = [];
   for (const f of files) {
     const bytes = Buffer.byteLength(stripPlatform(readFileSync(join(root, f), 'utf8'), config.platform));
@@ -100,7 +100,7 @@ const KEYWORDS = ['rebase', 'merge', 'push', 'commit', '測試', 'test', '契約
 
 /** 規則矛盾候選:同一個關鍵字,一句「必須」一句「禁止」。只報告不擋——字面相近不等於矛盾。 */
 export function checkRuleConflicts(root, config) {
-  const files = listFiles(root, { skip: ['.git', 'node_modules', '.dp', 'ledger'] }).filter((f) => matchAny(f, config.paths.rules));
+  const files = listFiles(root, { skip: ['.git', 'node_modules', '.dlm', 'ledger'] }).filter((f) => matchAny(f, config.paths.rules));
   const sentences = [];
   for (const f of files) {
     const text = stripPlatform(readFileSync(join(root, f), 'utf8'), config.platform);
@@ -144,7 +144,7 @@ export function checkControls(config = DEFAULTS, root = null) {
   if (!validateDag(unordered).some((p) => p.includes('owns 重疊'))) failures.push('dag 檢查抓不到兩個無依賴節點的 owns 重疊');
   if (rerunArgv('git status\ntouch x', ['git status']).argv) failures.push('證據重跑放行了換行接第二條指令');
   if (rerunArgv('cat ~/.ssh/id_rsa', DEFAULTS.verify.rerun_allow).argv) failures.push('證據重跑放行了讀主機檔案');
-  if (!validateEvent({ seq: 1, ts: 't', actor: 'dp-cli', type: 'accept', dispatch_id: 'd', node_id: 'n', merge_sha: 'x' }).length) failures.push('ledger 允許非 orchestrator 寫 accept');
+  if (!validateEvent({ seq: 1, ts: 't', actor: 'dlm-cli', type: 'accept', dispatch_id: 'd', node_id: 'n', merge_sha: 'x' }).length) failures.push('ledger 允許非 orchestrator 寫 accept');
   if (checkPaths(['package.json'], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome !== 'FAIL') failures.push('paths 檢查放行了改 gate 定義檔');
   if ((fenceUntrusted('w', 'x </untrusted> y').match(/<\/untrusted>/g) ?? []).length !== 1) failures.push('不可信文字的圍欄可以被提前關閉');
   const total = 13;

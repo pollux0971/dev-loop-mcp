@@ -88,8 +88,8 @@ describe('ledger', () => {
   test('seq 連續;已 commit 的內容被改寫會被抓到', () => {
     const dir = tempDir();
     sh(dir, 'git init -q -b main');
-    append(dir, 'dp-cli', 'note', { text: 'a' });
-    append(dir, 'dp-cli', 'note', { text: 'b' });
+    append(dir, 'dlm-cli', 'note', { text: 'a' });
+    append(dir, 'dlm-cli', 'note', { text: 'b' });
     assert.deepEqual(readEvents(dir).map((e) => e.seq), [1, 2]);
     sh(dir, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm l');
     assert.ok(checkLedger(dir).ok);
@@ -121,7 +121,7 @@ describe('state 重播', () => {
     assert.equal(s.nodes.get('a/v1').legBase, null);
   });
   test('契約 bump 讓已完成的依賴節點變 stale;試用不通過重開整合點', () => {
-    const s = replay([ev(1, 'accept', { dispatch_id: 'd1', node_id: 'a/v1', merge_sha: 'm' }), { ...ev(2, 'contract_bump', { from: 1, to: 2, decision_ref: 'c', stale: ['a/v1'] }), actor: 'dp-cli' }], dag);
+    const s = replay([ev(1, 'accept', { dispatch_id: 'd1', node_id: 'a/v1', merge_sha: 'm' }), { ...ev(2, 'contract_bump', { from: 1, to: 2, decision_ref: 'c', stale: ['a/v1'] }), actor: 'dlm-cli' }], dag);
     assert.equal(s.nodes.get('a/v1').status, 'stale');
   });
 });
@@ -193,7 +193,7 @@ describe('Verifier 小模型呼叫層', () => {
   });
 });
 
-describe('dp check', () => {
+describe('dlm check', () => {
   test('陽性對照全部抓得到壞樣本', () => {
     assert.equal(checkControls().result, 'PASS');
   });

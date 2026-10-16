@@ -30,7 +30,7 @@ export function resolveRoot(): string {
 
 export const ROOT: string = resolveRoot();
 
-const ISOLATED_TEMP_PACKAGE_JSON = '{"name":"dev-paradigm-test-fixture","private":true,"type":"commonjs"}';
+const ISOLATED_TEMP_PACKAGE_JSON = '{"name":"dev-loop-test-fixture","private":true,"type":"commonjs"}';
 
 /** 建立隔離且可觀測的測試 fixture 根目錄,並用自己的 package.json 固定模組型別。 */
 export function makeIsolatedTempDir(prefix: string, base: string = tmpdir()): string {

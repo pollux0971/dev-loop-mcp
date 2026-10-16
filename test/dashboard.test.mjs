@@ -10,7 +10,7 @@ import { run } from '../tools/lib/util.mjs';
 
 after(cleanup);
 
-describe('dp dashboard(唯讀主控台)', () => {
+describe('dlm dashboard(唯讀主控台)', () => {
   test('一打開看哪一頁:空專案、只有提案 → 規劃頁;批准後有節點可以派工 → 主控台;頁面照 initial_view 開', () => {
     const proj = makeProject();
     assert.equal(dashboardData(proj).initial_view, 'planning', '空專案');
@@ -56,19 +56,19 @@ describe('dp dashboard(唯讀主控台)', () => {
 
   test('資料裡的 </script> 關不掉 script 標籤', () => {
     const html = renderDashboard({ project: 'x', nodes: [], timeline: [{ text: '</script><script>alert(1)</script>' }] });
-    const body = html.split('id="dp-data">')[1].split('</script>')[0];
+    const body = html.split('id="dlm-data">')[1].split('</script>')[0];
     assert.ok(!body.includes('<'), '嵌入的 JSON 不應含 <');
     assert.deepEqual(JSON.parse(body).timeline[0].text, '</script><script>alert(1)</script>');
   });
 
-  test('dp dashboard 寫出 .dp/dashboard.html;--serve 只回 GET', async () => {
+  test('dlm dashboard 寫出 .dlm/dashboard.html;--serve 只回 GET', async () => {
     const proj = makeProject();
-    const r = run(`node ${join(REPO, 'tools', 'dp.mjs')} dashboard`, { cwd: proj });
+    const r = run(`node ${join(REPO, 'tools', 'dlm.mjs')} dashboard`, { cwd: proj });
     assert.equal(r.code, 0, r.stderr);
-    const out = join(proj, '.dp', 'dashboard.html');
+    const out = join(proj, '.dlm', 'dashboard.html');
     assert.ok(existsSync(out));
-    assert.match(readFileSync(out, 'utf8'), /id="dp-data"/);
-    assert.equal(run('git status --porcelain', { cwd: proj }).stdout.trim(), '', '.dp/ 不進 git');
+    assert.match(readFileSync(out, 'utf8'), /id="dlm-data"/);
+    assert.equal(run('git status --porcelain', { cwd: proj }).stdout.trim(), '', '.dlm/ 不進 git');
 
     const server = await serveDashboard(proj, { port: 0, log: () => {} });
     try {
@@ -77,7 +77,7 @@ describe('dp dashboard(唯讀主控台)', () => {
       assert.equal(data.ledger_seq, dashboardData(proj).ledger_seq);
       assert.match(await (await fetch(`${base}/`)).text(), /var LIVE = 5000;/);
       assert.equal((await fetch(`${base}/`, { method: 'POST' })).status, 405);
-      assert.equal((await fetch(`${base}/../dp.config.json`)).status, 404);
+      assert.equal((await fetch(`${base}/../dlm.config.json`)).status, 404);
     } finally {
       server.close();
     }
@@ -85,8 +85,8 @@ describe('dp dashboard(唯讀主控台)', () => {
 
   test('不認得的旗標直接拒絕', () => {
     const proj = makeProject();
-    const r = run(`node ${join(REPO, 'tools', 'dp.mjs')} dashboard --open`, { cwd: proj });
+    const r = run(`node ${join(REPO, 'tools', 'dlm.mjs')} dashboard --open`, { cwd: proj });
     assert.notEqual(r.code, 0);
-    assert.ok(!existsSync(join(proj, '.dp', 'dashboard.html')));
+    assert.ok(!existsSync(join(proj, '.dlm', 'dashboard.html')));
   });
 });

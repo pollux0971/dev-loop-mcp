@@ -9,8 +9,8 @@
 // v4:paths 不再寫死。
 //   1. 命令列有給 feature 路徑(`npm run accept -- features/x/v1.feature`)時,只跑命令列給的。
 //      cucumber 會把設定檔的 paths 和命令列的路徑「合併」,v3 的單一節點驗收因此會連別的節點的場景一起跑。
-//   2. 沒給路徑時跑全部,但跳過 .dp/pending-features.json 列的檔:已批准、但節點還沒完成的 gherkin
-//      (它們在主線上,實作還沒合併,一定是紅的)。這份清單由 dp 維護,不要手改。
+//   2. 沒給路徑時跑全部,但跳過 .dlm/pending-features.json 列的檔:已批准、但節點還沒完成的 gherkin
+//      (它們在主線上,實作還沒合併,一定是紅的)。這份清單由 dlm 維護,不要手改。
 //      v3 實測:兩個以上節點同時在做時,全 gate 的 accept 因為彼此未完成的場景永遠紅,互相卡死。
 // 注意:paths 陣列**不支援** `!` 負向排除(PITFALLS P-07),所以在這裡自己列檔。
 // _template 的樣板檔用 .feature.template 副檔名,自然不會被 *.feature 掃到;複製後要改名。
@@ -30,7 +30,7 @@ function walk(dir) {
 
 function pendingFeatures() {
   try {
-    return new Set(JSON.parse(readFileSync('.dp/pending-features.json', 'utf8')));
+    return new Set(JSON.parse(readFileSync('.dlm/pending-features.json', 'utf8')));
   } catch {
     return new Set();
   }

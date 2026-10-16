@@ -1,13 +1,14 @@
-// `dp setup`:互動引導。一題一題問,偵測得到的就當預設值;最後寫 dp.config.json、裝好 hooks、commit、跑 doctor。
+// `dlm setup`:互動引導。一題一題問,偵測得到的就當預設值;最後寫 dlm.config.json、裝好 hooks、commit、跑 doctor。
 // 也可以不互動:--yes(全部用預設)或 --answers file.json({ 題目 id: 答案 })。
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TEST_PATTERNS, brownfieldGates, detectProject } from './brownfield.mjs';
 import { DEFAULTS, loadConfig } from './config.mjs';
 import { hostHas } from './doctor.mjs';
-import { DP_CLAUDE_HOOKS } from './hooks.mjs';
+import { DLM_CLAUDE_HOOKS } from './hooks.mjs';
+import { assertNotLegacy } from './legacy.mjs';
 import { git } from './git.mjs';
-import { DpError, atomicWrite, readJson, run, stableJson, tail, writeJson } from './util.mjs';
+import { DlmError, atomicWrite, readJson, run, stableJson, tail, writeJson } from './util.mjs';
 
 /**
  * 預設的 worker / critic 指令(Claude Code)。headless 下沒被允許的工具會直接被拒,所以明確放行 Bash;
@@ -15,7 +16,7 @@ import { DpError, atomicWrite, readJson, run, stableJson, tail, writeJson } from
  * worker 在沒有 .git 的副本裡施工(見 sandbox.mjs)。
  */
 export const CLAUDE_WORKER_DENY = ['Bash(rm -rf *)', 'Bash(rm -fr *)', 'Bash(sudo *)'];
-export const CLAUDE_WORKER_CMD = `claude -p --output-format json --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools ${CLAUDE_WORKER_DENY.map((r) => `"${r}"`).join(' ')} < "$DP_PROMPT"`;
+export const CLAUDE_WORKER_CMD = `claude -p --output-format json --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools ${CLAUDE_WORKER_DENY.map((r) => `"${r}"`).join(' ')} < "$DLM_PROMPT"`;
 export const CLAUDE_CRITIC_TOOLS = ['Read', 'Grep', 'Glob', 'Bash(npm test*)', 'Bash(npm run *)', 'Bash(npx vitest*)', 'Bash(npx cucumber-js*)', 'Bash(git diff*)', 'Bash(git log*)', 'Bash(git show*)'];
 // v4:v3 的預設沒給任何工具權限,headless 下 Critic 連 Read 都會被拒,「實際確認」做不到;改成唯讀工具 + 跑測試
 export const CLAUDE_CRITIC_CMD = `claude -p --output-format json --allowedTools ${CLAUDE_CRITIC_TOOLS.map((t) => `"${t}"`).join(' ')} --disallowedTools "Edit" "Write" "NotebookEdit"`;
@@ -55,18 +56,21 @@ function asker(ask, log) {
   return { choose, input, yesno };
 }
 
-/** 把 dp 的 hooks 合併進專案既有的 .claude/settings.json(已經有就不重複加)。回傳是否有改。 */
+/** 把 dlm 的 hooks 合併進專案既有的 .claude/settings.json(已經有就不重複加)。回傳是否有改。 */
 export function mergeClaudeHooks(root) {
-  return mergeHooks(join(root, '.claude', 'settings.json'), DP_CLAUDE_HOOKS);
+  return mergeHooks(join(root, '.claude', 'settings.json'), DLM_CLAUDE_HOOKS);
 }
 
-/** v4.6:把 dp 的 MCP server 加進專案的 .mcp.json(Claude Code 的專案層 MCP 設定;已經有就不動)。 */
+/** v4.6:把 dlm 的 MCP server 加進專案的 .mcp.json(Claude Code 的專案層 MCP 設定;已經有就不動)。 */
 export function mergeMcpJson(root) {
   const p = join(root, '.mcp.json');
   const cur = existsSync(p) ? readJson(p) : {};
   cur.mcpServers ??= {};
-  if (cur.mcpServers.dp) return false;
-  cur.mcpServers.dp = { command: 'node', args: ['tools/dp.mjs', 'mcp'] };
+  // the entry from before 4.8.0 (dp → tools/dp.mjs) would offer the same tools twice
+  const legacy = cur.mcpServers.dp && JSON.stringify(cur.mcpServers.dp).includes('tools/dp.mjs');
+  if (legacy) delete cur.mcpServers.dp;
+  if (cur.mcpServers.dlm && !legacy) return false;
+  cur.mcpServers.dlm ??= { command: 'node', args: ['tools/dlm.mjs', 'mcp'] };
   writeJson(p, cur);
   return true;
 }
@@ -77,7 +81,7 @@ function mergeHooks(p, mine) {
   cur.hooks ??= {};
   for (const [event, entries] of Object.entries(mine)) {
     cur.hooks[event] ??= [];
-    const already = JSON.stringify(cur.hooks[event]).includes('dp.mjs\\" hook') || JSON.stringify(cur.hooks[event]).includes('dp.mjs hook');
+    const already = JSON.stringify(cur.hooks[event]).includes('dlm.mjs\\" hook') || JSON.stringify(cur.hooks[event]).includes('dlm.mjs hook');
     if (!already) { cur.hooks[event].push(...entries); changed = true; }
   }
   if (changed) writeJson(p, cur);
@@ -85,16 +89,17 @@ function mergeHooks(p, mine) {
 }
 
 export async function setup(root, { ask, detect, project: projectDetect, log = console.log } = {}) {
-  if (!existsSync(join(root, 'tools', 'dp.mjs')) || !existsSync(join(root, '.dp-install.json'))) {
-    throw new DpError(`${root} 還沒裝 dp。先跑:node <dev-paradigm-mcp>/tools/dp.mjs init <目錄>(既有專案加 --existing)`);
+  assertNotLegacy(root);
+  if (!existsSync(join(root, 'tools', 'dlm.mjs')) || !existsSync(join(root, '.dlm-install.json'))) {
+    throw new DlmError(`${root} 還沒裝 dlm。先跑:node <dev-loop-mcp>/tools/dlm.mjs init <目錄>(既有專案加 --existing)`);
   }
   const env = detect ?? detectEnvironment();
   const { choose, input, yesno } = asker(ask, log);
-  const raw = readJson(join(root, 'dp.config.json'), {});
+  const raw = readJson(join(root, 'dlm.config.json'), {});
   const cur = (() => { try { return loadConfig(root); } catch { return DEFAULTS; } })();
-  const written = ['dp.config.json'];
+  const written = ['dlm.config.json'];
 
-  log('\n— dp setup —  按 Enter 用預設值。隨時可以重跑。\n');
+  log('\n— dlm setup —  按 Enter 用預設值。隨時可以重跑。\n');
 
   // 0. v4.5:greenfield / brownfield。偵測到既有程式就預設 brownfield
   const proj = projectDetect ?? detectProject(root);
@@ -120,7 +125,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     { key: 'custom', label: '其他(自己填指令)' },
   ], cur.agents.worker.cmd && cur.platform !== 'claude' ? 'custom' : 'claude');
   // v2 的 Claude 預設(只有 acceptEdits)在 headless 下跑不了任何指令,視同沒設定,換成新的預設
-  const v2ClaudeDefault = cur.agents.worker.cmd === 'claude -p --output-format json --permission-mode acceptEdits < "$DP_PROMPT"';
+  const v2ClaudeDefault = cur.agents.worker.cmd === 'claude -p --output-format json --permission-mode acceptEdits < "$DLM_PROMPT"';
   if (v2ClaudeDefault) log('  你原本的 Claude 指令是 v2 預設(acceptEdits),headless 下 worker 跑不了測試,預設值已換成新的寫法。');
   const keepOld = cur.agents.worker.cmd && cur.platform === platform && !v2ClaudeDefault;
   // v4.7.3:worker 已經用帳號(沒有自己的 cmd,跑帳號那個 CLI 的預設指令)→ 預設維持。以前重跑 setup 一律寫進 Claude 的固定指令,
@@ -130,11 +135,11 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   const workerDefault = viaAccounts ? VIA_ACCOUNTS
     : platform === 'custom' ? (cur.agents.worker.cmd ?? '') : (keepOld ? cur.agents.worker.cmd : CLAUDE_WORKER_CMD);
   let workerCmd = await input('worker_cmd', viaAccounts
-    ? `施工 AI 的啟動指令(現在用帳號 ${pool.join('、')} 的預設指令,按 Enter 維持;要換帳號用 dp account use worker)`
+    ? `施工 AI 的啟動指令(現在用帳號 ${pool.join('、')} 的預設指令,按 Enter 維持;要換帳號用 dlm account use worker)`
     : '施工 AI 的啟動指令(不懂就按 Enter)', workerDefault);
   while (!workerCmd) workerCmd = await input('worker_cmd', '一定要有施工指令', '');
   const keepAccounts = viaAccounts && workerCmd === VIA_ACCOUNTS;
-  log('  worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dp/SECURITY.md)。');
+  log('  worker 在沒有 .git 的副本裡施工,程式以你的身分在這台電腦上執行(見 docs/dlm/SECURITY.md)。');
 
   // 2. Verifier
   const verifier = { ...(raw.agents?.verifier ?? {}) };
@@ -191,20 +196,20 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     const tests = [...new Set([...(raw.paths?.tests ?? DEFAULTS.paths.tests), ...(TEST_PATTERNS[proj.language] ?? [])])];
     next.paths = { ...(raw.paths ?? {}), tests };
   }
-  const before = existsSync(join(root, 'dp.config.json')) ? readFileSync(join(root, 'dp.config.json'), 'utf8') : null;
-  writeJson(join(root, 'dp.config.json'), next);
+  const before = existsSync(join(root, 'dlm.config.json')) ? readFileSync(join(root, 'dlm.config.json'), 'utf8') : null;
+  writeJson(join(root, 'dlm.config.json'), next);
   try {
     loadConfig(root);
   } catch (e) {
-    if (before !== null) atomicWrite(join(root, 'dp.config.json'), before);
-    throw new DpError(`產生的設定不合法,已還原:${e.message}`);
+    if (before !== null) atomicWrite(join(root, 'dlm.config.json'), before);
+    throw new DlmError(`產生的設定不合法,已還原:${e.message}`);
   }
 
   // 4. hooks
   if (next.platform === 'claude') {
-    if (mergeClaudeHooks(root)) { written.push('.claude/settings.json'); log('✓ 已把 dp 的 hooks 加進 .claude/settings.json(你原本的設定都還在)'); }
-    // v4.7:MCP 改成這台電腦裝一次(dp mcp install),不再寫進每個專案的 .mcp.json
-    log('提示:要讓 Claude Code 直接呼叫 dp(所有專案共用一個 MCP),跑一次 node tools/dp.mjs mcp install');
+    if (mergeClaudeHooks(root)) { written.push('.claude/settings.json'); log('✓ 已把 dlm 的 hooks 加進 .claude/settings.json(你原本的設定都還在)'); }
+    // v4.7:MCP 改成這台電腦裝一次(dlm mcp install),不再寫進每個專案的 .mcp.json
+    log('提示:要讓 Claude Code 直接呼叫 dlm(所有專案共用一個 MCP),跑一次 node tools/dlm.mjs mcp install');
   } else {
     log(`提醒:${next.platform} 沒有 hooks。Front 轉達的決定照樣記錄,只是不會附上你原話的簽章。`);
   }
@@ -230,12 +235,12 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   if (await yesno('commit', `把設定 commit 起來?(${written.join('、')})`, true)) {
     git(root, `add -- ${written.map((f) => `'${f}'`).join(' ')}`);
     if (git(root, 'diff --cached --quiet', { allowFail: true }).code !== 0) {
-      const r = git(root, 'commit --quiet -m "dp setup"', { allowFail: true });
-      if (r.code !== 0) git(root, '-c user.name=dp -c user.email=dp@localhost commit --quiet -m "dp setup"');
+      const r = git(root, 'commit --quiet -m "dlm setup"', { allowFail: true });
+      if (r.code !== 0) git(root, '-c user.name=dlm -c user.email=dlm@localhost commit --quiet -m "dlm setup"');
       committed = true;
     }
   }
-  if (mode === 'brownfield') log('\n既有專案的下一步:跑 `node tools/dp.mjs onboard`(記下測試基線、產生 docs/AS-IS.md 草稿與 ROADMAP v0),再請 Front 照 brownfield-onboard 補完現況。');
+  if (mode === 'brownfield') log('\n既有專案的下一步:跑 `node tools/dlm.mjs onboard`(記下測試基線、產生 docs/AS-IS.md 草稿與 ROADMAP v0),再請 Front 照 brownfield-onboard 補完現況。');
   log(`\n✓ 設定寫好了:${stableJson({ mode, platform: next.platform, verifier: verifier.backend === 'cmd' ? (verifier.cmd === CLAUDE_VERIFIER_CMD ? 'claude-haiku' : 'cmd') : 'none', autonomy: `L${level}` }).replace(/\n\s*/g, ' ')}`);
   return { config: next, written, committed };
 }

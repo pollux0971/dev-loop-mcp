@@ -4,8 +4,8 @@
   "type": "module",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "check:dp": "node tools/dp.mjs check",
-    "gates": "node tools/dp.mjs gates",
+    "check:dlm": "node tools/dlm.mjs check",
+    "gates": "node tools/dlm.mjs gates",
     "test": "vitest run",
     "test:scripts": "vitest run --config vitest.scripts.config.ts",
     "typecheck": "tsc --noEmit",

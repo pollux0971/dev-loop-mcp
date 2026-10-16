@@ -1,5 +1,5 @@
 // 已批准、但節點還沒完成的 gherkin。它們在主線上(intake 批准時就 commit 了),實作還沒合併,一定是紅的。
-// payload 的 cucumber.js 讀 .dp/pending-features.json 跳過它們;dp 在 tick、merge-tree、`dp gates` 前重寫這份清單。
+// payload 的 cucumber.js 讀 .dlm/pending-features.json 跳過它們;dlm 在 tick、merge-tree、`dlm gates` 前重寫這份清單。
 // v3 實測:兩個以上節點同時在做時,全 gate 的 accept 因為彼此未完成的場景永遠紅,所有合併互相卡死。
 import { join } from 'node:path';
 import { atomicWrite, ensureDir } from './util.mjs';
@@ -14,6 +14,6 @@ export function pendingFeatures(dag, state, except = null) {
 }
 
 export function writePendingFeatures(dir, list) {
-  ensureDir(join(dir, '.dp'));
-  atomicWrite(join(dir, '.dp', 'pending-features.json'), `${JSON.stringify(list, null, 2)}\n`);
+  ensureDir(join(dir, '.dlm'));
+  atomicWrite(join(dir, '.dlm', 'pending-features.json'), `${JSON.stringify(list, null, 2)}\n`);
 }

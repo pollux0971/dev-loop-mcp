@@ -1,9 +1,9 @@
-# dp init 只建立一次、dp upgrade 永遠不覆蓋的檔(這些是你的專案內容,不是範式)
+# dlm init 只建立一次、dlm upgrade 永遠不覆蓋的檔(這些是你的專案內容,不是 dlm 的)
 AGENTS.md
 AUTONOMY.md
 CLAUDE.md
-dp.config.json
-# 你可能已經有自己的 Claude Code 設定;dp 的 hooks 只在第一次安裝時寫入,之後請自己合併(見 docs/dp/SECURITY.md)
+dlm.config.json
+# 你可能已經有自己的 Claude Code 設定;dlm 的 hooks 只在第一次安裝時寫入,之後請自己合併(見 docs/dlm/SECURITY.md)
 .claude/settings.json
 dag.json
 package.json

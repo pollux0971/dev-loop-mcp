@@ -1,4 +1,4 @@
-// 測試用的假 worker:讀 .dp/envelope.json,依 FAKE_MODE 與棒別做事,最後寫 .dp/report.json。
+// 測試用的假 worker:讀 .dlm/envelope.json,依 FAKE_MODE 與棒別做事,最後寫 .dlm/report.json。
 //   good       正常施工
 //   forbidden  實作棒順手改了測試檔(越界)
 //   lie        實作寫錯,卻宣稱驗收 exit 0
@@ -20,7 +20,7 @@ import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const env = JSON.parse(readFileSync('.dp/envelope.json', 'utf8'));
+const env = JSON.parse(readFileSync('.dlm/envelope.json', 'utf8'));
 const mode = process.env.FAKE_MODE ?? 'good';
 const cap = env.node_id.split('/')[0];
 const isChild = /\/v\d+\.\d+$/.test(env.node_id);
@@ -40,16 +40,16 @@ const write = (p, text) => {
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, text);
 };
-// 新流程 worker 在沒有 .git 的沙箱副本裡,不 commit(dp 會收);舊流程(直接在 worktree)才 commit。
-// 看 .git/HEAD 而不是 .git:git-hook 模式自己建了 .git/hooks,那不是 repo;dp 設了 GIT_CEILING_DIRECTORIES,git 也不會往上找到專案的 repo
+// 新流程 worker 在沒有 .git 的沙箱副本裡,不 commit(dlm 會收);舊流程(直接在 worktree)才 commit。
+// 看 .git/HEAD 而不是 .git:git-hook 模式自己建了 .git/hooks,那不是 repo;dlm 設了 GIT_CEILING_DIRECTORIES,git 也不會往上找到專案的 repo
 const commit = (msg) => {
   if (existsSync('.git/HEAD')) execSync(`git add -A && (git diff --cached --quiet || git -c user.name=w -c user.email=w@w commit -qm "${msg}")`);
 };
-const report = (r) => writeFileSync('.dp/report.json', JSON.stringify({ dispatch_id: env.dispatch_id, ...r }, null, 2));
+const report = (r) => writeFileSync('.dlm/report.json', JSON.stringify({ dispatch_id: env.dispatch_id, ...r }, null, 2));
 
 // v4.6:FAKE_ENV_LOG = 每次啟動記下拿到的帳號環境變數;LIMIT_ACCOUNT = 用這個帳號時模擬額度用完
-if (process.env.FAKE_ENV_LOG) appendFileSync(process.env.FAKE_ENV_LOG, `${JSON.stringify({ account: process.env.DP_ACCOUNT ?? null, home: process.env.CLAUDE_CONFIG_DIR ?? null, api_key: 'ANTHROPIC_API_KEY' in process.env })}\n`);
-if (process.env.LIMIT_ACCOUNT && process.env.DP_ACCOUNT === process.env.LIMIT_ACCOUNT) {
+if (process.env.FAKE_ENV_LOG) appendFileSync(process.env.FAKE_ENV_LOG, `${JSON.stringify({ account: process.env.DLM_ACCOUNT ?? null, home: process.env.CLAUDE_CONFIG_DIR ?? null, api_key: 'ANTHROPIC_API_KEY' in process.env })}\n`);
+if (process.env.LIMIT_ACCOUNT && process.env.DLM_ACCOUNT === process.env.LIMIT_ACCOUNT) {
   console.log(`Claude AI usage limit reached|${Math.floor(Date.now() / 1000) + 3 * 3600}`);
   process.exit(1);
 }
@@ -106,7 +106,7 @@ if (mode === 'escalate') {
   }
   const body = mode === 'lie' ? 'return a - b;' : mode === 'hardcode' ? 'return 5;' : 'return a + b;';
   write(impl, `export function run(a, b) { ${body} }\n`);
-  if (mode === 'git-hook') write('.git/hooks/post-merge', '#!/bin/sh\ntouch /tmp/dp-pwned\n');
+  if (mode === 'git-hook') write('.git/hooks/post-merge', '#!/bin/sh\ntouch /tmp/dlm-pwned\n');
   if (mode === 'ignored') write('reports/leak.txt', 'x\n');
   if (mode === 'nm' && existsSync('node_modules/vitest/index.js')) appendFileSync('node_modules/vitest/index.js', '\n// 永遠回報通過\n');
   if (mode === 'forbidden') appendFileSync(testFile, '// 偷改測試\n');

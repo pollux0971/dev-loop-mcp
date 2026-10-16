@@ -1,8 +1,8 @@
-// v4.7 操作層:CLI、HTTP API(dp hub)、`dp op` 共用的那一份邏輯。每個操作吃一個 JSON 物件、回一個 JSON 物件。
+// v4.7 操作層:CLI、HTTP API(dlm hub)、`dlm op` 共用的那一份邏輯。每個操作吃一個 JSON 物件、回一個 JSON 物件。
 // CLI 把結果印成給人看的字;API 原樣回 JSON。
 //
-// 一個專案的操作永遠由「那個專案自己的 tools/dp.mjs」執行(dp hub 透過 `dp op` 呼叫),
-// 所以好幾個專案裝的 dp 版本不一樣也不會互相讀錯格式。
+// 一個專案的操作永遠由「那個專案自己的 tools/dlm.mjs」執行(dlm hub 透過 `dlm op` 呼叫),
+// 所以好幾個專案裝的 dlm 版本不一樣也不會互相讀錯格式。
 import { spawn } from 'node:child_process';
 import { existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -23,13 +23,13 @@ import { BASELINE, onboard, recordBaseline } from './brownfield.mjs';
 import { CLAUDE_CRITIC_CMD, CLAUDE_VERIFIER_CMD, CLAUDE_WORKER_CMD, setup } from './setup.mjs';
 import { computeSnapshot } from './snapshot.mjs';
 import { replay } from './state.mjs';
-import { DpError, ensureDir, lockHolder, pidAlive, readJson, tryLock } from './util.mjs';
+import { DlmError, ensureDir, lockHolder, pidAlive, readJson, tryLock } from './util.mjs';
 
-const DP = fileURLToPath(new URL('../dp.mjs', import.meta.url));
-/** 這一份 dp 的版本:dev-paradigm-mcp repo 裡看 VERSION;裝進專案的看 .dp-install.json。 */
+const DLM = fileURLToPath(new URL('../dlm.mjs', import.meta.url));
+/** 這一份 dlm 的版本:dev-loop-mcp repo 裡看 VERSION;裝進專案的看 .dlm-install.json。 */
 function readVersion() {
   try { return readFileSync(new URL('../../VERSION', import.meta.url), 'utf8').trim(); } catch { /* 裝進專案的沒有 VERSION */ }
-  try { return JSON.parse(readFileSync(new URL('../../.dp-install.json', import.meta.url), 'utf8')).version; } catch { return 'unknown'; }
+  try { return JSON.parse(readFileSync(new URL('../../.dlm-install.json', import.meta.url), 'utf8')).version; } catch { return 'unknown'; }
 }
 export const VERSION = readVersion();
 
@@ -45,13 +45,13 @@ const verbatimOf = (a) => (a.verbatim === true ? '' : text(a.verbatim));
 
 // ------------------------------------------------------------------ 背景迴圈
 
-export const runLockPath = (root) => join(root, '.dp', 'run.lock');
-export const runStopPath = (root) => join(root, '.dp', 'run.stop');
+export const runLockPath = (root) => join(root, '.dlm', 'run.lock');
+export const runStopPath = (root) => join(root, '.dlm', 'run.stop');
 
 export function loopPid(root) {
   const held = lockHolder(runLockPath(root));
   if (held) return held;
-  const legacy = join(root, '.dp', 'run.pid');
+  const legacy = join(root, '.dlm', 'run.pid');
   if (!existsSync(legacy)) return null;
   const pid = Number(readFileSync(legacy, 'utf8').trim());
   return pidAlive(pid) ? pid : null;
@@ -62,17 +62,17 @@ export function loopStatus(root) {
   return { running: !!pid, pid: pid ?? null, stopping: !!pid && existsSync(runStopPath(root)) };
 }
 
-/** 在背景啟動 dp run;等到它真的拿到鎖才回(最多 10 秒),所以緊接著再呼叫一次一定是「已經在跑」。 */
+/** 在背景啟動 dlm run;等到它真的拿到鎖才回(最多 10 秒),所以緊接著再呼叫一次一定是「已經在跑」。 */
 export async function loopStart(root, { interval = 60, maxTicks = null } = {}) {
   const running = loopPid(root);
-  if (running) throw new DpError(`背景迴圈已經在跑(pid ${running});同一個 repo 只能有一個`, 2);
+  if (running) throw new DlmError(`背景迴圈已經在跑(pid ${running});同一個 repo 只能有一個`, 2);
   const sec = Number(interval);
-  if (!(sec >= 1 && sec <= 3600)) throw new DpError('interval 要是 1–3600 秒');
-  ensureDir(join(root, '.dp'));
+  if (!(sec >= 1 && sec <= 3600)) throw new DlmError('interval 要是 1–3600 秒');
+  ensureDir(join(root, '.dlm'));
   if (existsSync(runStopPath(root))) unlinkSync(runStopPath(root));
-  const args = [DP, 'run', '--root', root, '--interval', String(sec)];
+  const args = [DLM, 'run', '--root', root, '--interval', String(sec)];
   if (maxTicks) args.push('--max-ticks', String(maxTicks));
-  const out = openSync(join(root, '.dp', 'run.log'), 'a');
+  const out = openSync(join(root, '.dlm', 'run.log'), 'a');
   const child = spawn(process.execPath, args, { cwd: root, detached: true, stdio: ['ignore', out, out] });
   let exited = null;
   child.on('exit', (code) => { exited = code ?? 'signal'; });
@@ -80,23 +80,23 @@ export async function loopStart(root, { interval = 60, maxTicks = null } = {}) {
   const until = Date.now() + 10000;
   while (Date.now() < until) {
     const pid = loopPid(root);
-    if (pid === child.pid) return { started: true, pid, log: '.dp/run.log' };
-    if (pid) throw new DpError(`背景迴圈已經在跑(pid ${pid});同一個 repo 只能有一個`, 2);
-    if (exited === 0) return { started: true, pid: child.pid, log: '.dp/run.log', finished: true };
+    if (pid === child.pid) return { started: true, pid, log: '.dlm/run.log' };
+    if (pid) throw new DlmError(`背景迴圈已經在跑(pid ${pid});同一個 repo 只能有一個`, 2);
+    if (exited === 0) return { started: true, pid: child.pid, log: '.dlm/run.log', finished: true };
     if (exited !== null) {
-      const log = readFileSync(join(root, '.dp', 'run.log'), 'utf8').trim().split('\n').slice(-5).join('\n');
-      throw new DpError(`背景迴圈一啟動就結束了(exit ${exited}):${log}`);
+      const log = readFileSync(join(root, '.dlm', 'run.log'), 'utf8').trim().split('\n').slice(-5).join('\n');
+      throw new DlmError(`背景迴圈一啟動就結束了(exit ${exited}):${log}`);
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  return { started: true, pid: child.pid, log: '.dp/run.log', note: '已啟動,但 10 秒內還沒看到它拿到鎖;看 .dp/run.log' };
+  return { started: true, pid: child.pid, log: '.dlm/run.log', note: '已啟動,但 10 秒內還沒看到它拿到鎖;看 .dlm/run.log' };
 }
 
 /** 請背景迴圈在這一輪做完後結束(不會在合併到一半時被砍)。wait 秒內等它真的結束。 */
 export async function loopStop(root, { wait = 0 } = {}) {
   const pid = loopPid(root);
   if (!pid) return { stopped: true, was_running: false };
-  ensureDir(join(root, '.dp'));
+  ensureDir(join(root, '.dlm'));
   writeFileSync(runStopPath(root), `${new Date().toISOString()}\n`);
   const until = Date.now() + Math.min(Number(wait) || 0, 120) * 1000;
   while (Date.now() < until && loopPid(root)) await new Promise((r) => setTimeout(r, 200));
@@ -135,15 +135,15 @@ export function accountRows(root = null, { login = false } = {}) {
   });
 }
 
-/** 設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)、模型(null / '' = 拿掉)。改 dp.config.json 並 commit。 */
+/** 設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)、模型(null / '' = 拿掉)。改 dlm.config.json 並 commit。 */
 export function setRole(root, { role, accounts = [], model } = {}) {
-  if (!ROLES.includes(role)) throw new DpError(`角色是 ${ROLES.join(' / ')} 其中一個`);
-  if (!Array.isArray(accounts)) throw new DpError('accounts 要是陣列');
+  if (!ROLES.includes(role)) throw new DlmError(`角色是 ${ROLES.join(' / ')} 其中一個`);
+  if (!Array.isArray(accounts)) throw new DlmError('accounts 要是陣列');
   const pool = accounts.map((s) => String(s).trim()).filter(Boolean);
   const registry = loadAccounts();
   const missing = pool.filter((n) => !registry[n]);
-  if (missing.length) throw new DpError(`這台電腦沒有帳號 ${missing.join(', ')}(dp account list)`);
-  const p = join(root, 'dp.config.json');
+  if (missing.length) throw new DlmError(`這台電腦沒有帳號 ${missing.join(', ')}(dlm account list)`);
+  const p = join(root, 'dlm.config.json');
   const before = readFileSync(p, 'utf8');
   const raw = JSON.parse(before);
   raw.agents ??= {};
@@ -151,25 +151,25 @@ export function setRole(root, { role, accounts = [], model } = {}) {
   if (!pool.length) delete cur.accounts;
   if (model === null || model === '' || model === 'none') delete cur.model;
   else if (typeof model === 'string') cur.model = model;
-  // 原本是 dp setup 寫的 Claude 預設指令 → 拿掉,改用帳號那個 CLI 的預設(才換得了 CLI、帶得進 model)
+  // 原本是 dlm setup 寫的 Claude 預設指令 → 拿掉,改用帳號那個 CLI 的預設(才換得了 CLI、帶得進 model)
   const defaults = { worker: CLAUDE_WORKER_CMD, critic: CLAUDE_CRITIC_CMD, verifier: CLAUDE_VERIFIER_CMD };
   if (pool.length && (cur.cmd === defaults[role] || cur.cmd === 'claude -p --output-format json')) cur.cmd = null;
   if (!pool.length && !cur.cmd) {
-    if (role === 'worker') throw new DpError('worker 不用帳號的話要有 agents.worker.cmd(重跑 dp setup 會填 Claude 的預設)');
+    if (role === 'worker') throw new DlmError('worker 不用帳號的話要有 agents.worker.cmd(重跑 dlm setup 會填 Claude 的預設)');
     if (role === 'verifier') cur.backend = 'none';
   }
   if (role === 'verifier' && pool.length) cur.backend = 'cmd';
   raw.agents[role] = cur;
   writeFileSync(p, `${JSON.stringify(raw, null, 2)}\n`);
-  try { loadConfig(root); } catch (e) { writeFileSync(p, before); throw new DpError(`設定不合法,已還原:${e.message}`); }
-  const commit = commitAll(root, ['dp.config.json'], `dp account use ${role} ${pool.join(',') || 'none'}`);
+  try { loadConfig(root); } catch (e) { writeFileSync(p, before); throw new DlmError(`設定不合法,已還原:${e.message}`); }
+  const commit = commitAll(root, ['dlm.config.json'], `dlm account use ${role} ${pool.join(',') || 'none'}`);
   const notLoggedIn = pool.filter((n) => !loginStatus({ name: n, ...registry[n] }).ok);
   return { role, accounts: pool, model: cur.model ?? null, custom_cmd: !!cur.cmd, backend: cur.backend ?? null, commit, not_logged_in: notLoggedIn };
 }
 
 /**
- * v4.7.3 改使用者親口決定的設定:自治等級、每日預算、同時幾個 worker。只改有給的欄位,改 dp.config.json 並 commit(訊息帶原話)。
- * 以前只能重跑 dp setup:MCP 那邊的 AI 寫不了檔,重跑 setup 又會順手改到別的設定(實測:為了把預算從 $3 改成 $8,
+ * v4.7.3 改使用者親口決定的設定:自治等級、每日預算、同時幾個 worker。只改有給的欄位,改 dlm.config.json 並 commit(訊息帶原話)。
+ * 以前只能重跑 dlm setup:MCP 那邊的 AI 寫不了檔,重跑 setup 又會順手改到別的設定(實測:為了把預算從 $3 改成 $8,
  * AI 先停背景迴圈、重跑 setup,worker 的帳號被換成固定指令,再用 setRole 改回來)。
  */
 export const SETTING_LIMITS = { autonomy_level: [0, 2], daily_usd: [0.01, 10000], parallel: [1, 20] };
@@ -180,13 +180,13 @@ export function setSettings(root, { autonomy_level, daily_usd, parallel, verbati
     if (v === undefined || v === null) continue;
     const [lo, hi] = SETTING_LIMITS[k];
     const ok = typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi && (k === 'daily_usd' || Number.isInteger(v));
-    if (!ok) throw new DpError(`${k} 要是 ${lo}–${hi} 的${k === 'daily_usd' ? '數字' : '整數'}(收到 ${JSON.stringify(v)})`);
+    if (!ok) throw new DlmError(`${k} 要是 ${lo}–${hi} 的${k === 'daily_usd' ? '數字' : '整數'}(收到 ${JSON.stringify(v)})`);
     changes[k] = v;
   }
-  if (!Object.keys(changes).length) throw new DpError('沒有要改的:給 autonomy_level、daily_usd、parallel 其中至少一個');
+  if (!Object.keys(changes).length) throw new DlmError('沒有要改的:給 autonomy_level、daily_usd、parallel 其中至少一個');
   const cur = loadConfig(root);
   const was = { autonomy_level: cur.autonomy.level, daily_usd: cur.budget.daily_usd, parallel: cur.caps.parallel };
-  const p = join(root, 'dp.config.json');
+  const p = join(root, 'dlm.config.json');
   const before = readFileSync(p, 'utf8');
   const raw = JSON.parse(before);
   if ('autonomy_level' in changes) raw.autonomy = { ...(raw.autonomy ?? {}), level: changes.autonomy_level };
@@ -194,12 +194,12 @@ export function setSettings(root, { autonomy_level, daily_usd, parallel, verbati
   if ('parallel' in changes) raw.caps = { ...(raw.caps ?? {}), parallel: changes.parallel };
   writeFileSync(p, `${JSON.stringify(raw, null, 2)}\n`);
   let next;
-  try { next = loadConfig(root); } catch (e) { writeFileSync(p, before); throw new DpError(`設定不合法,已還原:${e.message}`); }
+  try { next = loadConfig(root); } catch (e) { writeFileSync(p, before); throw new DlmError(`設定不合法,已還原:${e.message}`); }
   const summary = Object.keys(changes).map((k) => `${k} ${was[k]} → ${changes[k]}`).join(', ');
   const said = verbatimOf({ verbatim });
-  const commit = commitAll(root, ['dp.config.json'], `dp settings: ${summary}${said ? `\n\n使用者原話:${said}` : ''}`);
+  const commit = commitAll(root, ['dlm.config.json'], `dlm settings: ${summary}${said ? `\n\n使用者原話:${said}` : ''}`);
   const notes = [];
-  if (changes.autonomy_level === 2 && !criticConfigured(next)) notes.push('L2 沒設 Critic:Verifier 沒把握的交件照樣來問你(dp_set_role critic 設帳號,或重跑 setup 開 Critic)');
+  if (changes.autonomy_level === 2 && !criticConfigured(next)) notes.push('L2 沒設 Critic:Verifier 沒把握的交件照樣來問你(dlm_set_role critic 設帳號,或重跑 setup 開 Critic)');
   return { changed: Object.fromEntries(Object.keys(changes).map((k) => [k, { from: was[k], to: changes[k] }])), commit, ...(notes.length ? { notes } : {}) };
 }
 
@@ -227,12 +227,12 @@ export function events(root, { after = 0, limit = 200, types = null } = {}) {
 }
 
 export function decideOp(root, { ref, choice, verbatim } = {}) {
-  if (!ref || !choice) throw new DpError('要 ref 與 choice');
+  if (!ref || !choice) throw new DlmError('要 ref 與 choice');
   let refs = (Array.isArray(ref) ? ref : String(ref).split(',')).map((r) => String(r).trim()).filter(Boolean);
   if (refs.length === 1 && refs[0] === 'accept:*') {
     const dg = loadDag(root);
     refs = [...replay(readEvents(root), dg).decisions.values()].filter((r) => r.request && !r.answer && r.request.ref.startsWith('accept:')).map((r) => r.request.ref);
-    if (!refs.length) throw new DpError('沒有等待合併的決定');
+    if (!refs.length) throw new DlmError('沒有等待合併的決定');
   }
   const recorded = refs.map((r) => ({ ref: r, choice, seq: decide(root, r, choice, verbatimOf({ verbatim })).seq }));
   refreshRendered(root);
@@ -240,18 +240,18 @@ export function decideOp(root, { ref, choice, verbatim } = {}) {
 }
 
 export function haltOp(root, { reason, keep_workers = false } = {}) {
-  if (!text(reason).trim()) throw new DpError('要 reason(停機理由或使用者的原話)');
-  const seq = append(root, 'dp-cli', 'halt', { reason }).seq;
+  if (!text(reason).trim()) throw new DlmError('要 reason(停機理由或使用者的原話)');
+  const seq = append(root, 'dlm-cli', 'halt', { reason }).seq;
   let out = { seq, stopped: [], deferred: false, keep_workers: !!keep_workers };
   if (!keep_workers) {
     // 背景迴圈正在 tick 的話,它下一輪看到停機會自己收掉 worker;這裡拿得到鎖就立刻收
-    const release = tryLock(join(root, '.dp', 'tick.lock'));
+    const release = tryLock(join(root, '.dlm', 'tick.lock'));
     if (!release) out = { ...out, deferred: true };
     else {
       try {
         const ctx = new Ctx(root);
         const stopped = haltWorkers(ctx);
-        commitState(ctx, `dp: 停機,終止 ${stopped.length} 個 worker`);
+        commitState(ctx, `dlm: 停機,終止 ${stopped.length} 個 worker`);
         out = { ...out, stopped };
       } finally {
         release();
@@ -263,7 +263,7 @@ export function haltOp(root, { reason, keep_workers = false } = {}) {
 }
 
 /**
- * 不互動的 dp setup。answers 的 key 就是問題的 id(mode、test_cmd、platform、worker_cmd、verifier、autonomy、critic、
+ * 不互動的 dlm setup。answers 的 key 就是問題的 id(mode、test_cmd、platform、worker_cmd、verifier、autonomy、critic、
  * budget、parallel、npm_install、commit),沒給的用預設值;npm_install 預設不裝(要下載,幾分鐘)。
  */
 export async function setupOp(root, { answers = {} } = {}) {
@@ -274,8 +274,8 @@ export async function setupOp(root, { answers = {} } = {}) {
     log: (l) => lines.push(l),
     ask: async (q) => {
       asked[q.id] = (asked[q.id] ?? 0) + 1;
-      if (asked[q.id] > 1 && q.id in a) throw new DpError(`setup 看不懂 answers.${q.id}「${a[q.id]}」:${q.text.split('\n')[0]}`);
-      if (asked[q.id] > 2) throw new DpError(`setup 的 ${q.id} 一定要給值:${q.text.split('\n')[0]}`);
+      if (asked[q.id] > 1 && q.id in a) throw new DlmError(`setup 看不懂 answers.${q.id}「${a[q.id]}」:${q.text.split('\n')[0]}`);
+      if (asked[q.id] > 2) throw new DlmError(`setup 的 ${q.id} 一定要給值:${q.text.split('\n')[0]}`);
       return a[q.id] ?? '';
     },
   });
@@ -288,7 +288,7 @@ function brownfieldOp(root, which, { commit = true } = {}) {
   const lines = [];
   const written = which === 'onboard' ? onboard(root, config, { log: (l) => lines.push(l) }).written : (recordBaseline(root, config, { log: (l) => lines.push(l) }), [BASELINE]);
   const b = readJsonSafe(join(root, BASELINE));
-  if (commit) commitAll(root, written, which === 'onboard' ? 'dp onboard:測試基線、AS-IS 草稿、ROADMAP v0' : 'dp baseline:重記測試基線');
+  if (commit) commitAll(root, written, which === 'onboard' ? 'dlm onboard:測試基線、AS-IS 草稿、ROADMAP v0' : 'dlm baseline:重記測試基線');
   return {
     written, committed: !!commit, mode: config.project?.mode ?? 'greenfield',
     red_gates: (b?.gates ?? []).filter((g) => g.exit !== 0).map((g) => ({ name: g.name, failing: g.failing ?? null })),
@@ -304,8 +304,8 @@ export const OPS = {
   status: { project: true, fn: (root) => status(root) },
   dashboard: { project: true, fn: (root) => dashboardData(root) },
   inbox: { project: true, fn: (root, a) => inboxData(root, { markSeen: !!a.mark }) },
-  inbox_seen: { project: true, write: true, fn: (root) => done(root, append(root, 'dp-cli', 'inbox_viewed', {})) },
-  show: { project: true, fn: (root, a) => { if (!a.ref) throw new DpError('要 ref'); return { ref: a.ref, text: show(root, a.ref) }; } },
+  inbox_seen: { project: true, write: true, fn: (root) => done(root, append(root, 'dlm-cli', 'inbox_viewed', {})) },
+  show: { project: true, fn: (root, a) => { if (!a.ref) throw new DlmError('要 ref'); return { ref: a.ref, text: show(root, a.ref) }; } },
   events: { project: true, fn: (root, a) => events(root, a) },
   nodes: { project: true, fn: (root) => ({ nodes: dashboardData(root).nodes }) },
   proposals: { project: true, fn: (root) => ({ proposals: dashboardData(root).proposals }) },
@@ -313,15 +313,15 @@ export const OPS = {
   decide: { project: true, write: true, fn: (root, a) => decideOp(root, a) },
   confirm: {
     project: true, write: true,
-    fn: (root, a) => { if (!a.node || typeof a.ok !== 'boolean') throw new DpError('要 node 與 ok(true / false)'); return done(root, confirmE2e(root, a.node, a.ok, verbatimOf(a)), { node: a.node, ok: a.ok }); },
+    fn: (root, a) => { if (!a.node || typeof a.ok !== 'boolean') throw new DlmError('要 node 與 ok(true / false)'); return done(root, confirmE2e(root, a.node, a.ok, verbatimOf(a)), { node: a.node, ok: a.ok }); },
   },
-  unblock: { project: true, write: true, fn: (root, a) => { if (!a.node) throw new DpError('要 node'); return done(root, unblockByUser(root, a.node, verbatimOf(a)), { node: a.node }); } },
+  unblock: { project: true, write: true, fn: (root, a) => { if (!a.node) throw new DlmError('要 node'); return done(root, unblockByUser(root, a.node, verbatimOf(a)), { node: a.node }); } },
   resume: { project: true, write: true, fn: (root, a) => done(root, resume(root, verbatimOf(a))) },
   halt: { project: true, write: true, fn: (root, a) => haltOp(root, a) },
   propose_feature: {
     project: true, write: true,
     fn: (root, a) => {
-      if (!a.spec || typeof a.spec !== 'object') throw new DpError('要 spec(節點的 JSON 物件)');
+      if (!a.spec || typeof a.spec !== 'object') throw new DlmError('要 spec(節點的 JSON 物件)');
       const p = proposeFeature(root, a.spec, a.gherkin ? String(a.gherkin) : null, { supersedes: a.supersedes });
       refreshRendered(root);
       return { proposal_id: p.id, decide_ref: `node:${p.id}`, ...(p.warnings.length ? { warnings: p.warnings } : {}), ...(p.supersedes.length ? { superseded: p.supersedes } : {}) };
@@ -330,7 +330,7 @@ export const OPS = {
   propose_bundle: {
     project: true, write: true,
     fn: (root, a) => {
-      if (!a.bundle || typeof a.bundle !== 'object') throw new DpError('要 bundle');
+      if (!a.bundle || typeof a.bundle !== 'object') throw new DlmError('要 bundle');
       const p = proposeBundle(root, a.bundle, { supersedes: a.supersedes });
       refreshRendered(root);
       return { proposal_id: p.id, decide_ref: `node:${p.id}`, ...(p.warnings.length ? { warnings: p.warnings } : {}), ...(p.supersedes.length ? { superseded: p.supersedes } : {}) };
@@ -360,11 +360,11 @@ export const OPS = {
 export async function runOp(name, root, args = {}) {
   const op = OPS[name];
   if (!op) return { ok: false, error: `沒有這個操作:${name}`, status: 404 };
-  if (op.project && !existsSync(join(root, 'dp.config.json'))) return { ok: false, error: `${root} 不是 dp 專案(沒有 dp.config.json)`, status: 404 };
+  if (op.project && !existsSync(join(root, 'dlm.config.json'))) return { ok: false, error: `${root} 不是 dlm 專案(沒有 dlm.config.json)`, status: 404 };
   try {
     return { ok: true, result: await op.fn(root, args ?? {}) };
   } catch (e) {
-    if (e instanceof DpError) return { ok: false, error: e.message, status: e.code === 2 ? 409 : 400 };
+    if (e instanceof DlmError) return { ok: false, error: e.message, status: e.code === 2 ? 409 : 400 };
     return { ok: false, error: String(e?.stack ?? e), status: 500 };
   }
 }

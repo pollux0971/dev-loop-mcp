@@ -1,4 +1,5 @@
 // 重播 ledger 得出現況。所有「現在是什麼狀態」的問題都從這裡回答,不讀任何 markdown。
+import { remapStatePath } from './legacy.mjs';
 
 export function pipelineFor(node, config) {
   const base = node.pipeline ?? config.pipeline[node.kind] ?? ['dev'];
@@ -62,11 +63,13 @@ export function replay(events, dag) {
         touch(n);
         break;
       case 'dispatch': {
-        dispatches.set(ev.dispatch_id, { ...ev, state: 'dispatched', pid: null, seqs: [ev.seq] });
+        // paths under .dp/ in events from before 4.8.0 point at .dlm/ now (the upgrade moved the folder)
+        const worktree = remapStatePath(ev.worktree);
+        dispatches.set(ev.dispatch_id, { ...ev, worktree, ...(ev.sandbox ? { sandbox: remapStatePath(ev.sandbox) } : {}), state: 'dispatched', pid: null, seqs: [ev.seq] });
         n.status = 'in-progress';
         n.openDispatch = ev.dispatch_id;
         n.branch = ev.branch;
-        n.worktree = ev.worktree;
+        n.worktree = worktree;
         n.legAttempts = ev.attempt;
         n.legBase = ev.leg_base ?? n.legBase ?? ev.base_sha;
         touch(n);
@@ -91,7 +94,7 @@ export function replay(events, dag) {
       case 'worker_failed':
         if (d) { d.state = 'failed'; d.reason = ev.reason; d.failClass = ev.class ?? 'quality'; d.seqs.push(ev.seq); }
         if (ev.class === 'halted') {
-          // v4:使用者停機時 dp 主動終止的 worker。不是 worker 的錯:不算嘗試、不動 findings、不退避、不算 infra 連續失敗
+          // v4:使用者停機時 dlm 主動終止的 worker。不是 worker 的錯:不算嘗試、不動 findings、不退避、不算 infra 連續失敗
           if (dn) {
             dn.status = 'todo';
             dn.openDispatch = null;

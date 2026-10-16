@@ -1,4 +1,4 @@
-// v4.6:多帳號(訂閱方案)輪流、限流換號、dp account、主控台設定帳號。(MCP 的測試在 hub-mcp.test.mjs)
+// v4.6:多帳號(訂閱方案)輪流、限流換號、dlm account、主控台設定帳號。(MCP 的測試在 hub-mcp.test.mjs)
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -9,15 +9,15 @@ import { accountArgv, dashboardData, serveDashboard } from '../tools/lib/dashboa
 import { readEvents } from '../tools/lib/ledger.mjs';
 import { childEnv, readJson, run } from '../tools/lib/util.mjs';
 
-// 測試不碰你真的 ~/.config/dp/accounts.json
-process.env.DP_ACCOUNTS_FILE = join(tempDir('dp-acct-'), 'accounts.json');
+// 測試不碰你真的 ~/.config/dlm/accounts.json
+process.env.DLM_ACCOUNTS_FILE = join(tempDir('dlm-acct-'), 'accounts.json');
 after(cleanup);
 
-const DP = join(REPO, 'tools', 'dp.mjs');
-const dp = (cwd, args, env = {}) => run(`node ${JSON.stringify(DP)} ${args}`, { cwd, env: { DP_ACCOUNTS_FILE: process.env.DP_ACCOUNTS_FILE, ...env } });
+const DLM = join(REPO, 'tools', 'dlm.mjs');
+const dlm = (cwd, args, env = {}) => run(`node ${JSON.stringify(DLM)} ${args}`, { cwd, env: { DLM_ACCOUNTS_FILE: process.env.DLM_ACCOUNTS_FILE, ...env } });
 
 describe('帳號清單與選號', () => {
-  test('add / rm:dp 建的目錄跟著刪,名稱檢查', () => {
+  test('add / rm:dlm 建的目錄跟著刪,名稱檢查', () => {
     const a = addAccount('t-one', { cli: 'claude', plan: 'max' });
     assert.ok(existsSync(a.home));
     assert.equal(loadAccounts()['t-one'].plan, 'max');
@@ -32,7 +32,7 @@ describe('帳號清單與選號', () => {
   test('accountEnv 指到帳號目錄,並清掉會蓋過它的金鑰', () => {
     const env = accountEnv({ name: 'x', cli: 'claude', home: '/h/x' });
     assert.equal(env.CLAUDE_CONFIG_DIR, '/h/x');
-    assert.equal(env.DP_ACCOUNT, 'x');
+    assert.equal(env.DLM_ACCOUNT, 'x');
     assert.equal(env.ANTHROPIC_API_KEY, '');
     const prev = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = 'sk-should-not-leak';
@@ -52,7 +52,7 @@ describe('帳號清單與選號', () => {
     assert.match(roleCmd({ model: 'opus' }, 'worker', claude), /^claude -p --output-format json --model opus --permission-mode acceptEdits/);
     assert.match(roleCmd({}, 'verifier', claude), /--model haiku --tools ""/);
     assert.doesNotMatch(roleCmd({}, 'critic', claude), /\{model\}|--model/);
-    assert.match(roleCmd({ model: 'gpt-5-codex' }, 'worker', { name: 'c', cli: 'codex', home: '/h' }), /^codex exec .* -m gpt-5-codex - < "\$DP_PROMPT"$/);
+    assert.match(roleCmd({ model: 'gpt-5-codex' }, 'worker', { name: 'c', cli: 'codex', home: '/h' }), /^codex exec .* -m gpt-5-codex - < "\$DLM_PROMPT"$/);
     assert.equal(roleCmd({}, 'worker', null), null);
   });
 
@@ -113,12 +113,12 @@ describe('派工帶帳號、限流換號', () => {
   test('帳號 A 額度用完 → A 冷卻、馬上改用 B 重派,不算嘗試、不算連續失敗;worker 拿不到 shell 的金鑰', async () => {
     addAccount('rot-a', { cli: 'claude' });
     addAccount('rot-b', { cli: 'claude' });
-    const envLog = join(tempDir('dp-envlog-'), 'env.jsonl');
+    const envLog = join(tempDir('dlm-envlog-'), 'env.jsonl');
     const proj = makeProject({ config: { caps: { infra_halt_after: 1 } } });
-    const cfg = readJson(join(proj, 'dp.config.json'));
+    const cfg = readJson(join(proj, 'dlm.config.json'));
     cfg.agents.worker.cmd = `FAKE_MODE=good LIMIT_ACCOUNT=rot-a FAKE_ENV_LOG=${envLog} node ${FAKE}`;
     cfg.agents.worker.accounts = ['rot-a', 'rot-b'];
-    (await import('node:fs')).writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg, null, 2));
+    (await import('node:fs')).writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg, null, 2));
     sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm accounts');
     addNode(proj, CALC, CALC_GHERKIN);
     const prev = process.env.ANTHROPIC_API_KEY;
@@ -153,10 +153,10 @@ describe('派工帶帳號、限流換號', () => {
   test('pool 只有一個帳號又被限流 → 照舊退避;全部冷卻時這輪不派', async () => {
     addAccount('solo', { cli: 'claude' });
     const proj = makeProject({ config: { caps: { infra_backoff_seconds: 0.2 } } });
-    const cfg = readJson(join(proj, 'dp.config.json'));
+    const cfg = readJson(join(proj, 'dlm.config.json'));
     cfg.agents.worker.cmd = `FAKE_MODE=good LIMIT_ACCOUNT=solo node ${FAKE}`;
     cfg.agents.worker.accounts = ['solo'];
-    (await import('node:fs')).writeFileSync(join(proj, 'dp.config.json'), JSON.stringify(cfg, null, 2));
+    (await import('node:fs')).writeFileSync(join(proj, 'dlm.config.json'), JSON.stringify(cfg, null, 2));
     sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm accounts');
     addNode(proj, CALC, CALC_GHERKIN);
     await tickUntil(proj, () => readEvents(proj).some((e) => e.type === 'worker_failed'));
@@ -172,42 +172,42 @@ describe('派工帶帳號、限流換號', () => {
   });
 });
 
-describe('dp account 指令', () => {
+describe('dlm account 指令', () => {
   test('add / list --json / use(改設定並 commit)/ rm', () => {
     const proj = makeProject();
-    let r = dp(proj, 'account add cli-a --cli claude --plan max');
+    let r = dlm(proj, 'account add cli-a --cli claude --plan max');
     assert.equal(r.code, 0, r.stderr);
-    r = dp(proj, 'account add cli-b --cli codex');
+    r = dlm(proj, 'account add cli-b --cli codex');
     assert.equal(r.code, 0, r.stderr);
-    r = dp(proj, 'account use worker cli-a,cli-b --model sonnet');
+    r = dlm(proj, 'account use worker cli-a,cli-b --model sonnet');
     assert.equal(r.code, 0, r.stderr);
-    const cfg = readJson(join(proj, 'dp.config.json'));
+    const cfg = readJson(join(proj, 'dlm.config.json'));
     assert.deepEqual(cfg.agents.worker.accounts, ['cli-a', 'cli-b']);
     assert.equal(cfg.agents.worker.model, 'sonnet');
-    assert.match(sh(proj, 'git log -1 --format=%s'), /dp account use worker/);
-    assert.equal(sh(proj, 'git status --porcelain -- dp.config.json'), '');
-    r = dp(proj, 'account list --json', { CLAUDE_CONFIG_DIR: '' });
+    assert.match(sh(proj, 'git log -1 --format=%s'), /dlm account use worker/);
+    assert.equal(sh(proj, 'git status --porcelain -- dlm.config.json'), '');
+    r = dlm(proj, 'account list --json', { CLAUDE_CONFIG_DIR: '' });
     assert.equal(r.code, 0, r.stderr);
     const list = JSON.parse(r.stdout).accounts;
     const a = list.find((x) => x.name === 'cli-a');
     assert.equal(a.plan, 'max');
     assert.deepEqual(a.roles, ['worker']);
-    r = dp(proj, 'account use verifier cli-a');
-    assert.equal(readJson(join(proj, 'dp.config.json')).agents.verifier.backend, 'cmd');
-    r = dp(proj, 'account use worker nope');
+    r = dlm(proj, 'account use verifier cli-a');
+    assert.equal(readJson(join(proj, 'dlm.config.json')).agents.verifier.backend, 'cmd');
+    r = dlm(proj, 'account use worker nope');
     assert.notEqual(r.code, 0);
     assert.match(r.stderr, /這台電腦沒有帳號 nope/);
-    r = dp(proj, 'account rm cli-b');
+    r = dlm(proj, 'account rm cli-b');
     assert.equal(r.code, 0);
     assert.match(r.stdout, /還在用它/);
-    r = dp(proj, 'account login cli-a');
+    r = dlm(proj, 'account login cli-a');
     assert.notEqual(r.code, 0, '沒有終端機不能登入');
     assert.match(r.stderr, /終端機/);
   });
 });
 
 describe('主控台設定帳號(--serve)', () => {
-  test('accountArgv:只產生 dp account 的 argv,值都先檢查', () => {
+  test('accountArgv:只產生 dlm account 的 argv,值都先檢查', () => {
     assert.deepEqual(accountArgv({ action: 'add', name: 'max-a', cli: 'claude', plan: 'max' }), ['account', 'add', 'max-a', '--cli', 'claude', '--plan', 'max']);
     assert.deepEqual(accountArgv({ action: 'use', role: 'worker', accounts: ['a', 'b'], model: '' }), ['account', 'use', 'worker', 'a,b', '--model', 'none']);
     assert.deepEqual(accountArgv({ action: 'use', role: 'critic', accounts: [] }), ['account', 'use', 'critic', 'none', '--model', 'none']);
@@ -225,25 +225,25 @@ describe('主控台設定帳號(--serve)', () => {
     try {
       const html = await (await fetch(`http://127.0.0.1:${port}/`)).text();
       const token = JSON.parse(html.match(/var TOKEN = ("[0-9a-f]+");/)[1]);
-      const post = (body, headers = {}) => fetch(`http://127.0.0.1:${port}/api/account`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dp-token': token, ...headers }, body: JSON.stringify(body) });
+      const post = (body, headers = {}) => fetch(`http://127.0.0.1:${port}/api/account`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-dlm-token': token, ...headers }, body: JSON.stringify(body) });
       const use = { action: 'use', role: 'worker', accounts: ['dash-a'], model: 'opus' };
-      assert.equal((await post(use, { 'x-dp-token': 'nope' })).status, 403);
+      assert.equal((await post(use, { 'x-dlm-token': 'nope' })).status, 403);
       assert.equal((await post(use, { origin: 'http://evil.example' })).status, 403);
       assert.equal((await post(use, { 'content-type': 'text/plain' })).status, 415);
       assert.equal((await post({ action: 'add', name: 'bad name', cli: 'claude' })).status, 400);
-      assert.equal(readJson(join(proj, 'dp.config.json')).agents.worker.accounts, undefined, '被擋的請求沒有改到設定');
+      assert.equal(readJson(join(proj, 'dlm.config.json')).agents.worker.accounts, undefined, '被擋的請求沒有改到設定');
       const r = await (await post(use)).json();
       assert.ok(r.ok, r.out);
-      const w = readJson(join(proj, 'dp.config.json')).agents.worker;
+      const w = readJson(join(proj, 'dlm.config.json')).agents.worker;
       assert.deepEqual(w.accounts, ['dash-a']);
       assert.equal(w.model, 'opus');
-      assert.match(sh(proj, 'git log -1 --format=%s'), /dp account use worker dash-a/);
+      assert.match(sh(proj, 'git log -1 --format=%s'), /dlm account use worker dash-a/);
       const data = await (await fetch(`http://127.0.0.1:${port}/data.json`)).json();
       assert.deepEqual(data.account_config.roles.worker.accounts, ['dash-a']);
       assert.ok(data.account_config.registry.some((a) => a.name === 'dash-a'));
       // 模型留空 = 拿掉
       assert.ok((await (await post({ ...use, model: '' })).json()).ok);
-      assert.equal(readJson(join(proj, 'dp.config.json')).agents.worker.model, undefined);
+      assert.equal(readJson(join(proj, 'dlm.config.json')).agents.worker.model, undefined);
     } finally {
       server.close();
     }

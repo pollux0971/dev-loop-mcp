@@ -12,7 +12,7 @@ const r = (check, outcome, detail, evidence) => ({ check, outcome, detail, ...(e
  * hostExecutor 直接在目錄裡跑(驗證用的副本、單元測試)。
  */
 export function hostExecutor(cwd) {
-  // 驗收副本在 .dp/ 底下、沒有 .git:不讓 git 往上找到外層主 repo(見 sandbox.mjs 的 sandboxCommand)
+  // 驗收副本在 .dlm/ 底下、沒有 .git:不讓 git 往上找到外層主 repo(見 sandbox.mjs 的 sandboxCommand)
   const env = { GIT_CEILING_DIRECTORIES: dirname(resolve(cwd)) };
   return {
     cwd,
@@ -27,17 +27,17 @@ const asExecutor = (x) => (typeof x === 'string' ? hostExecutor(x) : x);
  * 這一棒累積改了哪些檔:從棒的起點沿 first-parent 走、只算非 merge 的 commit。
  * 同步主線的 merge commit 不算(那是主線的東西);被 blocked 前先 commit 的半成品也算(必須一起驗)。
  */
-export function legDiff(cwd, legBase, to, { onlyDp = true } = {}) {
-  // v4:只算 dp 替 worker 收件的 commit(作者 dp@localhost;worker 在沒有 .git 的副本裡,自己 commit 不了)。
+export function legDiff(cwd, legBase, to, { onlyDlm = true } = {}) {
+  // v4:只算 dlm 替 worker 收件的 commit(作者 dlm@localhost;worker 在沒有 .git 的副本裡,自己 commit 不了)。
   // 使用者 / Front 在分支上手動修的 commit 不算在 worker 頭上(v3 實測:Front 清掉前一棒留下的檔,下一棒反被判越界、永遠過不了)
-  const author = onlyDp ? ' --author=dp@localhost' : '';
+  const author = onlyDlm ? ' --author=dlm@localhost' : '';
   const out = git(cwd, `log --no-merges --first-parent${author} --name-only --format= ${legBase}..${to}`).stdout;
   return [...new Set(out.split('\n').map((x) => x.trim()).filter(Boolean))].sort();
 }
 
 export function checkWorktreeClean(worktree) {
   const dirty = git(worktree, 'status --porcelain').stdout.split('\n').filter(Boolean)
-    .map((l) => l.slice(3)).filter((p) => !p.startsWith('.dp/'));
+    .map((l) => l.slice(3)).filter((p) => !p.startsWith('.dlm/'));
   return dirty.length
     ? r('worktree-clean', 'FAIL', `worktree 有未 commit 的變更(交件必須 commit):${dirty.slice(0, 10).join(', ')}`)
     : r('worktree-clean', 'PASS', '無未 commit 變更');
@@ -233,7 +233,7 @@ export function checkStubs(worktree, dag, node, config) {
   const ids = [node.id, ...transitiveDeps(dag, node.id)];
   const owns = ids.flatMap((id) => getNode(dag, id)?.owns ?? []);
   const offenders = [];
-  for (const f of listFiles(worktree, { skip: ['.git', 'node_modules', '.dp'] })) {
+  for (const f of listFiles(worktree, { skip: ['.git', 'node_modules', '.dlm'] })) {
     if (!matchAny(f, owns) || matchAny(f, config.paths.tests) || f.includes('__stubs__/')) continue;
     if (!/\.(m?[jt]sx?|py|go|rs)$/.test(f)) continue;
     const text = readFileSync(join(worktree, f), 'utf8');

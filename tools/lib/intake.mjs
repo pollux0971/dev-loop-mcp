@@ -2,7 +2,7 @@
 //   feature    一個新節點
 //   bundle     一整個版本(多個節點 + gherkin + 整合點)
 // (v4.0 的 brownfield 掃描與 import 實跑沒用到,已移除;v4.5 改成:brownfield 模式下,要改到既有程式的節點自動加 characterize 棒)
-// 一律先寫提案 + decision_request;使用者在單一窗口說 yes 之後,下一個 tick 或 `dp intake apply` 才寫進 DAG。
+// 一律先寫提案 + decision_request;使用者在單一窗口說 yes 之後,下一個 tick 或 `dlm intake apply` 才寫進 DAG。
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { characterizeCmd, characterizeTestPath, existingFiles } from './brownfield.mjs';
@@ -12,7 +12,7 @@ import { commitAll } from './git.mjs';
 import { append, readEvents } from './ledger.mjs';
 import { renderAll, writeRendered } from './render.mjs';
 import { replay } from './state.mjs';
-import { DpError, atomicWrite, matchAny, readJson, run, sha256, stableJson, writeJson } from './util.mjs';
+import { DlmError, atomicWrite, matchAny, readJson, run, sha256, stableJson, writeJson } from './util.mjs';
 
 /**
  * 預設的驗收指令。範本的步驟定義是 TypeScript,要靠 package.json 的 accept script(NODE_OPTIONS=--import=tsx)才載入得了;
@@ -53,7 +53,7 @@ function checkParents(root, nodes) {
   const state = replay(readEvents(root), dag);
   for (const n of nodes) {
     if (n.relation === 'prereq' && n.parent && state.nodes.get(n.parent)?.status === 'done') {
-      throw new DpError(`${n.id} 是 ${n.parent} 的 prereq,但 ${n.parent} 已經完成了,不能再讓它等;要改它就另提新節點(不寫 parent)`);
+      throw new DlmError(`${n.id} 是 ${n.parent} 的 prereq,但 ${n.parent} 已經完成了,不能再讓它等;要改它就另提新節點(不寫 parent)`);
     }
   }
 }
@@ -63,7 +63,7 @@ function checkNodes(root, nodes) {
   checkParents(root, nodes);
   const next = wireParents({ ...dag, nodes: [...dag.nodes, ...nodes] }, nodes);
   const problems = validateDag(next, contractMajor(root));
-  if (problems.length) throw new DpError(`提案不合法:\n  - ${problems.join('\n  - ')}`);
+  if (problems.length) throw new DlmError(`提案不合法:\n  - ${problems.join('\n  - ')}`);
 }
 
 function propose(root, proposal, question, { recommendation = 'yes', warnings = [], supersedes = [] } = {}) {
@@ -71,7 +71,7 @@ function propose(root, proposal, question, { recommendation = 'yes', warnings = 
   const path = `${PROPOSALS}/${id}.json`;
   writeJson(join(root, path), { id, ...proposal, ...(warnings.length ? { warnings } : {}), ...(supersedes.length ? { supersedes } : {}) });
   const replaces = supersedes.length ? `(取代 ${supersedes.map((r) => r.slice(5)).join('、')})` : '';
-  append(root, 'dp-cli', 'decision_request', {
+  append(root, 'dlm-cli', 'decision_request', {
     ref: `node:${id}`,
     question: `${question}${replaces}`,
     options: [{ key: 'yes', label: '批准,寫進 DAG' }, { key: 'no', label: '不要' }],
@@ -90,13 +90,13 @@ function propose(root, proposal, question, { recommendation = 'yes', warnings = 
  */
 function supersedeRefs(root, list) {
   if (list === undefined || list === null) return [];
-  if (!Array.isArray(list)) throw new DpError('supersedes 要是陣列(例 ["p-001"])');
+  if (!Array.isArray(list)) throw new DlmError('supersedes 要是陣列(例 ["p-001"])');
   const state = replay(readEvents(root), loadDag(root));
   return [...new Set(list.map((x) => (String(x).startsWith('node:') ? String(x) : `node:${x}`)))].map((ref) => {
     const rec = state.decisions.get(ref);
-    if (!rec?.request) throw new DpError(`supersedes 的 ${ref} 不是一份提案`);
-    if (rec.answer) throw new DpError(`${ref} 已經決定過了(${rec.answer.choice}),不能取代;要改就另提一份新的`);
-    if (rec.superseded) throw new DpError(`${ref} 已經被 ${rec.superseded} 取代了`);
+    if (!rec?.request) throw new DlmError(`supersedes 的 ${ref} 不是一份提案`);
+    if (rec.answer) throw new DlmError(`${ref} 已經決定過了(${rec.answer.choice}),不能取代;要改就另提一份新的`);
+    if (rec.superseded) throw new DlmError(`${ref} 已經被 ${rec.superseded} 取代了`);
     return ref;
   });
 }
@@ -201,11 +201,11 @@ function withCharacterize(root, node, config) {
   const targets = ch?.targets?.length ? ch.targets : existingFiles(root, node.owns ?? [], config);
   if (!targets.length) return node;
   if (targets.length > CHARACTERIZE_MAX) {
-    throw new DpError(`${node.id} 的 owns 涵蓋 ${targets.length} 個既有程式檔(${targets.slice(0, 5).join(', ')} …),一棒釘不完。`
+    throw new DlmError(`${node.id} 的 owns 涵蓋 ${targets.length} 個既有程式檔(${targets.slice(0, 5).join(', ')} …),一棒釘不完。`
       + `把 owns 縮到真的會改的檔,或在 characterize.targets 列出要釘住的(最多 ${CHARACTERIZE_MAX} 個),或寫 characterize.skip 說明為什麼不釘`);
   }
   const tests = ch?.tests?.length ? ch.tests : [...new Set(targets.map((t) => characterizeTestPath(t, lang)).filter(Boolean))];
-  if (!tests.length) throw new DpError(`${node.id} 要改既有程式 ${targets.join(', ')},但 dp 推不出 characterize 測試該放哪裡:請在 characterize.tests 指定`);
+  if (!tests.length) throw new DlmError(`${node.id} 要改既有程式 ${targets.join(', ')},但 dlm 推不出 characterize 測試該放哪裡:請在 characterize.tests 指定`);
   return { ...node, characterize: { targets, tests, cmd: ch?.cmd ?? characterizeCmd(tests, config) } };
 }
 
@@ -215,17 +215,17 @@ function normalizeFeature(root, spec, gherkinText) {
   const bf = brownfieldConfig(root);
   if (bf && node.kind !== 'shared' && !node.accept && !('accept' in (readJson(join(root, 'package.json'), {})?.scripts ?? {}))) {
     const t = bf.gates.commands?.test ?? 'npm test --';
-    throw new DpError(`${node.id}:既有專案沒有 accept script(範本的 cucumber),要在 spec 寫 accept——用專案自己的測試指令只跑這個節點的測試,`
+    throw new DlmError(`${node.id}:既有專案沒有 accept script(範本的 cucumber),要在 spec 寫 accept——用專案自己的測試指令只跑這個節點的測試,`
       + `例:"accept": "${t} <這個節點的測試檔>"。測試棒會照 gherkin 的每個場景寫一個測試(名稱用場景名),它必須先紅、實作後變綠`);
   }
   // v4:只有 shared 節點能改 gate 定義檔(package.json 之類);v3 讓整合點 owns package.json 通過提案,施工時才被判越界三次(實測)
   const build = node.kind === 'shared' ? [] : (node.owns ?? []).filter((g) => BUILD_CONFIG_PATHS.some((b) => g === b || matchAny(g, [b])));
   if (build.length) {
-    throw new DpError(`${node.id} 的 owns 有 ${build.join(', ')}:這些是 gate 定義檔,只有 shared 節點能改(例:另提 shared/deps,owns 明列 package.json,讓 ${node.id} 依賴它)`);
+    throw new DlmError(`${node.id} 的 owns 有 ${build.join(', ')}:這些是 gate 定義檔,只有 shared 節點能改(例:另提 shared/deps,owns 明列 package.json,讓 ${node.id} 依賴它)`);
   }
   if (node.kind === 'shared' && gherkinText && !node.gherkin) {
     // v3 實測:shared 節點附 gherkin 時寫出一個叫 undefined 的檔。shared 沒有預設的 gherkin 路徑,要嘛自己指定,要嘛改成 phase
-    throw new DpError(`${node.id} 是 shared 節點又附了 gherkin:shared 沒有預設的 gherkin 路徑。要機器驗收就在 spec 寫 gherkin 路徑與 accept,或改成 phase 節點`);
+    throw new DlmError(`${node.id} 是 shared 節點又附了 gherkin:shared 沒有預設的 gherkin 路徑。要機器驗收就在 spec 寫 gherkin 路徑與 accept,或改成 phase 節點`);
   }
   if (node.kind !== 'shared' && !node.gherkin) node.gherkin = node.kind === 'integration'
     ? `docs/integration/${node.id.toLowerCase()}.feature`
@@ -234,10 +234,10 @@ function normalizeFeature(root, spec, gherkinText) {
   if (node.kind === 'integration' && !node.accept) node.accept = defaultAccept(node.gherkin);
   if (node.kind === 'shared' && node.gherkin && !node.accept) node.accept = defaultAccept(node.gherkin);
   if (node.gherkin && !gherkinText && !existsSync(join(root, node.gherkin))) {
-    throw new DpError(`${node.gherkin} 不存在,也沒附 gherkin 內容:沒有 gherkin 不寫程式`);
+    throw new DlmError(`${node.gherkin} 不存在,也沒附 gherkin 內容:沒有 gherkin 不寫程式`);
   }
   if (node.kind === 'integration' && gherkinText && !/@e2e/.test(gherkinText)) {
-    throw new DpError(`整合點 ${node.id} 的 gherkin 至少要有一個 @e2e 場景(使用者親手試用的清單)`);
+    throw new DlmError(`整合點 ${node.id} 的 gherkin 至少要有一個 @e2e 場景(使用者親手試用的清單)`);
   }
   return bf ? withCharacterize(root, node, bf) : node;
 }
@@ -269,8 +269,8 @@ export function proposeFeature(root, spec, gherkinText, { supersedes } = {}) {
  */
 export function proposeBundle(root, bundle, { supersedes } = {}) {
   const sup = supersedeRefs(root, supersedes);
-  if (!bundle?.release || !/^[\w.-]+$/.test(bundle.release)) throw new DpError('bundle 要有 release(例:"v1")');
-  if (!Array.isArray(bundle.nodes) || !bundle.nodes.length) throw new DpError('bundle.nodes 是空的');
+  if (!bundle?.release || !/^[\w.-]+$/.test(bundle.release)) throw new DlmError('bundle 要有 release(例:"v1")');
+  if (!Array.isArray(bundle.nodes) || !bundle.nodes.length) throw new DlmError('bundle.nodes 是空的');
   const dag = loadDag(root);
   const files = {};
   const nodes = bundle.nodes.map((raw) => {
@@ -282,11 +282,11 @@ export function proposeBundle(root, bundle, { supersedes } = {}) {
   });
   const integrations = nodes.filter((n) => n.kind === 'integration');
   if (!integrations.length && !bundle.no_integration_reason) {
-    throw new DpError(`bundle ${bundle.release} 沒有整合點:每一版最後要有一個 kind=integration 的節點(I<n>,依賴這一版所有節點,含 @e2e 場景),那是使用者親手試用、確認這一版能用的時間點。真的不需要就寫 no_integration_reason`);
+    throw new DlmError(`bundle ${bundle.release} 沒有整合點:每一版最後要有一個 kind=integration 的節點(I<n>,依賴這一版所有節點,含 @e2e 場景),那是使用者親手試用、確認這一版能用的時間點。真的不需要就寫 no_integration_reason`);
   }
   for (const i of integrations) {
     const missing = nodes.filter((n) => n.kind !== 'integration' && !(i.depends_on ?? []).includes(n.id)).map((n) => n.id);
-    if (missing.length) throw new DpError(`整合點 ${i.id} 沒有依賴這一版的 ${missing.join(', ')}:整合點要在這一版全部做完之後`);
+    if (missing.length) throw new DlmError(`整合點 ${i.id} 沒有依賴這一版的 ${missing.join(', ')}:整合點要在這一版全部做完之後`);
   }
   // 上一版的整合點:dag 是依加入順序排的,最後一個 release 不同的整合點就是上一版的
   const gate = dag.nodes.filter((n) => n.kind === 'integration' && n.release && n.release !== bundle.release).at(-1)?.id ?? null;
@@ -315,8 +315,8 @@ export function applyProposal(root, id) {
   const dag = loadDag(root);
   const state = replay(events, dag);
   const answer = state.decisions.get(`node:${id}`)?.answer;
-  if (!answer) throw new DpError(`node:${id} 還沒被決定;先在單一窗口問使用者`);
-  if (answer.choice !== 'yes') throw new DpError(`node:${id} 被拒絕了(${answer.verbatim})`);
+  if (!answer) throw new DlmError(`node:${id} 還沒被決定;先在單一窗口問使用者`);
+  if (answer.choice !== 'yes') throw new DlmError(`node:${id} 被拒絕了(${answer.verbatim})`);
   const fresh = proposal.nodes.filter((n) => !getNode(dag, n.id));
   if (!fresh.length) return { applied: 0 };
   const touched = [];
@@ -331,7 +331,7 @@ export function applyProposal(root, id) {
   }
   const ev = readEvents(root);
   writeRendered(root, renderAll(root, next, replay(ev, next), ev));
-  commitAll(root, ['dag.json', 'ledger', 'STATUS.md', 'DECISIONS.md', 'standalone.json', ...touched], `dp: 批准 ${id},新增 ${fresh.map((n) => n.id).join(', ')}`);
+  commitAll(root, ['dag.json', 'ledger', 'STATUS.md', 'DECISIONS.md', 'standalone.json', ...touched], `dlm: 批准 ${id},新增 ${fresh.map((n) => n.id).join(', ')}`);
   return { applied: fresh.length, nodes: fresh.map((n) => n.id) };
 }
 

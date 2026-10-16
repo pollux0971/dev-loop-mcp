@@ -2,7 +2,7 @@
 // 指令在頭尾、資料在中間;資料一律包在 <data> 裡並標來源與時間點。
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DpError } from './util.mjs';
+import { DlmError } from './util.mjs';
 
 const PLATFORM_BLOCK = /<!-- (CLAUDE|CODEX)-ONLY-BEGIN -->[\s\S]*?<!-- \1-ONLY-END -->\n?/g;
 const PLACEHOLDER = /\{\{[A-Z0-9_]+\}\}/g;
@@ -13,7 +13,7 @@ export function stripPlatform(text, platform) {
 
 export function readRolePrompt(root, role) {
   const p = join(root, 'prompts', `${role}.md`);
-  if (!existsSync(p)) throw new DpError(`找不到角色 prompt ${p}`);
+  if (!existsSync(p)) throw new DlmError(`找不到角色 prompt ${p}`);
   const text = readFileSync(p, 'utf8');
   const [rules, reminder = ''] = text.split('<!-- REMINDER -->');
   return { rules: rules.trim(), reminder: reminder.trim() };
@@ -29,7 +29,7 @@ export function assemblePrompt({ role, rules, reminder, envelope, data = [], out
   const env = envelope ? JSON.stringify(envelope, null, 2) : '';
   for (const [label, text] of [['規則', r], ['工單', env], ['結尾提醒', rem]]) {
     const hits = text.match(PLACEHOLDER);
-    if (hits) throw new DpError(`${role} prompt 的${label}還有沒填的 placeholder:${[...new Set(hits)].join(', ')}(拒絕送出,不讓模型自己補值)`);
+    if (hits) throw new DlmError(`${role} prompt 的${label}還有沒填的 placeholder:${[...new Set(hits)].join(', ')}(拒絕送出,不讓模型自己補值)`);
   }
   const parts = [`<rules role="${role}">\n${r}\n</rules>`];
   if (env) parts.push(`<envelope>\n${env}\n</envelope>`);
@@ -44,7 +44,7 @@ export function assemblePrompt({ role, rules, reminder, envelope, data = [], out
   if (rem) parts.push(`<reminder>\n${rem}\n</reminder>`);
   const text = `${parts.join('\n\n')}\n`;
   if (maxBytes && Buffer.byteLength(text) > maxBytes) {
-    throw new DpError(`${role} prompt ${Buffer.byteLength(text)} bytes 超過上限 ${maxBytes};切片太大,讓 script 先篩再送`);
+    throw new DlmError(`${role} prompt ${Buffer.byteLength(text)} bytes 超過上限 ${maxBytes};切片太大,讓 script 先篩再送`);
   }
   return text;
 }
@@ -60,7 +60,7 @@ export function dataFile(root, relPath, { at, maxChars = 20000 } = {}) {
 /** 小模型用的迷你模板:<<NAME>> 替換。缺值就丟例外,不留空。 */
 export function fillTemplate(text, vars) {
   return text.replace(/<<([A-Z_]+)>>/g, (_, k) => {
-    if (!(k in vars)) throw new DpError(`verifier 模板缺變數 ${k}`);
+    if (!(k in vars)) throw new DlmError(`verifier 模板缺變數 ${k}`);
     return fence(vars[k]);
   });
 }

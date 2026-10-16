@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "dev-paradigm-mcp (dp) API",
-    "version": "4.7.3",
-    "description": "dp hub 提供的本機 API:多專案的監控與操作、訂閱帳號。只綁 127.0.0.1;除了 health 與 openapi,都要帶 token(`Authorization: Bearer <token>`,token 用 `dp hub token` 看)。決定類的端點(decisions、confirmations、unblock、resume)只能轉達使用者親口的決定。"
+    "title": "dev-loop-mcp (dlm) API",
+    "version": "4.8.0",
+    "description": "dlm hub 提供的本機 API:多專案的監控與操作、訂閱帳號。只綁 127.0.0.1;除了 health 與 openapi,都要帶 token(`Authorization: Bearer <token>`,token 用 `dlm hub token` 看)。決定類的端點(decisions、confirmations、unblock、resume)只能轉達使用者親口的決定。"
   },
   "servers": [
     {
@@ -176,8 +176,8 @@
         "tags": [
           "meta"
         ],
-        "summary": "dp 的流程:建專案 → 帳號 → 規劃一版 → 施工 → 監控與回答 → 試用與下一版 → 暫停與恢復;每一步誰做、呼叫哪個操作",
-        "description": "第一次用、或不確定下一步時先看這個。stages[].steps[].call 是 operationId(MCP 工具名 = dp_ + snake_case)。",
+        "summary": "dlm 的流程:建專案 → 帳號 → 規劃一版 → 施工 → 監控與回答 → 試用與下一版 → 暫停與恢復;每一步誰做、呼叫哪個操作",
+        "description": "第一次用、或不確定下一步時先看這個。stages[].steps[].call 是 operationId(MCP 工具名 = dlm_ + snake_case)。",
         "responses": {
           "200": {
             "description": "結果",
@@ -239,7 +239,7 @@
           "monitor"
         ],
         "summary": "總覽:每個專案的進度、背景迴圈、在跑的 worker、等你決定的事、今天花費;帳號用量;總計",
-        "description": "監控用。每個專案的資料由該專案自己的 dp 算出(有快取,帳本沒變就不重算)。專案的 dp 太舊或路徑不見了,那一筆會有 error。",
+        "description": "監控用。每個專案的資料由該專案自己的 dlm 算出(有快取,帳本沒變就不重算)。專案的 dlm 太舊或路徑不見了,那一筆會有 error。",
         "responses": {
           "200": {
             "description": "結果",
@@ -300,7 +300,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "這台電腦登記的 dp 專案(名稱、路徑、dp 版本、能不能用 API)",
+        "summary": "這台電腦登記的 dlm 專案(名稱、路徑、dlm 版本、能不能用 API)",
         "responses": {
           "200": {
             "description": "結果",
@@ -359,7 +359,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "登記一個專案(已經是 dp 專案的目錄;同一個路徑登記兩次回原本那筆)",
+        "summary": "登記一個專案(已經是 dlm 專案的目錄;同一個路徑登記兩次回原本那筆)",
         "requestBody": {
           "required": true,
           "content": {
@@ -455,7 +455,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "建一個 dp 專案(新的空目錄,或 existing=true 補進既有專案)並登記;下一步 setupProject",
+        "summary": "建一個 dlm 專案(新的空目錄,或 existing=true 補進既有專案)並登記;下一步 setupProject",
         "requestBody": {
           "required": true,
           "content": {
@@ -474,7 +474,7 @@
                   },
                   "existing": {
                     "type": "boolean",
-                    "description": "true = 既有專案,只補 dp 的檔(衝突就一個都不寫)"
+                    "description": "true = 既有專案,只補 dlm 的檔(衝突就一個都不寫)"
                   }
                 },
                 "required": [
@@ -555,7 +555,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "把專案的 dp 升級成這個 hub / MCP 的版本(衝突就一個都不寫)",
+        "summary": "把專案的 dlm 升級成這個 hub / MCP 的版本(衝突就一個都不寫)",
         "parameters": [
           {
             "name": "project",
@@ -749,7 +749,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op status` 的結果",
+            "description": "`dlm op status` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -877,7 +877,7 @@
         "tags": [
           "accounts"
         ],
-        "summary": "登記一個帳號(建立它的登入目錄)。登入要開瀏覽器,請在終端機跑 dp account login <name>",
+        "summary": "登記一個帳號(建立它的登入目錄)。登入要開瀏覽器,請在終端機跑 dlm account login <name>",
         "requestBody": {
           "required": true,
           "content": {
@@ -1094,7 +1094,7 @@
         "tags": [
           "accounts"
         ],
-        "summary": "移除帳號(dp 建的登入目錄一起刪)",
+        "summary": "移除帳號(dlm 建的登入目錄一起刪)",
         "parameters": [
           {
             "name": "account",
@@ -1283,7 +1283,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op dashboard` 的結果",
+            "description": "`dlm op dashboard` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1365,7 +1365,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op inbox` 的結果",
+            "description": "`dlm op inbox` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1437,7 +1437,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op inbox_seen` 的結果",
+            "description": "`dlm op inbox_seen` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1528,7 +1528,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op show` 的結果",
+            "description": "`dlm op show` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1630,7 +1630,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op events` 的結果",
+            "description": "`dlm op events` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1794,7 +1794,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op nodes` 的結果",
+            "description": "`dlm op nodes` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1866,7 +1866,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op proposals` 的結果",
+            "description": "`dlm op proposals` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -1938,7 +1938,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op doctor` 的結果",
+            "description": "`dlm op doctor` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2010,7 +2010,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op roles` 的結果",
+            "description": "`dlm op roles` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2082,7 +2082,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op loop` 的結果",
+            "description": "`dlm op loop` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2140,7 +2140,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "不互動的 dp setup:寫 dp.config.json、裝 hooks、commit,回傳健康檢查",
+        "summary": "不互動的 dlm setup:寫 dlm.config.json、裝 hooks、commit,回傳健康檢查",
         "description": "answers 沒給的用預設。mode:greenfield / brownfield;platform:claude / custom(custom 要 worker_cmd);verifier:haiku / none;autonomy:\"0\" / \"1\" / \"2\";critic、npm_install、commit:true / false。brownfield 的 test_cmd 沒給時用偵測到的測試指令,偵測不到就會失敗。npm_install 預設 false(要下載)。",
         "parameters": [
           {
@@ -2232,7 +2232,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op setup` 的結果",
+            "description": "`dlm op setup` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2300,7 +2300,7 @@
         "tags": [
           "projects"
         ],
-        "summary": "改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dp.config.json 並 commit)",
+        "summary": "改自治等級、每日預算、同時幾個 worker(使用者親口說的;只改有給的欄位,改 dlm.config.json 並 commit)",
         "description": "這些只有使用者能決定。不要為了改其中一項重跑 setupProject(它會連其他設定一起問、一起寫)。",
         "parameters": [
           {
@@ -2351,7 +2351,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op set_settings` 的結果",
+            "description": "`dlm op set_settings` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2451,7 +2451,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op onboard` 的結果",
+            "description": "`dlm op onboard` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2551,7 +2551,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op baseline` 的結果",
+            "description": "`dlm op baseline` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2668,7 +2668,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op decide` 的結果",
+            "description": "`dlm op decide` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2779,7 +2779,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op confirm` 的結果",
+            "description": "`dlm op confirm` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -2885,7 +2885,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op unblock` 的結果",
+            "description": "`dlm op unblock` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3013,7 +3013,7 @@
                           "type": "string",
                           "minLength": 1
                         },
-                        "description": "這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dp 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔",
+                        "description": "這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dlm 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔",
                         "minItems": 1
                       },
                       "gherkin": {
@@ -3048,7 +3048,7 @@
                           "prereq",
                           "followup"
                         ],
-                        "description": "prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫"
+                        "description": "prereq = 父節點要等這個節點完成(dlm 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫"
                       },
                       "tier": {
                         "type": "string",
@@ -3142,7 +3142,7 @@
         },
         "responses": {
           "201": {
-            "description": "`dp op propose_feature` 的結果",
+            "description": "`dlm op propose_feature` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3300,7 +3300,7 @@
                                 "type": "string",
                                 "minLength": 1
                               },
-                              "description": "這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dp 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔",
+                              "description": "這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dlm 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔",
                               "minItems": 1
                             },
                             "gherkin": {
@@ -3335,7 +3335,7 @@
                                 "prereq",
                                 "followup"
                               ],
-                              "description": "prereq = 父節點要等這個節點完成(dp 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫"
+                              "description": "prereq = 父節點要等這個節點完成(dlm 會把它加進父節點的 depends_on;父節點不能是已經完成的);followup = 這個節點等父節點完成;有 parent 才寫"
                             },
                             "tier": {
                               "type": "string",
@@ -3435,7 +3435,7 @@
         },
         "responses": {
           "201": {
-            "description": "`dp op propose_bundle` 的結果",
+            "description": "`dlm op propose_bundle` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3541,7 +3541,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op halt` 的結果",
+            "description": "`dlm op halt` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3641,7 +3641,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op resume` 的結果",
+            "description": "`dlm op resume` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3723,7 +3723,7 @@
         ],
         "responses": {
           "200": {
-            "description": "`dp op tick` 的結果",
+            "description": "`dlm op tick` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3830,7 +3830,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op loop_start` 的結果",
+            "description": "`dlm op loop_start` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -3932,7 +3932,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op loop_stop` 的結果",
+            "description": "`dlm op loop_stop` 的結果",
             "content": {
               "application/json": {
                 "schema": {
@@ -4000,7 +4000,7 @@
         "tags": [
           "accounts"
         ],
-        "summary": "設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)與模型;改 dp.config.json 並 commit",
+        "summary": "設定一個角色輪流用哪些帳號(空陣列 = 不用帳號)與模型;改 dlm.config.json 並 commit",
         "parameters": [
           {
             "name": "project",
@@ -4057,7 +4057,7 @@
         },
         "responses": {
           "200": {
-            "description": "`dp op set_role` 的結果",
+            "description": "`dlm op set_role` 的結果",
             "content": {
               "application/json": {
                 "schema": {

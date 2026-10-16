@@ -7,7 +7,7 @@ import {
 import { dirname, join, relative, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export class DpError extends Error {
+export class DlmError extends Error {
   constructor(message, code = 1) {
     super(message);
     this.code = code;
@@ -51,13 +51,13 @@ export function atomicWrite(path, data) {
 export function readJson(path, fallback) {
   if (!existsSync(path)) {
     if (fallback !== undefined) return fallback;
-    throw new DpError(`找不到 ${path}`);
+    throw new DlmError(`找不到 ${path}`);
   }
   const text = readFileSync(path, 'utf8');
   try {
     return JSON.parse(text);
   } catch (e) {
-    throw new DpError(`${path} 不是合法 JSON:${e.message}`);
+    throw new DlmError(`${path} 不是合法 JSON:${e.message}`);
   }
 }
 
@@ -90,7 +90,7 @@ export function withLock(lockPath, fn, { timeoutMs = 10000 } = {}) {
         continue;
       }
       if (Date.now() - start > timeoutMs) {
-        throw new DpError(`拿不到鎖 ${lockPath}(持有者 pid ${holder})`);
+        throw new DlmError(`拿不到鎖 ${lockPath}(持有者 pid ${holder})`);
       }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
@@ -159,7 +159,7 @@ export function globPrefix(glob) {
 
 /**
  * 子程序的環境:拿掉會改變子程序行為的父程序情境變數。
- * 例:dp 在 `node --test` 底下跑時,NODE_TEST_CONTEXT 會讓 worker 的 `node --test` 默默跳過全部測試並 exit 0(假綠)。
+ * 例:dlm 在 `node --test` 底下跑時,NODE_TEST_CONTEXT 會讓 worker 的 `node --test` 默默跳過全部測試並 exit 0(假綠)。
  */
 export function childEnv(extra = {}) {
   const env = { ...process.env, ...extra };
@@ -169,7 +169,7 @@ export function childEnv(extra = {}) {
   return env;
 }
 
-/** 以 shell 執行並回傳退出碼與輸出。永不丟例外;逾時回 code=124。只給 dp 自己或使用者批准過的指令用。 */
+/** 以 shell 執行並回傳退出碼與輸出。永不丟例外;逾時回 code=124。只給 dlm 自己或使用者批准過的指令用。 */
 export function run(cmd, opts = {}) {
   return runArgv('sh', ['-c', cmd], opts);
 }
@@ -237,7 +237,7 @@ export function lockHolder(lockPath) {
 
 /**
  * 不可信文字(worker 報告、模型輸出、git 輸出)要給 Front 看時一律用這個包起來。
- * 內文裡的 <untrusted / </untrusted 會被跳脫,worker 沒辦法提前關閉圍欄、假裝後面是 dp 說的話。
+ * 內文裡的 <untrusted / </untrusted 會被跳脫,worker 沒辦法提前關閉圍欄、假裝後面是 dlm 說的話。
  */
 export function fenceUntrusted(source, text) {
   const esc = (s) => String(s ?? '').replace(/<(\/?)(untrusted)/gi, '&lt;$1$2');
