@@ -283,6 +283,21 @@ describe('dp mcp', () => {
     }
   });
 
+  test('提案工具帶節點欄位的 schema:agent 不用讀 INTAKE.md 也知道 spec / bundle 長什麼樣', () => {
+    const tools = Object.fromEntries(toolList().map((t) => [t.name, t]));
+    const spec = tools.dp_propose_feature.inputSchema.properties.spec;
+    for (const k of ['id', 'kind', 'title', 'intent', 'owns', 'depends_on', 'accept']) assert.ok(spec.properties[k]?.description || spec.properties[k], k);
+    assert.deepEqual(spec.required, ['id', 'title', 'intent']);
+    const node = tools.dp_propose_bundle.inputSchema.properties.bundle.properties.nodes.items;
+    assert.ok(node.properties.gherkin_text && node.properties.kind);
+    const r = ROUTES.find((x) => x.id === 'proposeFeature');
+    assert.match(buildArgs(r, { project: 'p' }, [], { spec: { title: 'x' } }).error, /缺必填欄位 id/);
+    assert.match(buildArgs(r, { project: 'p' }, [], { spec: { id: 'a/v1', title: 't', intent: 'i', owns: 'src/**' } }).error, /owns: 型別應為 array/);
+    assert.equal(buildArgs(r, { project: 'p' }, [], { spec: { id: 'a/v1', title: 't', intent: 'i', owns: ['src/**'] } }).error, undefined);
+    const b = ROUTES.find((x) => x.id === 'proposeBundle');
+    assert.match(buildArgs(b, { project: 'p' }, [], { bundle: { release: 'v1', nodes: [] } }).error, /nodes: 項目數 < 1/);
+  });
+
   test('stdio 實跑(在專案目錄啟動,project 可省略):tools/list → 提案 → inbox → decide', async () => {
     const proj = makeProject();
     const child = spawn(process.execPath, [DP, 'mcp'], { cwd: proj, env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] });

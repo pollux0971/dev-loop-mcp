@@ -25,7 +25,7 @@ function params(r) {
   for (const [k, s] of Object.entries(r.query ?? {})) rows.push([k, 'query', typeOf(s), (r.required ?? []).includes(k) ? '必填' : '', s.description]);
   for (const [k, s] of Object.entries(r.body?.properties ?? {})) {
     rows.push([k, 'body', typeOf(s), (r.body.required ?? []).includes(k) ? '必填' : '', s.description]);
-    for (const [k2, s2] of Object.entries(s.properties ?? {})) rows.push([`${k}.${k2}`, 'body', typeOf(s2), '', s2.description]);
+    for (const [k2, s2] of Object.entries(s.properties ?? {})) rows.push([`${k}.${k2}`, 'body', typeOf(s2), (s.required ?? []).includes(k2) ? '必填' : '', s2.description]);
   }
   return rows;
 }

@@ -2,6 +2,16 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。
 
+## Unreleased — 提案工具的參數 schema(MCP agent 第一次就傳對)
+
+- `dp_propose_feature` 的 `spec`、`dp_propose_bundle` 的 `bundle` 原本只寫 `type: object` 加一句說明,只透過 MCP 用 dp 的 agent
+  (讀不到 `docs/dp/INTAKE.md`)常第一次就把 spec 傳成字串、或漏掉 id / intent,錯了才回頭猜。現在兩個參數帶完整的節點欄位:
+  型別直接沿用 `dag.json` 的 `nodeSchema`(同一份,不會兩邊說法不一),加上給 agent 看的說明與範例;`id`、`title`、`intent` 標為必填,
+  bundle 標出 `release`、`nodes`(至少一個)與 `gherkin_text` / `gherkin_file`。
+- 錯誤在參數檢查就擋下並指出欄位(例:`body.spec: 缺必填欄位 id`、`body.spec.owns: 型別應為 array`),不必等到 intake。
+  沒有加 `additionalProperties: false`:原本能過的提案現在一樣能過,完整驗證仍在 intake。
+- `API.md` 的巢狀參數也標出必填;`API.md`、`openapi.json` 已用 `dp api` 重產。
+
 ## 4.7.2 — 改名 dev-paradigm-mcp
 
 - 專案改名 dev-paradigm-mcp(package.json、README、`dp --help`、MCP 的 serverInfo、OpenAPI 標題、主控台左上角)。打包的資料夾也叫 `dev-paradigm-mcp/`。
