@@ -5,7 +5,7 @@ import { getNode } from '../dag.mjs';
 import { git } from '../git.mjs';
 import { listFiles, matchAny, run, runArgv, tail } from '../util.mjs';
 
-const r = (check, outcome, detail, evidence) => ({ check, outcome, detail, ...(evidence ? { evidence } : {}) });
+export const r = (check, outcome, detail, evidence) => ({ check, outcome, detail, ...(evidence ? { evidence } : {}) });
 
 /**
  * Executor: acceptance, evidence re-runs and standalone all go through it.

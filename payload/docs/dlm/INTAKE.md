@@ -19,7 +19,7 @@
 ## feature(單一節點)
 
 `dlm intake feature --spec spec.json --gherkin x.feature`。spec 欄位:`id`(`<能力>/v1`、整合點 `I1`、共用 `shared/<名字>`)、
-`title`、`intent`(≤300 字)、`owns`、`depends_on`、可選 `standalone`、`release`、`accept`(預設 `npm run accept -- <gherkin>`;範本的步驟是 TypeScript,直接 `npx cucumber-js` 載入不了)、`tier`、`pipeline`。
+`title`、`intent`(≤300 字)、`owns`、`depends_on`、可選 `standalone`、`release`、`accept`(預設是技術棧的 `accept_cmd`,node-ts 是 `npm run accept -- <gherkin>`;技術棧沒有預設時必填)、`tier`、`pipeline`。
 `shared` 節點沒有預設的 gherkin 路徑:要機器驗收就自己寫 `gherkin` 與 `accept`,不然不要附 gherkin。
 
 ## 既有專案(brownfield,v4.5)
@@ -33,8 +33,8 @@
   `"characterize": { "targets": [既有檔], "tests": [釘住它們的測試檔], "cmd": "只跑這些測試的指令" }`,pipeline 變成
   `characterize → test → dev`。characterize 棒只能寫 `tests`、不能改任何原始碼,`cmd` 必須在現在的程式上綠;
   之後每一棒都不能改這些測試,實作棒還要讓 `cmd` 維持綠。一次最多 10 個檔;`"skip": "理由"` 可以不釘。
-- **accept 與 tests**:沒有 `accept` script(範本的 cucumber)的專案,節點要自己寫 `accept`(專案的測試指令,只跑這個節點的測試),
+- **accept 與 tests**:技術棧沒有預設驗收指令(或既有專案沒有它要的東西,node-ts:`accept` script)時,節點要自己寫 `accept`(專案的測試指令,只跑這個節點的測試),
   建議也寫 `tests`(這個節點的測試檔 glob)。gherkin 仍是規格,測試棒照每個場景各寫一個測試。
-- 不是 Node 的既有專案(沒有 package.json)`dlm init --existing` 不裝範本的 TypeScript 工具鏈(package.json、tsconfig、scripts/*.ts…)。
+- 既有專案 `dlm init --existing` 不裝任何技術棧範本(package.json、tsconfig、scripts/*.ts…),gate 跑專案自己的測試。
 
 匯入別的 repo(import)在 v4.1 拿掉了(實跑沒用到),v4.5 也沒有加回來。

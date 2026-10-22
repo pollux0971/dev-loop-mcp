@@ -281,8 +281,8 @@ describe('dlm hub(HTTP API)', () => {
 });
 
 describe('文件跟路由表、流程表一致', () => {
-  test('payload/docs/dlm 的 API.md、openapi.json、FLOW.md 就是 dlm api 產生的(改了 api.mjs / flow.mjs 要重產)', () => {
-    for (const [kind, file] of [['md', 'API.md'], ['openapi', 'openapi.json'], ['flow', 'FLOW.md']]) {
+  test('payload/docs/dlm 的 API.md、openapi.json、FLOW.md、AGENT-RULES.md 就是 dlm api 產生的(改了 api.mjs / flow.mjs / 規則檔要重產)', () => {
+    for (const [kind, file] of [['md', 'API.md'], ['openapi', 'openapi.json'], ['flow', 'FLOW.md'], ['rules', 'AGENT-RULES.md']]) {
       const want = run(`node tools/dlm.mjs api ${kind}`, { cwd: REPO }).stdout;
       assert.equal(readFileSync(join(REPO, 'payload', 'docs', 'dlm', file), 'utf8'), want, `${file} 過期了:node tools/dlm.mjs api ${kind} > payload/docs/dlm/${file}`);
     }

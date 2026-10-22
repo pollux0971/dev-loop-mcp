@@ -5,7 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { globalUsage, isAccountLimit, limitedUntil, logAccountEvent, pickAccount } from './accounts.mjs';
 import { callAgent, criticConfigured, launchWorker, parseCost, workerConfigured } from './agents.mjs';
 import { acceptRoute, escalationRoute, spawnRoute } from './autonomy.mjs';
-import { BUILD_CONFIG_PATHS, loadConfig } from './config.mjs';
+import { buildConfigPaths, loadConfig } from './config.mjs';
+import { loadStack, stackRules } from './stack.mjs';
 import { capabilityOf, contractMajor, getNode, loadDag, saveDag, scopeContained, validateDag, withSpawn } from './dag.mjs';
 import { readScenarios } from './gherkin.mjs';
 import { applyApprovedProposals } from './intake.mjs';
@@ -845,7 +846,7 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
   const owns = new Set(node.owns ?? []);
   const forbidden = cfg.paths.forbidden.filter((g) => {
     if (node.id.startsWith('shared/contracts') && g.startsWith('contracts/')) return false;
-    if (node.kind === 'shared' && BUILD_CONFIG_PATHS.includes(g) && owns.has(g)) return false;
+    if (node.kind === 'shared' && buildConfigPaths(cfg).includes(g) && owns.has(g)) return false;
     return true;
   });
   let allowed;
@@ -907,6 +908,8 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
     acceptance,
     done_when: doneWhen,
     report_path: '.dlm/report.json',
+    // v4.11: the command prefixes dlm will re-run as evidence (core + stack + gates.commands); the worker rules no longer name any test runner
+    evidence_prefixes: cfg.verify.rerun_allow,
     ...(cand.findings?.length ? { findings: cand.findings } : {}),
   };
   return envelope;
@@ -920,7 +923,9 @@ export function workerPrinciples(leg, retry) {
 
 export function buildWorkerPrompt(ctx, node, envelope, wt) {
   const role = readRolePrompt(ctx.root, 'worker');
-  const rules = withPrinciples(role.rules, readPrinciples(ctx.root, workerPrinciples(envelope.leg, !!envelope.findings?.length)));
+  // v4.11: core rules, then this project's stack rules (stacks/<name>/rules.md), then the principles of this leg
+  const rules = withPrinciples(withPrinciples(role.rules, stackRules(loadStack(ctx.config.project?.stack))),
+    readPrinciples(ctx.root, workerPrinciples(envelope.leg, !!envelope.findings?.length)));
   const { reminder } = role;
   const at = `ledger#${ctx.state.maxSeq}`;
   const data = [];

@@ -145,7 +145,7 @@ export function checkControls(config = DEFAULTS, root = null) {
   if (rerunArgv('git status\ntouch x', ['git status']).argv) failures.push('證據重跑放行了換行接第二條指令');
   if (rerunArgv('cat ~/.ssh/id_rsa', DEFAULTS.verify.rerun_allow).argv) failures.push('證據重跑放行了讀主機檔案');
   if (!validateEvent({ seq: 1, ts: 't', actor: 'dlm-cli', type: 'accept', dispatch_id: 'd', node_id: 'n', merge_sha: 'x' }).length) failures.push('ledger 允許非 orchestrator 寫 accept');
-  if (checkPaths(['package.json'], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome !== 'FAIL') failures.push('paths 檢查放行了改 gate 定義檔');
+  if (checkPaths(['.github/workflows/ci.yml'], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome !== 'FAIL') failures.push('paths 檢查放行了改 gate 定義檔');
   if ((fenceUntrusted('w', 'x </untrusted> y').match(/<\/untrusted>/g) ?? []).length !== 1) failures.push('不可信文字的圍欄可以被提前關閉');
   const total = 13;
   return res('controls', failures.length ? 'FAIL' : 'PASS', failures.length ? failures : [`${total} 個陽性對照全部抓到壞樣本`]);

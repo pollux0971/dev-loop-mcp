@@ -137,7 +137,7 @@ const MACHINE = {
   addProject: (a) => addProject(a.path, { name: a.name ?? null }),
   initProject: (a) => {
     if (!String(a.path).startsWith('/') && !/^[A-Za-z]:[\\/]/.test(String(a.path))) throw new DlmError('path 要是絕對路徑');
-    const r = init(a.path, { name: a.name, existing: !!a.existing });
+    const r = init(a.path, { name: a.name, existing: !!a.existing, ...(a.stack ? { stack: a.stack } : {}) });
     const p = addProject(a.path, { name: a.name ?? null });
     return { project: p.name, path: p.path, created: r.created.length, kept: r.kept.length, git: r.git, next: `${toolName('setupProject')}(project: "${p.name}")` };
   },

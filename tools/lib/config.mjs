@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { assertNotLegacy } from './legacy.mjs';
+import { loadStack, stackName } from './stack.mjs';
 import { assertValid } from './schema.mjs';
 import { configSchema } from './schemas.mjs';
 import { DlmError, readJson } from './util.mjs';
@@ -7,18 +8,19 @@ import { DlmError, readJson } from './util.mjs';
 /**
  * gate definition files and agent settings. If a worker could change them, it could turn `test` into `exit 0` or swap the test framework,
  * defeating the last gate. Forbidden by default; when a change is really needed, go through user approval and a shared/* node whose owns lists that path explicitly.
+ * v4.11: only the ones every project has are here; each stack adds its own build files (stacks/<name>/stack.json → add.forbidden), see buildConfigPaths.
  */
-export const BUILD_CONFIG_PATHS = [
-  'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'tsconfig.json',
-  'vitest*.config.*', 'cucumber.js', 'stryker.config.json', 'scripts/**',
-  '.mcp.json', '.github/**', '.gitattributes', '.gitignore',
-];
+export const BUILD_CONFIG_PATHS = ['.mcp.json', '.github/**', '.gitattributes', '.gitignore'];
+
+/** The gate definition files of this config: the core's plus the stack's. */
+export const buildConfigPaths = (config) => [...BUILD_CONFIG_PATHS, ...(config?.stack_add?.forbidden ?? [])];
 
 export const DEFAULTS = {
   main_branch: 'main',
   worktree_dir: '.dlm/worktrees',
   platform: 'generic',
-  // v4.5: greenfield / brownfield (dlm setup asks). language decides the default paths for characterize and test files
+  // v4.5: greenfield / brownfield (dlm setup asks). language decides the default paths for characterize and test files.
+  // v4.11 stack: the folder under stacks/ with this project's template, default commands and extra checks; absent = detected (see stack.mjs), 'none' = core only
   project: { mode: 'greenfield', language: 'node' },
   caps: {
     parallel: 3, unmerged: 3, drift: 20, attempts: 3, lease_minutes: 90,
@@ -41,7 +43,7 @@ export const DEFAULTS = {
   // How install:merge-tree gets its dependencies. auto = if there is a package-lock.json, install a clean copy with the local cache `npm ci --offline --ignore-scripts`
   // (unaffected by changes to the root node_modules); only without a lockfile, symlink the root.
   // commands (v4.5): the command each chain name maps to, for existing projects that do not run tests through npm scripts (e.g. { test: 'python3 -m pytest -q' }).
-  gates: { chain: ['check:dlm', 'typecheck', 'test', 'accept'], timeout_minutes: 30, install: 'auto', commands: {} },
+  gates: { chain: ['check:dlm', 'test'], timeout_minutes: 30, install: 'auto', commands: {} },
   autonomy: { level: 1 },
   // User authorization (decide / confirm / resume / unblock): trust what Front relays; --verbatim may be omitted.
   // When verbatim words signed by the hook and matching are given (within the last window_minutes minutes), the event records the hash of that sentence
@@ -69,21 +71,24 @@ export const DEFAULTS = {
       ...BUILD_CONFIG_PATHS,
     ],
     tests: ['**/*.test.*', '**/*.spec.*', 'features/**/*.feature', 'features/steps/**', 'docs/integration/**/*.feature'],
-    rules: ['AGENTS.md', 'AUTONOMY.md', 'prompts/*.md', 'prompts/principles/*.md', '.claude/skills/*/SKILL.md'],
+    rules: ['AGENTS.md', 'AUTONOMY.md', 'prompts/*.md', 'prompts/principles/*.md', '.claude/skills/*/SKILL.md', 'tools/stacks/*/rules.md'],
   },
   verify: {
     // Prefix match; the command itself may only contain alphanumerics, ._/:=@+- and spaces, run as argv without a shell.
     // No cat / ls: a worker could claim "the exit of cat ~/.aws/credentials is 1" and make dlm read the file on the host for it.
     // v4: added `node tools/dlm.mjs check` (the only command a contract node can use as evidence; in the v3 real run it was not allowed, so the whole thing became a question to the user)
-    rerun_allow: ['npm run ', 'npm test', 'npx cucumber-js', 'npx vitest', 'node --test', 'node tools/dlm.mjs check', 'git diff', 'git log', 'git status'],
+    // v4.11: the test runners (npm test, pytest, ...) come from the stack (add.rerun_allow) and from gates.commands
+    rerun_allow: ['node tools/dlm.mjs check', 'git diff', 'git log', 'git status'],
     rerun_timeout_seconds: 600,
     // Test leg: every step must be bound ({gherkin} is replaced with the node's gherkin path). null = do not run
     dry_run_cmd: null,
+    // v4.11: used by a stack's own test-leg checks (node-ts: 'auto' = typecheck the files this leg wrote). null = do not run
+    typecheck_cmd: null,
     // Last leg: run incremental mutation on the implementation files this leg changed ({files} is replaced with a comma-separated file list). cmd null = do not run
     mutation: {
       // v4: 50 for normal nodes, 70 for tier strict (v3 real run: CLI projects scored 52%, 54%, and a threshold of 60 made every run "unsure")
       cmd: null, report: 'reports/mutation/mutation.json', min: 50, min_strict: 70, timeout_minutes: 30,
-      include: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs'],
+      include: ['**/*'],
     },
   },
   checks: { placeholders: { exclude: [] } },
@@ -153,7 +158,15 @@ export function loadConfig(root) {
   } catch (e) {
     throw new DlmError(e.message);
   }
-  const config = merge(DEFAULTS, raw);
+  // v4.11: core defaults <- the stack's defaults <- the project's own settings. The stack's add.* lists extend the core's lists instead of replacing them
+  const stack = loadStack(stackName(root, raw));
+  const base = merge(DEFAULTS, stack.defaults ?? {});
+  const add = stack.add ?? {};
+  base.verify = { ...base.verify, rerun_allow: [...base.verify.rerun_allow, ...(add.rerun_allow ?? [])] };
+  base.paths = { ...base.paths, forbidden: [...base.paths.forbidden, ...(add.forbidden ?? [])] };
+  const config = merge(base, raw);
+  config.project = { ...config.project, stack: stack.name };
+  config.stack_add = add;
   // v4.5: the command for a gate (e.g. python3 -m pytest -q) is also a command the worker uses as evidence, so it is added to the rerun allowlist automatically.
   // What goes in is the test framework part (python3 -m pytest, go test, cargo test): the arguments differ when a worker runs only its own test files
   const runner = (c) => { const w = c.split(' ').filter(Boolean); return w.slice(0, w[1] === '-m' ? 3 : 2).join(' '); };

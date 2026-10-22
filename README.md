@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dlm plans the work as a DAG, sen
 
 ![dlm hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.10.1 · Node ≥ 20 · zero dependencies · 207 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.11.0 · Node ≥ 20 · zero dependencies · 217 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**, then **dev-paradigm-mcp** (command `dp`). Since 4.8.0 it is called **dev-loop-mcp**, and the command is `dlm`. MCP tools start with `dlm_`. Coming from `dp`? See [Upgrading from dp](#upgrading-from-dp-473-and-earlier).
 >
@@ -236,13 +236,13 @@ To change the level, the daily budget or the number of workers, say so to Front.
 - **Signed ledger.** Every event carries `prev_hash` (sha256 of the previous line) and `mac` (an HMAC with a key outside the repo, `~/.config/dlm/key`). If anyone edits or appends by hand, `dlm check ledger` reports it and `dlm tick` refuses to run.
 - **Your words are signed.** Inside a project, a Claude Code hook signs every message you send. When a decision's verbatim text matches something you really said, the event records its hash. Later you can tell which decisions you made yourself.
 - **Workers never see `.git`.** They work in an exported copy. Only changes inside the allowed paths are copied back, and dlm commits them itself.
-- **Evidence re-runs are locked down.** Only commands starting with an allowed prefix (`npm run`, `npm test`, `node --test`, `npx vitest`, `git diff`…), run as argv without a shell. No `cat`, no absolute paths, no `..`.
+- **Evidence re-runs are locked down.** Only commands starting with an allowed prefix (the core's `git diff`, `node tools/dlm.mjs check`…, plus the stack's test runners and your `gates.commands`), run as argv without a shell. No `cat`, no absolute paths, no `..`.
 - **Gate files are off-limits.** `package.json`, lockfiles, `tsconfig.json`, test configs, `scripts/**`, `.github/**` and dlm's own files are forbidden to workers. Changing them needs a `shared` node that you approve.
 - **This is not OS-level isolation.** Code runs as you, on your machine. The Claude worker command blocks `rm -rf`, `rm -fr` and `sudo`, but keep backups. For stronger isolation, run the whole project in a container or VM. See [`payload/docs/dlm/SECURITY.md`](payload/docs/dlm/SECURITY.md).
 
 ### 7. Existing projects (brownfield)
 
-- **The gate runs the project's own tests.** `setup` detects `npm test`, pytest / unittest, `go test`, `cargo test` or `make test` and writes it to `gates.commands` (e.g. `{"test": "python3 -m unittest"}`). Non-Node projects don't get the template's TypeScript toolchain.
+- **The gate runs the project's own tests.** `setup` detects `npm test`, pytest / unittest, `go test`, `cargo test` or `make test` and writes it to `gates.commands` (e.g. `{"test": "python3 -m unittest"}`). Existing projects don't get any stack template.
 - **Tests that were already red aren't the worker's fault.** `dlm onboard` (re-record with `dlm baseline`) runs the tests on main and records the failures in `docs/dlm-baseline.json`. A red gate passes if every red test is in the baseline. One new red test blocks the merge, and dlm names it.
 - **Pin down current behavior before changing it.** When a node's `owns` covers files that already exist on main, the proposal adds a `characterize` leg in front: it may only write tests, and those tests must pass on the current code. Later legs can't change them, and the dev leg must keep them green. At most 10 files at a time. Behavior you mean to change goes in the gherkin instead.
 - **`docs/AS-IS.md`** describes the project as it is today. `onboard` writes a draft, and Front completes it by reading the code.
@@ -493,9 +493,10 @@ Found and fixed during this run: a superseded proposal stayed approvable (→ `s
 
 ```
 tools/      the dlm CLI and MCP server (zero dependencies); copied into each project
-payload/    files `dlm init` writes into a project: rules, prompts, skills, docs/dlm, templates
+payload/    files `dlm init` writes into a project: rules, prompts, skills, docs/dlm (no language or framework in here)
+stacks/     one folder per tech stack: template, default commands, extra checks, worker rules (node-ts = TypeScript / vitest / cucumber / stryker)
 test/       automated tests
 docs/       ARCHITECTURE.md (design and reasons), adr/, images/ (README screenshots)
 ```
 
-Doc map: design → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · upgrading → [MIGRATION.md](MIGRATION.md) · changes → [CHANGELOG.md](CHANGELOG.md) · user flow → [WORKFLOW.md](payload/docs/dlm/WORKFLOW.md) · roles → [ROLES.md](payload/docs/dlm/ROLES.md) · small-model checks → [VERIFIER.md](payload/docs/dlm/VERIFIER.md) · security → [SECURITY.md](payload/docs/dlm/SECURITY.md) · API → [API.md](payload/docs/dlm/API.md)
+Doc map: design → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · upgrading → [MIGRATION.md](MIGRATION.md) · changes → [CHANGELOG.md](CHANGELOG.md) · user flow → [WORKFLOW.md](payload/docs/dlm/WORKFLOW.md) · roles → [ROLES.md](payload/docs/dlm/ROLES.md) · every agent rule and what enforces it → [AGENT-RULES.md](payload/docs/dlm/AGENT-RULES.md) · stacks → [stacks/README.md](stacks/README.md) · small-model checks → [VERIFIER.md](payload/docs/dlm/VERIFIER.md) · security → [SECURITY.md](payload/docs/dlm/SECURITY.md) · API → [API.md](payload/docs/dlm/API.md)

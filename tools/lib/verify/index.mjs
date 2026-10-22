@@ -7,12 +7,13 @@ import { git } from '../git.mjs';
 import { fillTemplate } from '../prompt.mjs';
 import { linkDeps, removeTree, scratchCopy } from '../sandbox.mjs';
 import { pipelineFor } from '../state.mjs';
-import { matchAny, readJson } from '../util.mjs';
+import { matchAny, readJson, tail } from '../util.mjs';
 import { askVerifier } from './backend.mjs';
 import {
   checkAcceptance, checkDryRun, checkEvidence, checkMutation, checkPaths,
-  checkReportSanity, checkStandalone, checkStubs, checkWorktreeClean, legDiff, hostExecutor,
+  checkReportSanity, checkStandalone, checkStubs, checkWorktreeClean, legDiff, hostExecutor, r,
 } from './script-checks.mjs';
+import { loadStack, stackTestLegChecks } from '../stack.mjs';
 
 function template(root, name, variant) {
   const p = join(root, 'prompts', 'verifier', `${name}.${variant}.md`);
@@ -86,6 +87,10 @@ export async function runVerify(ctx) {
     results.push(...acc);
     envelope.acceptance.forEach((a, i) => accepted.set(normCmd(a.cmd), acc[i]?.outcome));
     if (leg === 'test' || leg === 'test-fix') results.push(...checkDryRun(ex, node, config));
+    // v4.11: checks that only make sense for one language / framework come from the stack (stacks/<name>/checks.mjs)
+    if (['characterize', 'test', 'test-fix'].includes(leg)) {
+      results.push(...await stackTestLegChecks(loadStack(config.project?.stack), { ex, wt, changed, config, lib: { r, tail, matchAny, readJson } }));
+    }
     if (['dev', 'integrate'].includes(leg)) results.push(...checkStandalone(ex, node, config));
     if (leg === 'integrate') {
       for (const depId of node.depends_on ?? []) {

@@ -1,4 +1,4 @@
-# dlm API(v4.10.1)
+# dlm API(v4.11.0)
 
 > 這份是 `node tools/dlm.mjs api md` 從 `tools/lib/api.mjs` 產生的,不要手改。機器讀的版本:[openapi.json](openapi.json)(或執行中的 `GET /api/v1/openapi.json`)。
 
@@ -144,6 +144,7 @@ operationId `initProject` · MCP `dlm_init_project` · 成功回 201
 | `path` | body | string | 必填 | 專案目錄的絕對路徑(不存在會建立) |
 | `name` | body | string |  | 名稱(選填,預設用目錄名) |
 | `existing` | body | boolean |  | true = 既有專案,只補 dlm 的檔(衝突就一個都不寫) |
+| `stack` | body | string |  | 新專案用的技術棧範本(stacks/ 底下的資料夾名,預設 node-ts;none = 只裝核心)。既有專案不裝範本 |
 
 ### `POST /api/v1/projects/{project}/upgrade`
 

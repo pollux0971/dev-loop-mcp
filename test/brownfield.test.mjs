@@ -149,7 +149,7 @@ test('onboard:基線記下本來就紅的測試,AS-IS 與 ROADMAP v0;doctor 看�
 test('intake:沒寫 accept 會擋;owns 碰到既有程式自動加 characterize;範圍太大要縮', { skip: !HAS_PY && '沒有 python3' }, async () => {
   const { proj } = await existingPython();
   const { accept, ...noAccept } = SPEC;
-  assert.throws(() => proposeFeature(proj, noAccept, GHERKIN), /既有專案沒有 accept script/);
+  assert.throws(() => proposeFeature(proj, noAccept, GHERKIN), /沒有預設的驗收指令/);
   const p = proposeFeature(proj, SPEC, GHERKIN);
   const node = readJson(join(proj, p.path)).nodes[0];
   assert.deepEqual(node.characterize, {

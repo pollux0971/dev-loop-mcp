@@ -63,6 +63,8 @@ dlm 在**沒有 .git 的副本**裡以 `sh -c` 執行它(見 SECURITY.md),環境
 
 ## 驗收強度(建議開)
 
-- `verify.dry_run_cmd`:測試棒要所有步驟都綁定(預設 `npm run --silent accept:dry -- -- {gherkin}`)。
-- `verify.mutation`:最後一棒對這一棒改到的實作檔跑增量 stryker;分數低於 `min`(預設 50;strict 節點用 `min_strict`,預設 70)時 strict 判 FAIL、其他交第二意見。
+這兩項的指令由技術棧給預設(`tools/stacks/<名稱>/stack.json`;node-ts 是 cucumber dry-run 與 stryker),核心本身不認得任何測試框架。
+
+- `verify.dry_run_cmd`:測試棒要所有步驟都綁定(node-ts:`npm run --silent accept:dry -- -- {gherkin}`)。
+- `verify.mutation`:最後一棒對這一棒改到的實作檔跑增量變異測試;分數低於 `min`(預設 50;strict 節點用 `min_strict`,預設 70)時 strict 判 FAIL、其他交第二意見。
   有它之後,沒設 Verifier 模型也不必把每個最後一棒都送去問你。

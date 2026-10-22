@@ -8,6 +8,7 @@ import { hostHas } from './doctor.mjs';
 import { DLM_CLAUDE_HOOKS } from './hooks.mjs';
 import { assertNotLegacy } from './legacy.mjs';
 import { git } from './git.mjs';
+import { existingProjectOff, loadStack } from './stack.mjs';
 import { DlmError, atomicWrite, readJson, run, stableJson, tail, writeJson } from './util.mjs';
 
 /**
@@ -17,9 +18,10 @@ import { DlmError, atomicWrite, readJson, run, stableJson, tail, writeJson } fro
  */
 export const CLAUDE_WORKER_DENY = ['Bash(rm -rf *)', 'Bash(rm -fr *)', 'Bash(sudo *)'];
 export const CLAUDE_WORKER_CMD = `claude -p --output-format json --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools ${CLAUDE_WORKER_DENY.map((r) => `"${r}"`).join(' ')} < "$DLM_PROMPT"`;
-export const CLAUDE_CRITIC_TOOLS = ['Read', 'Grep', 'Glob', 'Bash(npm test*)', 'Bash(npm run *)', 'Bash(npx vitest*)', 'Bash(npx cucumber-js*)', 'Bash(git diff*)', 'Bash(git log*)', 'Bash(git show*)'];
-// v4: v3's default granted no tool permissions, so in headless mode the Critic was denied even Read and could not "actually confirm"; changed to read-only tools + running tests
-export const CLAUDE_CRITIC_CMD = `claude -p --output-format json --allowedTools ${CLAUDE_CRITIC_TOOLS.map((t) => `"${t}"`).join(' ')} --disallowedTools "Edit" "Write" "NotebookEdit"`;
+export const CLAUDE_CRITIC_TOOLS = ['Read', 'Grep', 'Glob', 'Bash(git show*)'];
+// v4: v3's default granted no tool permissions, so in headless mode the Critic was denied even Read and could not "actually confirm"; changed to read-only tools + running tests.
+// v4.11: which test commands it may run is not written here: {test_tools} becomes one Bash(<prefix>*) per verify.rerun_allow (core + stack + gates.commands), see agents.mjs
+export const CLAUDE_CRITIC_CMD = `claude -p --output-format json --allowedTools ${CLAUDE_CRITIC_TOOLS.map((t) => `"${t}"`).join(' ')} {test_tools} --disallowedTools "Edit" "Write" "NotebookEdit"`;
 export const CLAUDE_VERIFIER_CMD = 'claude -p --model haiku --tools "" --no-session-persistence';
 /** The worker_cmd answer meaning "keep the default command of the account's CLI" (the default when the worker already has accounts). */
 export const VIA_ACCOUNTS = '(用帳號)';
@@ -106,7 +108,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   const proj = projectDetect ?? detectProject(root);
   const modeDefault = raw.project?.mode ?? proj.suggested_mode;
   const mode = await choose('mode', '這是新專案還是既有專案?', [
-    { key: 'greenfield', label: 'Greenfield:從零開始', note: '用範本的 TypeScript / vitest / cucumber' },
+    { key: 'greenfield', label: 'Greenfield:從零開始', note: `用 dlm init 裝的技術棧範本(${cur.project?.stack ?? 'none'})` },
     { key: 'brownfield', label: 'Brownfield:既有專案', note: `${proj.code_files} 個程式檔、${proj.test_files} 個測試檔;gate 跑專案自己的測試` },
   ], modeDefault);
   let bfGates = null;
@@ -186,13 +188,14 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     caps: { ...(raw.caps ?? {}), parallel: Number.isInteger(parallel) && parallel > 0 ? parallel : cur.caps.parallel },
   };
   if (bfGates) {
-    // Existing project: the gate runs the project's own tests; the template-only dry-run (cucumber) and mutation (stryker) are turned off if not installed
+    // Existing project: the gate runs the project's own tests; stack defaults that need the stack's template (node-ts: cucumber dry-run, stryker)
+    // are turned off when the project does not have them (stack.json existing_project_needs)
     next.gates = { ...(raw.gates ?? {}), chain: bfGates.chain, commands: bfGates.commands };
-    const deps = (() => { const p = readJson(join(root, 'package.json'), {}); return { ...p.dependencies, ...p.devDependencies }; })();
+    const off = existingProjectOff(root, loadStack(cur.project?.stack));
     next.verify = {
       ...(raw.verify ?? {}),
-      ...(proj.scripts.includes('accept:dry') ? {} : { dry_run_cmd: null }),
-      mutation: { ...(raw.verify?.mutation ?? {}), ...(deps['@stryker-mutator/core'] ? {} : { cmd: null }) },
+      ...('dry_run_cmd' in off ? { dry_run_cmd: null } : {}),
+      mutation: { ...(raw.verify?.mutation ?? {}), ...(off.mutation ?? {}) },
     };
     const tests = [...new Set([...(raw.paths?.tests ?? DEFAULTS.paths.tests), ...(TEST_PATTERNS[proj.language] ?? [])])];
     next.paths = { ...(raw.paths ?? {}), tests };

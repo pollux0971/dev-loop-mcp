@@ -6,19 +6,14 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { characterizeCmd, characterizeTestPath, existingFiles } from './brownfield.mjs';
-import { BUILD_CONFIG_PATHS, loadConfig } from './config.mjs';
+import { buildConfigPaths, loadConfig } from './config.mjs';
+import { defaultAcceptFor, loadStack, probe } from './stack.mjs';
 import { capabilityOf, contractMajor, getNode, loadDag, saveDag, validateDag } from './dag.mjs';
 import { commitAll } from './git.mjs';
 import { append, readEvents } from './ledger.mjs';
 import { renderAll, writeRendered } from './render.mjs';
 import { replay } from './state.mjs';
 import { DlmError, atomicWrite, matchAny, readJson, run, sha256, stableJson, writeJson } from './util.mjs';
-
-/**
-  * Default acceptance command. The template's step definitions are TypeScript and can only be loaded through the accept script in package.json (NODE_OPTIONS=--import=tsx);
-  * running `npx cucumber-js <gherkin>` directly gives ERR_MODULE_NOT_FOUND, and the dev leg could never go green (v3 real run).
- */
-export const defaultAccept = (gherkin) => `npm run accept -- ${gherkin}`;
 
 const PROPOSALS = 'ledger/proposals';
 
@@ -120,23 +115,23 @@ function pendingOverlapWarnings(root, nodes, superseded) {
 }
 
 /**
-  * Layout of a new project (template): workspaces in package.json (the template has packages/*, apps/*). The template's npm test (vitest) only runs *.test.ts under them,
-  * and mutation (stryker) only tests src under them. If a phase node's owns falls entirely outside workspaces -> warn, do not block (if a different layout is really wanted,
-  * changing the vitest / stryker config means gate definition files, which need a separate shared node). Existing projects keep their own layout and are not checked.
+  * Layout of a new project: the stack's template decides where code and unit tests must live for the merge gate and mutation to see them
+  * (node-ts: npm workspaces packages/*, apps/*, unit tests *.test.ts). If a phase node's owns falls entirely outside those directories -> warn, do not block.
+  * Existing projects keep their own layout and are not checked; a stack without `layout` is not checked either.
   * v4.7.3 real run: an AI that could only see MCP could not read the intake skill's examples and put code in src/, bin/*.mjs: the merge gate's test was green with 0 tests,
   * mutation found nothing to test and ABSTAINed every time, and every leg had to ask the user.
  */
 export function layoutWarnings(root, nodes) {
   if (brownfieldConfig(root)) return [];
-  const ws = readJson(join(root, 'package.json'), {})?.workspaces;
-  const dirs = (Array.isArray(ws) ? ws : ws?.packages ?? []).map((w) => String(w).replace(/\/?\*.*$/, '')).filter(Boolean);
+  let layout;
+  try { layout = loadStack(loadConfig(root).project.stack).layout; } catch { return []; }
+  const dirs = layout?.workspaces ?? [];
   if (!dirs.length) return [];
   const inside = (g) => dirs.some((d) => g === d || g.startsWith(`${d}/`));
   return nodes.filter((n) => n.kind === 'phase' && (n.owns ?? []).length && !n.owns.some(inside)).map((n) => {
-    const tests = dirs.map((d) => `${d}/**/*.test.ts`).join('、');
+    const tests = dirs.map((d) => `${d}/**/${layout.unit_tests ?? '*'}`).join('、');
     return `${n.id} 的 owns(${n.owns.join('、')})不在 ${dirs.map((d) => `${d}/`).join('、')} 底下:`
-      + `範本的 npm test 只跑 ${tests},mutation 也只測那裡的程式,這個節點的單元測試不會進合併 gate。`
-      + `新專案的程式放 ${dirs[0]}/<能力>/src/**(TypeScript,測試 *.test.ts 放旁邊),命令列入口放 ${dirs[1] ?? dirs[0]}/<名稱>/**`;
+      + `範本的單元測試只跑 ${tests},mutation 也只測那裡的程式,這個節點的單元測試不會進合併 gate。${layout.hint ?? ''}`;
   });
 }
 
@@ -184,6 +179,21 @@ export function gherkinOverlapWarnings(root, nodes, files) {
 // ------------------------------------------------------------------ feature
 
 /** Rules that apply only to existing projects (brownfield). If the config cannot be read, treat it as greenfield. */
+function safeConfig(root) {
+  try { return loadConfig(root); } catch { return null; }
+}
+
+/**
+ * The acceptance command a node gets when its spec has none: the stack's accept_cmd. In an existing project the stack's template was not installed,
+ * so it is used only when the stack's accept_probe (a JSON file and key path, node-ts: package.json → scripts.accept) says the project has it.
+ */
+function stackAccept(root, config, bf, gherkin) {
+  let stack;
+  try { stack = loadStack(config?.project.stack ?? 'none'); } catch { return null; }
+  if (bf && !probe(root, stack.accept_probe)) return null;
+  return defaultAcceptFor(stack, gherkin);
+}
+
 function brownfieldConfig(root) {
   try {
     const c = loadConfig(root);
@@ -213,13 +223,9 @@ function normalizeFeature(root, spec, gherkinText) {
   const node = { ...spec };
   node.kind ??= 'phase';
   const bf = brownfieldConfig(root);
-  if (bf && node.kind !== 'shared' && !node.accept && !('accept' in (readJson(join(root, 'package.json'), {})?.scripts ?? {}))) {
-    const t = bf.gates.commands?.test ?? 'npm test --';
-    throw new DlmError(`${node.id}:既有專案沒有 accept script(範本的 cucumber),要在 spec 寫 accept——用專案自己的測試指令只跑這個節點的測試,`
-      + `例:"accept": "${t} <這個節點的測試檔>"。測試棒會照 gherkin 的每個場景寫一個測試(名稱用場景名),它必須先紅、實作後變綠`);
-  }
+  const config = bf ?? safeConfig(root);
   // v4: only shared nodes may change gate definition files (package.json and the like); in v3 an integration point owning package.json passed the proposal and was then judged out of bounds three times during construction (seen in a real run)
-  const build = node.kind === 'shared' ? [] : (node.owns ?? []).filter((g) => BUILD_CONFIG_PATHS.some((b) => g === b || matchAny(g, [b])));
+  const build = node.kind === 'shared' ? [] : (node.owns ?? []).filter((g) => buildConfigPaths(config).some((b) => g === b || matchAny(g, [b])));
   if (build.length) {
     throw new DlmError(`${node.id} 的 owns 有 ${build.join(', ')}:這些是 gate 定義檔,只有 shared 節點能改(例:另提 shared/deps,owns 明列 package.json,讓 ${node.id} 依賴它)`);
   }
@@ -230,9 +236,14 @@ function normalizeFeature(root, spec, gherkinText) {
   if (node.kind !== 'shared' && !node.gherkin) node.gherkin = node.kind === 'integration'
     ? `docs/integration/${node.id.toLowerCase()}.feature`
     : `features/${capabilityOf(node.id)}/${node.id.split('/').pop()}.feature`;
-  if (node.kind === 'phase' && !node.accept) node.accept = defaultAccept(node.gherkin);
-  if (node.kind === 'integration' && !node.accept) node.accept = defaultAccept(node.gherkin);
-  if (node.kind === 'shared' && node.gherkin && !node.accept) node.accept = defaultAccept(node.gherkin);
+  if (node.gherkin && !node.accept) {
+    node.accept = stackAccept(root, config, bf, node.gherkin);
+    if (!node.accept) {
+      const t = config?.gates.commands?.test ?? '<專案的測試指令>';
+      throw new DlmError(`${node.id}:這個專案的技術棧(${config?.project.stack ?? 'none'})沒有預設的驗收指令,要在 spec 寫 accept——用專案自己的測試指令只跑這個節點的測試,`
+        + `例:"accept": "${t} <這個節點的測試檔>"。測試棒會照 gherkin 的每個場景寫一個測試(名稱用場景名),它必須先紅、實作後變綠`);
+    }
+  }
   if (node.gherkin && !gherkinText && !existsSync(join(root, node.gherkin))) {
     throw new DlmError(`${node.gherkin} 不存在,也沒附 gherkin 內容:沒有 gherkin 不寫程式`);
   }

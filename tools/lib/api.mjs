@@ -121,6 +121,7 @@ export const ROUTES = [
     body: obj({
       path: str('專案目錄的絕對路徑(不存在會建立)'), name: { ...NAME, description: '名稱(選填,預設用目錄名)' },
       existing: bool('true = 既有專案,只補 dlm 的檔(衝突就一個都不寫)'),
+      stack: str('新專案用的技術棧範本(stacks/ 底下的資料夾名,預設 node-ts;none = 只裝核心)。既有專案不裝範本', { pattern: '^[a-z0-9][a-z0-9-]*$' }),
     }, ['path']),
   },
   {

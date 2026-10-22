@@ -47,8 +47,9 @@ test('setup 全用預設:Claude Code 施工、Haiku 當 Verifier、L1、commit',
   assert.ok(r.committed);
   assert.equal(sh(proj, 'git status --porcelain --untracked-files=no'), '', 'commit 之後根目錄乾淨,tick 才跑得動');
   assert.deepEqual(asked.filter((id) => ['platform', 'worker_cmd', 'verifier', 'autonomy'].includes(id)), ['platform', 'worker_cmd', 'verifier', 'autonomy']);
-  // Everything else in the original payload config is still there
-  assert.deepEqual(cfg.gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
+  // Everything else in the original payload config is still there; the gate chain comes from the node-ts stack the new project was created with
+  assert.equal(cfg.project.stack, 'node-ts');
+  assert.deepEqual(loadConfig(proj).gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
 });
 
 test('setup:自訂指令;看不懂的自治等級要重問;L2 開 Critic 用 Claude 的唯讀指令', async () => {

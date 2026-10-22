@@ -72,6 +72,8 @@ export const configSchema = {
       properties: {
         mode: { enum: ['greenfield', 'brownfield'] },
         language: { enum: ['node', 'python', 'go', 'rust', 'other'] },
+        // v4.11: folder name under stacks/ ('none' = core only); absent = detected
+        stack: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]*$' },
       },
     },
     caps: {
@@ -411,6 +413,7 @@ export const envelopeSchema = {
     allowed_paths: strArr, forbidden_paths: strArr,
     acceptance: { type: 'array', items: { type: 'object', required: ['cmd', 'expect_exit'], properties: { cmd: str, expect_exit: { type: 'integer' } } } },
     done_when: str, report_path: str,
+    evidence_prefixes: strArr,
     findings: { type: 'array', items: finding },
   },
 };

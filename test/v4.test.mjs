@@ -113,7 +113,7 @@ test('pending features:已批准但沒做完的 gherkin 不進全 gate;正在合
   assert.deepEqual(pendingFeatures(dag, state, 'b/v1'), ['features/c/v1.feature']);
 });
 
-test('payload 的 cucumber.js:命令列給了路徑就只跑那些;沒給就跳過 pending 清單', () => {
+test('node-ts 範本的 cucumber.js:命令列給了路徑就只跑那些;沒給就跳過 pending 清單', () => {
   const dir = tempDir();
   for (const f of ['features/a/v1.feature', 'features/b/v1.feature', 'features/_template/x.feature', 'docs/integration/i1.feature']) {
     spawnSync('mkdir', ['-p', join(dir, f, '..')]);
@@ -122,7 +122,7 @@ test('payload 的 cucumber.js:命令列給了路徑就只跑那些;沒給就跳�
   spawnSync('mkdir', ['-p', join(dir, '.dlm')]);
   const load = (args, pending) => {
     writeFile(join(dir, '.dlm', 'pending-features.json'), JSON.stringify(pending));
-    const r = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(join(REPO, 'payload', 'cucumber.js'))}); console.log(JSON.stringify(m.default.paths))`, 'cucumber-js', ...args], { cwd: dir, encoding: 'utf8' });
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(join(REPO, 'stacks', 'node-ts', 'template', 'cucumber.js'))}); console.log(JSON.stringify(m.default.paths))`, 'cucumber-js', ...args], { cwd: dir, encoding: 'utf8' });
     return JSON.parse(r.stdout);
   };
   assert.deepEqual(load([], []), ['features/a/v1.feature', 'features/b/v1.feature', 'docs/integration/i1.feature']);

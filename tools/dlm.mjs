@@ -20,11 +20,12 @@ import { addProject, isDlmProject, loadProjects, projectVersion, removeProject }
 import { isLegacyProject, legacyMessage } from './lib/legacy.mjs';
 import { hubToken, serveHub } from './lib/hub.mjs';
 import { apiMarkdown, flowMarkdown, openapiJson } from './lib/apidoc.mjs';
+import { agentRulesMarkdown } from './lib/rules-doc.mjs';
 import { serveMcp, toolList } from './lib/mcp.mjs';
 import { BASELINE, onboard, recordBaseline } from './lib/brownfield.mjs';
 import { commitAll } from './lib/git.mjs';
 import { confirmE2e, decide, renderInbox, resume, show, unblockByUser } from './lib/inbox.mjs';
-import { init, upgrade } from './lib/install.mjs';
+import { REPO_ROOT, init, upgrade } from './lib/install.mjs';
 import { applyProposal, proposeBundle, proposeFeature } from './lib/intake.mjs';
 import { append, readEvents } from './lib/ledger.mjs';
 import { Ctx, tick } from './lib/orchestrator.mjs';
@@ -39,7 +40,9 @@ const HELP = `dlm —— dev-loop-mcp v${VERSION}
        或:dlm init <dir> → cd <dir> → dlm setup → dlm doctor → 在 Claude Code 打 /inbox
 
 安裝與設定
-  dlm init <dir> [--name X] [--existing] [--no-commit]   建新專案(或 --existing 補進既有專案;已經有 git 時會把 dlm 的檔 commit)
+  dlm init <dir> [--name X] [--existing] [--no-commit] [--stack node-ts|none]
+                                              建新專案(或 --existing 補進既有專案;已經有 git 時會把 dlm 的檔 commit)。
+                                              --stack 選技術棧範本(stacks/ 底下的資料夾,預設 node-ts;none = 只裝核心)
   dlm setup [--yes] [--answers file.json]     互動問答:選 AI、Verifier、自治等級,寫好設定並 commit
   dlm doctor [--json]                         健康檢查:每一項 ✓ / ⚠ / ✗,不對的附修法
   dlm upgrade [--dry-run]                     升級 dlm 管理的檔(衝突就一個都不寫)
@@ -154,7 +157,7 @@ async function main() {
 
 // v4: the flags each command recognizes. v3's `dlm run --help` ignored --help as an unknown flag and started the loop in the background (seen in a real run).
 const FLAGS = {
-  init: ['name', 'existing', 'no-commit'], setup: ['yes', 'answers'], doctor: ['json'], upgrade: ['dry-run'],
+  init: ['name', 'existing', 'no-commit', 'stack'], setup: ['yes', 'answers'], doctor: ['json'], upgrade: ['dry-run'],
   tick: [], run: ['interval', 'max-ticks', 'until-idle', 'daemon', 'stop'],
   status: ['json'], dashboard: ['out', 'serve', 'interval'], inbox: ['no-mark'], show: [], decide: ['verbatim', 'as'], confirm: ['verbatim'],
   halt: ['reason', 'keep-workers'], resume: ['verbatim'], unblock: ['verbatim'],
@@ -189,7 +192,7 @@ async function dispatchCommand(cmd, rest) {
       console.log(HELP);
       return 0;
     case 'init': {
-      const r = init(need({ dir: pos[0] }, 'dir', 'dlm init <dir>'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'] });
+      const r = init(need({ dir: pos[0] }, 'dir', 'dlm init <dir>'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'], ...(typeof flags.stack === 'string' ? { stack: flags.stack } : {}) });
       console.log(`建立 ${r.created.length} 個檔${r.kept.length ? `,保留你既有的 ${r.kept.length} 個` : ''};git ${r.git}${r.committed ? `,已 commit ${r.committed.slice(0, 8)}` : ''}`);
       try { const p = addProject(pos[0]); console.log(`已登記到這台電腦的專案清單:${p.name}(dlm project list)`); } catch { /* 登記失敗不影響 init */ }
       console.log(`下一步:cd ${pos[0]} && node tools/dlm.mjs setup(一題一題帶你設定,大約兩分鐘)`);
@@ -436,8 +439,10 @@ async function dispatchCommand(cmd, rest) {
     case 'api': {
       // The docs are generated from the route table and the flow table (the API.md, openapi.json and FLOW.md in payload/docs/dlm come from this)
       const kind = pos[0] ?? 'md';
-      const gen = { md: apiMarkdown, openapi: openapiJson, flow: flowMarkdown }[kind];
-      if (!gen) throw new DlmError('dlm api [md|openapi|flow]');
+      // rules (v4.11): docs/dlm/AGENT-RULES.md, read from the rule files of this project (in the dlm repo: payload/)
+      const rulesRoot = existsSync(join(REPO_ROOT, 'payload', 'prompts')) ? join(REPO_ROOT, 'payload') : resolve(flags.root ?? process.cwd());
+      const gen = { md: apiMarkdown, openapi: openapiJson, flow: flowMarkdown, rules: (v) => agentRulesMarkdown(rulesRoot, v) }[kind];
+      if (!gen) throw new DlmError('dlm api [md|openapi|flow|rules]');
       process.stdout.write(gen(VERSION));
       return 0;
     }

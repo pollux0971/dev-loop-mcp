@@ -2,6 +2,26 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.11.0 — 核心不綁任何技術棧;測試棒多兩個檢查;準則總表
+
+- **技術棧包(`stacks/`)**:核心(`tools/lib`、`payload/`)不再認得 TypeScript、vitest、cucumber、stryker、npm。
+  跟技術棧綁在一起的東西都搬進 `stacks/node-ts/`:範本(package.json、tsconfig、vitest / cucumber / stryker 設定、`scripts/*.ts`、`features/steps/`)、
+  預設指令(`gates.chain`、`verify.dry_run_cmd`、`verify.mutation.cmd`、預設 `accept`)、加進去的證據前綴與 gate 定義檔、worker 規則(`rules.md`)、
+  測試類棒的額外檢查(`checks.mjs`)。格式見 `stacks/README.md`;加一個語言就是加一個資料夾。
+  - 專案用哪個:`dlm.config.json` 的 `project.stack`。沒寫就偵測(有 package.json → node-ts),所以 4.11 以前的專案行為不變;`none` = 只用核心。
+  - `dlm init <dir> --stack node-ts|none`(預設 node-ts);MCP 的 `initProject` 也收 `stack`。既有專案照舊不裝範本。
+  - worker 規則不再寫死測試指令:工單多一個 `evidence_prefixes`(核心 + 技術棧 + `gates.commands`)。Critic 能跑的指令也從它來(`{test_tools}`)。
+  - 核心預設:`gates.chain` 是 `check:dlm`、`test`;gate 定義檔只剩 `.mcp.json`、`.github/**`、`.gitattributes`、`.gitignore`,其他由技術棧加。
+  - 還綁著 Node 的地方(下一步):沙箱與合併樹的依賴處理(`node_modules` symlink、`npm ci --offline`)、`dlm setup` 問要不要 `npm install`、
+    gate 鏈的名稱沒對到 `gates.commands` 時當成 npm script。這些要變成技術棧的「依賴」掛鉤。
+- **測試類的棒多兩個檢查(node-ts)**,來自 Weave OS 實測兩邊都踩到的問題:
+  - `typecheck`:這一棒寫的檔要過 `tsc`(找不到實作模組的錯誤不算,實作下一棒才來)。以前要到實作棒合併前才被擋,多花一棒。
+  - `literal-import`:測試裡的 `import()` 要寫字面路徑。變數路徑會讓 mutation 認不出哪個測試在測哪個檔,只能 ABSTAIN。
+- **準則總表** `docs/dlm/AGENT-RULES.md`:每個角色拿到的每一條準則,以及哪個機器檢查在擋它、哪些只靠 prompt。
+  由 `dlm api rules` 從規則檔產生,不手寫;規則檔改了沒重產,測試會紅。
+- **intake**:程式要讀的輸入檔要在 gherkin 附完整範例、輸出欄位寫清楚意義與單位、數量至少一個場景用不是 2 的冪的值(Weave OS 實測的規格缺口)。
+- 測試:新增 `test/stacks.test.mjs`(10 項)與文件一致性檢查。`npm test` 217 個:211 過、6 個略過、0 失敗。
+
 ## 4.10.1 — setup 的 JSON 答案 true 被當成「否」
 
 - **bug**:`dlm setup --answers <檔>` 與 MCP 的 `dlm_setup_project` 收到 JSON boolean(`"critic": true`、`"commit": true`、`"npm_install": true`)時,

@@ -16,6 +16,7 @@
 | mutation | 最後一棒(設了 `verify.mutation.cmd`) | 這一棒改到的實作檔 mutation 分數低於門檻(一般 `min` 預設 50,strict 節點 `min_strict` 預設 70):strict 判 FAIL,其他 ABSTAIN。沒有單元測試 import 改到的檔時:整合棒 SKIPPED(組合層由整合驗收把關),其他棒 ABSTAIN |
 | standalone | 實作/整合棒 | 節點的 standalone 指令非 0 |
 | stubs / regression-standalone | 整合棒 | 正式碼仍 import `__stubs__`;依賴節點的 standalone 壞了 |
+| 技術棧的檢查 | 測試類的棒(characterize、test、test-fix) | `tools/stacks/<名稱>/checks.mjs` 的 `testLegChecks`。node-ts:`typecheck`(這一棒寫的檔過不了 tsc;找不到實作模組不算)、`literal-import`(測試裡的 `import()` 不是字面路徑) |
 
 paths、worktree-clean 或 sandbox-escape FAIL 時,後面會執行程式的檢查(acceptance、evidence、standalone…)一律不跑,
 記一筆 `execution SKIPPED`。會執行程式的檢查都在一份用完即丟、沒有 .git 的副本上跑(見 SECURITY.md)。

@@ -13,6 +13,7 @@ import { decide, renderInbox, resume, show } from '../tools/lib/inbox.mjs';
 import { append, checkLedger, readEvents, validateEvent } from '../tools/lib/ledger.mjs';
 import { Ctx, buildEnvelope, tick } from '../tools/lib/orchestrator.mjs';
 import { computeSnapshot } from '../tools/lib/snapshot.mjs';
+import { loadStack } from '../tools/lib/stack.mjs';
 import { fenceUntrusted, readJson, run, writeJson } from '../tools/lib/util.mjs';
 import { summarize } from '../tools/lib/verify/index.mjs';
 import { checkEvidence, checkPaths, rerunArgv } from '../tools/lib/verify/script-checks.mjs';
@@ -29,7 +30,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const node = (id, extra = {}) => ({ id, kind: 'phase', title: id, intent: id, owns: [`packages/${id.split('/')[0]}/**`], gherkin: `features/${id}.feature`, accept: 'true', ...extra });
 
 describe('#1 證據重跑:argv 執行、字元白名單、不外洩', () => {
-  const cfg = { verify: { ...DEFAULTS.verify, rerun_allow: [...DEFAULTS.verify.rerun_allow, 'node packages/'] } };
+  // v4.11: npm test and friends come from the node-ts stack
+  const cfg = { verify: { ...DEFAULTS.verify, rerun_allow: [...DEFAULTS.verify.rerun_allow, ...loadStack('node-ts').add.rerun_allow, 'node packages/'] } };
   const claim = (cmd, exit = 0) => ({ claims: [{ text: 'x', evidence: { cmd, exit } }] });
 
   test('換行接第二條指令 → ABSTAIN,而且什麼都沒執行', () => {
@@ -173,7 +175,8 @@ describe('#4 owns 重疊', () => {
 describe('#5 預設 gate 鏈跑專案測試', () => {
   test('預設 chain 含 test;chain 沒有測試類 script 時 L1 拒絕 tick,inbox 看得到原因', async () => {
     assert.ok(hasTestGate(DEFAULTS.gates.chain));
-    assert.deepEqual(DEFAULTS.gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
+    assert.deepEqual(DEFAULTS.gates.chain, ['check:dlm', 'test'], '核心預設不認得 typecheck、accept 這類技術棧的 script');
+    assert.deepEqual(loadStack('node-ts').defaults.gates.chain, ['check:dlm', 'typecheck', 'test', 'accept']);
     assert.ok(hasTestGate(['accept:integration']) && hasTestGate(['test:unit']) && !hasTestGate(['check:dlm', 'typecheck']));
     const proj = makeProject();
     const cfg = readJson(join(proj, 'dlm.config.json'));
@@ -248,11 +251,17 @@ describe('#6 合併 gate 過期要重跑', () => {
 
 describe('#7 gate 定義檔與 agent 設定受保護', () => {
   test('owns 是 ** 的節點改根目錄 package.json → paths FAIL', () => {
-    assert.equal(checkPaths(['package.json'], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome, 'FAIL');
+    // v4.11: the core protects the files every project has; the node-ts stack adds its own build files
+    const forbidden = [...DEFAULTS.paths.forbidden, ...loadStack('node-ts').add.forbidden];
+    assert.equal(checkPaths(['package.json'], { allowed_paths: ['**'], forbidden_paths: forbidden }).outcome, 'FAIL');
     for (const f of ['package-lock.json', 'vitest.config.ts', 'scripts/check.ts', '.github/workflows/ci.yml', '.mcp.json', '.gitignore']) {
-      assert.equal(checkPaths([f], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome, 'FAIL', f);
+      assert.equal(checkPaths([f], { allowed_paths: ['**'], forbidden_paths: forbidden }).outcome, 'FAIL', f);
     }
-    assert.equal(checkPaths(['packages/a/package.json'], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome, 'PASS', '子套件的 package.json 不受影響');
+    assert.equal(checkPaths(['packages/a/package.json'], { allowed_paths: ['**'], forbidden_paths: forbidden }).outcome, 'PASS', '子套件的 package.json 不受影響');
+    for (const f of ['.github/workflows/ci.yml', '.mcp.json', 'tools/dlm.mjs']) {
+      assert.equal(checkPaths([f], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome, 'FAIL', `核心本身就擋 ${f}`);
+    }
+    assert.equal(checkPaths(['package.json'], { allowed_paths: ['**'], forbidden_paths: DEFAULTS.paths.forbidden }).outcome, 'PASS', '核心不認得 package.json');
   });
 
   test('只有 owns 明列該檔的 shared 節點可以改它', () => {

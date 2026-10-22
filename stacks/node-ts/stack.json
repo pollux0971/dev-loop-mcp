@@ -1,0 +1,34 @@
+{
+  "$comment": "node-ts 技術棧:TypeScript + vitest + cucumber-js + stryker。core 只讀這份的欄位,不認得任何框架名稱;要支援別的語言就照同樣的形狀加一個資料夾(見 stacks/README.md)",
+  "name": "node-ts",
+  "description": "TypeScript / vitest / cucumber-js / stryker,npm workspaces(packages/*、apps/*)",
+  "detect": ["package.json"],
+  "accept_cmd": "npm run accept -- {gherkin}",
+  "accept_probe": { "file": "package.json", "keys": [["scripts", "accept"]] },
+  "existing_project_needs": {
+    "$comment": "既有專案沒裝範本:這些預設指令只在專案自己有對應的東西時保留,不然 dlm setup 把它關掉",
+    "verify.dry_run_cmd": { "file": "package.json", "keys": [["scripts", "accept:dry"]] },
+    "verify.mutation.cmd": { "file": "package.json", "keys": [["devDependencies", "@stryker-mutator/core"], ["dependencies", "@stryker-mutator/core"]] }
+  },
+  "defaults": {
+    "gates": { "chain": ["check:dlm", "typecheck", "test", "accept"] },
+    "verify": {
+      "dry_run_cmd": "npm run --silent accept:dry -- -- {gherkin}",
+      "typecheck_cmd": "auto",
+      "mutation": {
+        "cmd": "npx stryker run --mutate {files} --reporters json,clear-text",
+        "include": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"]
+      }
+    }
+  },
+  "add": {
+    "rerun_allow": ["npm run ", "npm test", "npx cucumber-js", "npx vitest", "node --test"],
+    "forbidden": ["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "tsconfig.json", "vitest*.config.*", "cucumber.js", "stryker.config.json", "scripts/**"],
+    "critic_bash": ["npm test*", "npm run *", "npx vitest*", "npx cucumber-js*"]
+  },
+  "layout": {
+    "workspaces": ["packages", "apps"],
+    "unit_tests": "*.test.ts",
+    "hint": "新專案的程式放 packages/<能力>/src/**(TypeScript,測試 *.test.ts 放旁邊),命令列入口放 apps/<名稱>/**"
+  }
+}

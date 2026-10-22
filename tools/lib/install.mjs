@@ -21,27 +21,37 @@ function readVersion() {
 }
 
 /**
- * v4.5: the template has only the files that a "from-scratch TypeScript / vitest / cucumber project" uses. They are not installed into an existing project that already has code:
- * a Python project would get an extra package.json, tsconfig and a pile of .ts gate scripts, which only make the gate run the wrong things; a Node project's package.json is its own
- * (seed does not overwrite), so the template's scripts/*.ts are not wired in and would only fight the project's own scripts/ for names.
+ * v4.11: the core payload names no language or framework. A stack's template (stacks/<name>/template/**: node-ts = package.json, tsconfig,
+ * vitest / cucumber / stryker configs, scripts/*.ts, features/steps/*.ts) is installed at the project root only for a new project (profile full):
+ * an existing project keeps its own toolchain (v4.5: a Python project would get an extra package.json and a pile of .ts gate scripts that only make the gate run the wrong things).
+ * Every stack's declaration (stack.json, rules.md, checks.mjs) is installed under tools/stacks/, like the rest of tools/.
  */
-export const NODE_TEMPLATE = [
-  'package.json', 'tsconfig.json', 'cucumber.js', 'vitest.config.ts', 'vitest.scripts.config.ts', 'stryker.config.json',
-  'scripts/**', 'features/steps/*.ts',
-];
+export const DEFAULT_STACK = 'node-ts';
 
-/** Returns [{ dest, content(Buffer), seed }]. With profile = 'existing' it does not include NODE_TEMPLATE. */
-export function plannedFiles(name, { profile = 'full' } = {}) {
+/** Returns [{ dest, content(Buffer), seed }]. With profile = 'existing' it does not include the stack template. */
+export function plannedFiles(name, { profile = 'full', stack = DEFAULT_STACK } = {}) {
   const payload = join(REPO_ROOT, 'payload');
   const seedGlobs = readFileSync(join(payload, '.dlm-seed-only'), 'utf8').split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
   const out = [];
+  const add = (dir, f, dest) => {
+    let content = readFileSync(join(dir, f));
+    const seed = matchAny(f, seedGlobs);
+    if (seed && name && /\.(md|json)$/.test(dest)) content = Buffer.from(content.toString('utf8').replaceAll('{{PROJECT_NAME}}', name));
+    out.push({ dest, content, seed });
+  };
   for (const f of listFiles(payload)) {
     if (f === '.dlm-seed-only') continue;
-    let content = readFileSync(join(payload, f));
-    const seed = matchAny(f, seedGlobs);
-    if (seed && name && /\.(md|json)$/.test(f)) content = Buffer.from(content.toString('utf8').replaceAll('{{PROJECT_NAME}}', name));
-    if (profile === 'existing' && matchAny(f, NODE_TEMPLATE)) continue;
-    out.push({ dest: f === 'gitignore' ? '.gitignore' : f, content, seed });
+    add(payload, f, f === 'gitignore' ? '.gitignore' : f);
+  }
+  const stacks = join(REPO_ROOT, 'stacks');
+  if (profile === 'full' && stack !== 'none') {
+    const tpl = join(stacks, stack, 'template');
+    if (!existsSync(tpl)) throw new DlmError(`沒有技術棧 ${stack} 的範本(stacks/${stack}/template)`);
+    for (const f of listFiles(tpl)) add(tpl, f, f);
+  }
+  for (const f of listFiles(stacks)) {
+    if (/^[^/]+\/template\//.test(f)) continue;
+    out.push({ dest: `tools/stacks/${f}`, content: readFileSync(join(stacks, f)), seed: false });
   }
   for (const f of listFiles(join(REPO_ROOT, 'tools'))) {
     // tools/dp.mjs only forwards to dlm.mjs for setups from before 4.8.0; a new project has nothing that calls it
@@ -76,12 +86,12 @@ function plan(target, files, manifest) {
   return { actions, conflicts, removals };
 }
 
-function write(target, actions, removals, profile = 'full') {
+function write(target, actions, removals, profile = 'full', stack = DEFAULT_STACK) {
   for (const a of actions) if (a.op === 'create' || a.op === 'update') atomicWrite(join(target, a.dest), a.content);
   for (const r of removals) unlinkSync(join(target, r));
   const files = {};
   for (const a of actions) if (!a.seed) files[a.dest] = a.sha;
-  writeJson(join(target, MANIFEST), { version: readVersion(), ...(profile !== 'full' ? { profile } : {}), files });
+  writeJson(join(target, MANIFEST), { version: readVersion(), ...(profile !== 'full' ? { profile } : {}), ...(profile === 'full' ? { stack } : {}), files });
 }
 
 /** Lines dlm needs in .gitignore (an existing project's own .gitignore is not overwritten by the template; missing lines are appended at the end). */
@@ -104,11 +114,11 @@ const RENDERED = ['STATUS.md', 'DECISIONS.md', 'standalone.json'];
  * v4.7.3 real run: after installing dlm into an existing project (already in git), tools/, AGENTS.md and .claude/ were not in git; the full gate before merge, in a temp tree of main + branch,
  * ran node tools/dlm.mjs check and could not find dlm, so the dev leg was red every time and blocked after three.
  */
-export function commitDlmFiles(dir, message, { touched = [], profile = 'full' } = {}) {
+export function commitDlmFiles(dir, message, { touched = [], profile = 'full', stack = DEFAULT_STACK } = {}) {
   if (!existsSync(join(dir, '.git'))) return null;
   const g = (args) => runArgv('git', args, { cwd: dir });
   const tracked = new Set(g(['ls-files', '-z']).stdout.split('\0').filter(Boolean));
-  const planned = [...plannedFiles(null, { profile }).map((f) => f.dest), MANIFEST, ...RENDERED, '.gitignore'];
+  const planned = [...plannedFiles(null, { profile, stack }).map((f) => f.dest), MANIFEST, ...RENDERED, '.gitignore'];
   const paths = [...new Set([...touched, ...planned.filter((f) => existsSync(join(dir, f)) && !tracked.has(f))])]
     .filter((f) => existsSync(join(dir, f)) || tracked.has(f));
   if (!paths.length) return null;
@@ -119,7 +129,7 @@ export function commitDlmFiles(dir, message, { touched = [], profile = 'full' } 
   return g(['rev-parse', 'HEAD']).stdout.trim();
 }
 
-export function init(target, { name, existing = false, commit = true } = {}) {
+export function init(target, { name, existing = false, commit = true, stack = DEFAULT_STACK } = {}) {
   const dir = resolve(target);
   const entries = existsSync(dir) ? readdirSync(dir).filter((e) => e !== '.git') : [];
   if (entries.length && !existing) throw new DlmError(`${dir} 不是空目錄。既有專案請加 --existing(只補缺的檔,衝突就一個都不寫)`);
@@ -127,9 +137,15 @@ export function init(target, { name, existing = false, commit = true } = {}) {
   if (existsSync(join(dir, LEGACY.manifest))) throw new DlmError(`${dir} 已經裝過舊版 dp(4.8.0 以前),請用 dlm upgrade(會順便改成 dlm 的檔名)`);
   // Existing project that already has code: do not install the template's TS toolchain (the gate runs the project's own tests instead; see Brownfield in dlm setup)
   const profile = existing && entries.length && detectProject(dir).code_files > 0 ? 'existing' : 'full';
-  const { actions, conflicts } = plan(dir, plannedFiles(name ?? 'my-project', { profile }), null);
+  const { actions, conflicts } = plan(dir, plannedFiles(name ?? 'my-project', { profile, stack }), null);
   if (conflicts.length) throw new DlmError(`有 ${conflicts.length} 個同名檔內容不同,一個都沒寫:\n  - ${conflicts.join('\n  - ')}`);
-  write(dir, actions, [], profile);
+  write(dir, actions, [], profile, stack);
+  // v4.11: a new project records its stack (an existing project's is detected, or set by dlm setup)
+  if (profile === 'full') {
+    const cfgPath = join(dir, 'dlm.config.json');
+    const raw = readJson(cfgPath, {});
+    if (!raw.project?.stack) writeJson(cfgPath, { ...raw, project: { ...(raw.project ?? {}), stack } });
+  }
   const dag = loadDag(dir);
   const events = readEvents(dir);
   writeRendered(dir, renderAll(dir, dag, replay(events, dag), events));
@@ -143,10 +159,11 @@ export function init(target, { name, existing = false, commit = true } = {}) {
     // v4.7.3: a project already in git used to commit nothing (see commitDlmFiles). Add .dlm/ to .gitignore, otherwise dlm's whole working directory shows up in git status
     const ignores = ensureIgnores(dir);
     const created = actions.filter((a) => a.op === 'create').map((a) => a.dest);
-    if (commit) committed = commitDlmFiles(dir, 'dlm init --existing', { touched: [...created, MANIFEST, ...RENDERED, ...(ignores ? ['.gitignore'] : [])], profile });
+    if (commit) committed = commitDlmFiles(dir, 'dlm init --existing', { touched: [...created, MANIFEST, ...RENDERED, ...(ignores ? ['.gitignore'] : [])], profile, stack });
   }
   return {
     profile,
+    ...(profile === 'full' ? { stack } : {}),
     created: actions.filter((a) => a.op === 'create').map((a) => a.dest),
     kept: actions.filter((a) => a.op === 'keep').map((a) => a.dest),
     git,
@@ -165,7 +182,9 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
   const manifest = readJson(join(dir, legacy ? LEGACY.manifest : MANIFEST), null);
   if (!manifest) throw new DlmError(`${dir} 沒有 ${MANIFEST};不是 dlm 裝的專案,請先 dlm init --existing`);
   const profile = manifest.profile ?? 'full';
-  let { actions, conflicts, removals } = plan(dir, plannedFiles(null, { profile }), manifest);
+  // installs from before 4.11 had only the node-ts template
+  const stack = manifest.stack ?? DEFAULT_STACK;
+  let { actions, conflicts, removals } = plan(dir, plannedFiles(null, { profile, stack }), manifest);
   if (conflicts.length) throw new DlmError(`升級衝突 ${conflicts.length} 個,一個檔都沒寫:\n  - ${conflicts.join('\n  - ')}\n把你的改動移到別的檔(或還原),再重跑`);
   const blockerNow = () => migrationBlocker(dir, [...replay(readEvents(dir), loadDag(dir)).dispatches.values()]);
   const summarize = () => ({
@@ -181,7 +200,7 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
     const blocked = blockerNow();
     return { ...s, create: s.create.filter((f) => f !== 'dlm.config.json'), migrate: migrationPlan(dir), ...(blocked ? { blocked } : {}) };
   }
-  if (!legacy) return finishUpgrade(dir, { actions, removals, profile, commit, summary: summarize() });
+  if (!legacy) return finishUpgrade(dir, { actions, removals, profile, stack, commit, summary: summarize() });
 
   const refuse = (why) => new DlmError(`這是 4.8.0 以前(dp)的專案,升級時要把 .dp/ 搬成 .dlm/:${why}`);
   const early = blockerNow();
@@ -195,16 +214,16 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
     // seed-only files (config, package.json, hooks) are the user's: rename and rewrite them in place, then plan again,
     // so the new layout counts as existing and nothing of theirs is replaced by the template
     const { touched, warnings } = migrateProject(dir);
-    ({ actions, conflicts, removals } = plan(dir, plannedFiles(null, { profile }), manifest));
+    ({ actions, conflicts, removals } = plan(dir, plannedFiles(null, { profile, stack }), manifest));
     if (conflicts.length) throw new DlmError(`改名之後出現衝突(不應該發生):\n  - ${conflicts.join('\n  - ')}`);
-    return finishUpgrade(dir, { actions, removals, profile, commit, summary: summarize(), legacy: { touched, warnings } });
+    return finishUpgrade(dir, { actions, removals, profile, stack, commit, summary: summarize(), legacy: { touched, warnings } });
   } finally {
     release();
   }
 }
 
-function finishUpgrade(dir, { actions, removals, profile, commit, summary, legacy = null }) {
-  write(dir, actions, removals, profile);
+function finishUpgrade(dir, { actions, removals, profile, stack, commit, summary, legacy = null }) {
+  write(dir, actions, removals, profile, stack);
   // STATUS.md and the other generated files come from the old version's templates (dp's wording, for one);
   // `dlm check` compares them with what this version renders and would fail until the next tick
   if (existsSync(join(dir, 'dag.json'))) {
@@ -223,6 +242,6 @@ function finishUpgrade(dir, { actions, removals, profile, commit, summary, legac
   }
   // Also commit the dlm files that are not yet in git (for projects installed into an existing project before 4.7.3, tools/ etc. were never committed; dlm doctor points here)
   const message = legacy ? `dlm upgrade ${summary.from} → ${summary.to} (rename dp → dlm)` : `dlm upgrade ${summary.from} → ${summary.to}`;
-  summary.commit = commit ? commitDlmFiles(dir, message, { touched: [...summary.update, ...summary.create, ...summary.remove, MANIFEST, ...RENDERED, ...migrated], profile }) : null;
+  summary.commit = commit ? commitDlmFiles(dir, message, { touched: [...summary.update, ...summary.create, ...summary.remove, MANIFEST, ...RENDERED, ...migrated], profile, stack }) : null;
   return summary;
 }

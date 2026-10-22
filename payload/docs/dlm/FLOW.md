@@ -1,4 +1,4 @@
-# dlm 的流程(v4.10.1)
+# dlm 的流程(v4.11.0)
 
 > 這份是 `node tools/dlm.mjs api flow` 從 `tools/lib/flow.mjs` 產生的,不要手改。同一份也在 `GET /api/v1/flow`、MCP 的 `dlm_flow` 工具與 prompts。
 

@@ -22,8 +22,9 @@ export function launchWorker(config, { cwd, promptPath, reportPath, logPath, dis
 
 /** Call the critic synchronously. If the output does not match the schema, return { error } and let the caller decide how to degrade (always toward the conservative side). */
 export function callAgent(agentCfg, prompt, schema, { cwd, config, role = 'critic', account = null } = {}) {
-  const cmd = roleCmd(agentCfg, role, account);
-  if (!cmd) return { error: 'not-configured' };
+  const raw = roleCmd(agentCfg, role, account);
+  if (!raw) return { error: 'not-configured' };
+  const cmd = raw.replaceAll('{test_tools}', testTools(config));
   const r = sandboxExec(config, 'critic', cmd, {
     cwd, input: prompt, env: { DLM_ROLE: role, ...(account ? accountEnv(account) : {}) },
     timeoutMs: (agentCfg.timeout_minutes ?? 10) * 60 * 1000,
@@ -36,6 +37,15 @@ export function callAgent(agentCfg, prompt, schema, { cwd, config, role = 'criti
   const errors = validate(schema, json);
   if (errors.length) return { error: `輸出格式不符:${errors.slice(0, 3).join('; ')}` };
   return { value: json, cost: parseCost(r.stdout) };
+}
+
+/**
+ * v4.11: the Critic may run the same commands dlm re-runs as evidence (verify.rerun_allow: core + stack + gates.commands),
+ * as Claude Code permission rules. Only plain prefixes are used, so nothing in the config can break out of the quoting.
+ */
+export function testTools(config) {
+  return (config?.verify?.rerun_allow ?? []).map((p) => p.trim()).filter((p) => /^[A-Za-z0-9 ._/:=@+-]+$/.test(p))
+    .map((p) => `"Bash(${p}*)"`).join(' ');
 }
 
 /**

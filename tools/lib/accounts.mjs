@@ -36,7 +36,7 @@ export const CLIS = {
     status: 'claude auth status --json',
     model: (m) => `--model ${m}`,
     worker: 'claude -p --output-format json {model} --permission-mode acceptEdits --allowedTools "Bash" --disallowedTools "Bash(rm -rf *)" "Bash(rm -fr *)" "Bash(sudo *)" < "$DLM_PROMPT"',
-    critic: 'claude -p --output-format json {model} --allowedTools "Read" "Grep" "Glob" "Bash(npm test*)" "Bash(npm run *)" "Bash(npx vitest*)" "Bash(npx cucumber-js*)" "Bash(git diff*)" "Bash(git log*)" "Bash(git show*)" --disallowedTools "Edit" "Write" "NotebookEdit"',
+    critic: 'claude -p --output-format json {model} --allowedTools "Read" "Grep" "Glob" "Bash(git show*)" {test_tools} --disallowedTools "Edit" "Write" "NotebookEdit"',
     verifier: 'claude -p {model} --tools "" --no-session-persistence',
     defaultVerifierModel: 'haiku',
   },

@@ -1,5 +1,5 @@
 {
-  "$comment": "worker.cmd example (check the flags against your CLI version): Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DLM_PROMPT\". verifier example: backend cmd, cmd claude -p --model haiku --tools \"\" --no-session-persistence (dlm setup fills this in for you). The worker builds in a copy without .git, and the code runs on this computer as you (see docs/dlm/SECURITY.md). See docs/dlm/AGENTS-SETUP.md for details",
+  "$comment": "worker.cmd example (check the flags against your CLI version): Claude Code → claude -p --output-format json --permission-mode acceptEdits --allowedTools Bash --disallowedTools \"Bash(rm -rf *)\" \"Bash(rm -fr *)\" \"Bash(sudo *)\" < \"$DLM_PROMPT\". verifier example: backend cmd, cmd claude -p --model haiku --tools \"\" --no-session-persistence (dlm setup fills this in for you). The worker builds in a copy without .git, and the code runs on this computer as you (see docs/dlm/SECURITY.md). See docs/dlm/AGENTS-SETUP.md for details。測試框架相關的指令(gates.chain、verify.dry_run_cmd、verify.mutation.cmd…)由 project.stack 的技術棧給預設(tools/stacks/<名稱>/stack.json),寫在這裡會蓋過它",
   "main_branch": "main",
   "platform": "claude",
   "caps": {
@@ -10,12 +10,6 @@
     "lease_minutes": 90
   },
   "gates": {
-    "chain": [
-      "check:dlm",
-      "typecheck",
-      "test",
-      "accept"
-    ],
     "timeout_minutes": 30,
     "install": "auto"
   },
@@ -44,9 +38,7 @@
     }
   },
   "verify": {
-    "dry_run_cmd": "npm run --silent accept:dry -- -- {gherkin}",
     "mutation": {
-      "cmd": "npx stryker run --mutate {files} --reporters json,clear-text",
       "report": "reports/mutation/mutation.json",
       "min": 50,
       "min_strict": 70

@@ -7,7 +7,7 @@
 
 ![dlm hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.10.1 · Node ≥ 20 · 零依賴 · 207 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.11.0 · Node ≥ 20 · 零依賴 · 217 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**,後來叫 **dev-paradigm-mcp**(指令 `dp`)。從 4.8.0 起改叫 **dev-loop-mcp**,指令是 `dlm`,MCP 工具以 `dlm_` 開頭。從 `dp` 升上來?看[從 dp 升級](#從-dp-升級473-及以前)。
 
@@ -233,13 +233,13 @@ L2 時,ABSTAIN 交給 **Critic**:一個讀規格、檢查結果、diff,但不讀
 - **帳本有簽章。** 每筆事件帶 `prev_hash`(前一行的 sha256)與 `mac`(用 repo 外的金鑰 `~/.config/dlm/key` 做的 HMAC)。有人手改或手動附加,`dlm check ledger` 會報錯,`dlm tick` 拒絕執行。
 - **你說的話有簽章。** 在專案裡,Claude Code 的 hook 會替你送出的每句話簽章。決定附的原話對得上你真的說過的話時,事件會記下那句話的 hash,事後分得出哪些決定是你親口說的。
 - **worker 碰不到 `.git`。** 它在匯出的副本裡施工,只有允許路徑內的變動會同步回來,由 dlm 自己 commit。
-- **證據重跑有鎖。** 只跑白名單開頭的指令(`npm run`、`npm test`、`node --test`、`npx vitest`、`git diff`…),以 argv 執行、不經 shell。沒有 `cat`,不能有絕對路徑或 `..`。
+- **證據重跑有鎖。** 只跑白名單開頭的指令(核心的 `git diff`、`node tools/dlm.mjs check`…,加上技術棧的測試指令與你的 `gates.commands`),以 argv 執行、不經 shell。沒有 `cat`,不能有絕對路徑或 `..`。
 - **gate 檔不准碰。** `package.json`、lockfile、`tsconfig.json`、測試設定、`scripts/**`、`.github/**` 和 dlm 自己的檔,worker 都不能改。要改得開一個你批准的 `shared` 節點。
 - **這不是作業系統層級的隔離。** 程式以你的身分在你的電腦上執行。Claude worker 的指令擋 `rm -rf`、`rm -fr`、`sudo`,但請留備份。要更強的隔離,把整個專案放進容器或 VM。見 [`payload/docs/dlm/SECURITY.md`](payload/docs/dlm/SECURITY.md)。
 
 ### 7. 既有專案(brownfield)
 
-- **gate 跑專案自己的測試。** `setup` 偵測 `npm test`、pytest / unittest、`go test`、`cargo test`、`make test`,寫進 `gates.commands`(例 `{"test": "python3 -m unittest"}`)。不是 Node 的專案不會裝範本的 TypeScript 工具鏈。
+- **gate 跑專案自己的測試。** `setup` 偵測 `npm test`、pytest / unittest、`go test`、`cargo test`、`make test`,寫進 `gates.commands`(例 `{"test": "python3 -m unittest"}`)。既有專案不會裝任何技術棧範本。
 - **本來就紅的測試不算 worker 的。** `dlm onboard`(之後用 `dlm baseline` 重記)在主線上跑一次測試,把失敗的記進 `docs/dlm-baseline.json`。gate 紅了但紅的全在基線裡 → 算通過;多一個新的紅就擋下,並指出是哪一個。
 - **改既有程式前先釘住現況。** 節點的 `owns` 涵蓋主線上已有的檔時,提案自動在最前面加一棒 `characterize`:只准寫測試,而且要在現在的程式上全綠。之後的棒都改不到這些測試,實作棒還要讓它們維持綠。一次最多 10 個檔;刻意要改掉的行為寫進 gherkin。
 - **`docs/AS-IS.md`** 描述專案現在的樣子。`onboard` 寫草稿,Front 讀程式後補完。
@@ -490,9 +490,10 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 
 ```
 tools/      dlm CLI 與 MCP server(零依賴);會複製進每個專案
-payload/    dlm init 寫進專案的檔:規則、prompts、skills、docs/dlm、範本
+payload/    dlm init 寫進專案的檔:規則、prompts、skills、docs/dlm(這裡不認得任何語言或框架)
+stacks/     一個技術棧一個資料夾:範本、預設指令、額外檢查、worker 規則(node-ts = TypeScript / vitest / cucumber / stryker)
 test/       自動測試
 docs/       ARCHITECTURE.md(設計與理由)、adr/、images/(README 的截圖)
 ```
 
-文件地圖:設計 → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · 升級 → [MIGRATION.md](MIGRATION.md) · 變更 → [CHANGELOG.md](CHANGELOG.md) · 使用者流程 → [WORKFLOW.md](payload/docs/dlm/WORKFLOW.md) · 角色 → [ROLES.md](payload/docs/dlm/ROLES.md) · 小模型驗收 → [VERIFIER.md](payload/docs/dlm/VERIFIER.md) · 安全 → [SECURITY.md](payload/docs/dlm/SECURITY.md) · API → [API.md](payload/docs/dlm/API.md)
+文件地圖:設計 → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · 升級 → [MIGRATION.md](MIGRATION.md) · 變更 → [CHANGELOG.md](CHANGELOG.md) · 使用者流程 → [WORKFLOW.md](payload/docs/dlm/WORKFLOW.md) · 角色 → [ROLES.md](payload/docs/dlm/ROLES.md) · 每個角色的準則與誰把關 → [AGENT-RULES.md](payload/docs/dlm/AGENT-RULES.md) · 技術棧 → [stacks/README.md](stacks/README.md) · 小模型驗收 → [VERIFIER.md](payload/docs/dlm/VERIFIER.md) · 安全 → [SECURITY.md](payload/docs/dlm/SECURITY.md) · API → [API.md](payload/docs/dlm/API.md)
