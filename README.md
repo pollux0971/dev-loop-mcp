@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dlm plans the work as a DAG, sen
 
 ![dlm hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.10.0 · Node ≥ 20 · zero dependencies · 206 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.10.1 · Node ≥ 20 · zero dependencies · 207 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**, then **dev-paradigm-mcp** (command `dp`). Since 4.8.0 it is called **dev-loop-mcp**, and the command is `dlm`. MCP tools start with `dlm_`. Coming from `dp`? See [Upgrading from dp](#upgrading-from-dp-473-and-earlier).
 >

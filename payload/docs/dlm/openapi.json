@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "dev-loop-mcp (dlm) API",
-    "version": "4.10.0",
+    "version": "4.10.1",
     "description": "dlm hub 提供的本機 API:多專案的監控與操作、訂閱帳號。只綁 127.0.0.1;除了 health 與 openapi,都要帶 token(`Authorization: Bearer <token>`,token 用 `dlm hub token` 看)。決定類的端點(decisions、confirmations、unblock、resume)只能轉達使用者親口的決定。"
   },
   "servers": [

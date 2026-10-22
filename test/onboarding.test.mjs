@@ -184,6 +184,18 @@ test('CLI:dlm setup --answers 不互動跑完並接著做健康檢查;非終端�
   assert.ok(Array.isArray(JSON.parse(d.stdout).results));
 });
 
+test('setup 的答案是 JSON boolean(--answers 檔、setupProject):true 算是、false 算否', async () => {
+  const proj = fresh();
+  const { ask } = scripted({ npm_install: false, autonomy: '2', critic: true, commit: true });
+  const r = await setup(proj, { ask, detect: ENV, log: quiet });
+  const cfg = readJson(join(proj, 'dlm.config.json'));
+  assert.ok(cfg.agents.critic.cmd, 'critic: true 有開 Critic(4.10.0 以前 "true" 被當成否)');
+  assert.ok(r.committed, 'commit: true 有 commit');
+  const proj2 = fresh();
+  await setup(proj2, { ask: scripted({ npm_install: false, autonomy: '2', critic: false, commit: false }).ask, detect: ENV, log: quiet });
+  assert.equal(readJson(join(proj2, 'dlm.config.json')).agents.critic.cmd, null, 'critic: false 不開');
+});
+
 test('init 之後的下一步指向 setup', () => {
   const dir = join(tempDir(), 'x');
   const r = run(`node ${DLM} init ${dir} --name x`);

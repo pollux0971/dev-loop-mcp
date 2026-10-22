@@ -7,7 +7,7 @@
 
 ![dlm hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.10.0 · Node ≥ 20 · 零依賴 · 206 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.10.1 · Node ≥ 20 · 零依賴 · 207 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**,後來叫 **dev-paradigm-mcp**(指令 `dp`)。從 4.8.0 起改叫 **dev-loop-mcp**,指令是 `dlm`,MCP 工具以 `dlm_` 開頭。從 `dp` 升上來?看[從 dp 升級](#從-dp-升級473-及以前)。
 

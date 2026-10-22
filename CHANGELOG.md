@@ -2,6 +2,18 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.10.1 — setup 的 JSON 答案 true 被當成「否」
+
+- **bug**:`dlm setup --answers <檔>` 與 MCP 的 `dlm_setup_project` 收到 JSON boolean(`"critic": true`、`"commit": true`、`"npm_install": true`)時,
+  `String(true)` 是 `"true"`,不在「是」的清單裡,所以全部被當成否:Critic 沒開、設定沒 commit(之後 tick 因為有未 commit 的變更拒絕執行)、依賴沒裝。
+  4.7 起從 MCP 設定的專案都會踩到。修法:`"true"` 也算是。新測試:boolean true / false 各跑一次,沒修時會紅。
+- 實測(Weave OS v1,兩個一樣的專案,只差有沒有 4.10.0 的每棒原則;worker 與 Critic 用 Sonnet、L2):
+  兩邊都自己做到整合點合併。沒原則的 12 次派工、2 次合併 gate 退回、1 次測試棒修正、$1.84、約 13 分鐘;
+  有原則的 9 次派工、1 次合併 gate 退回、0 次測試棒修正、$1.65、約 10 分鐘。拿參考實作對兩邊的 `weave sim` 各跑 120 個隨機情境,
+  兩邊都全對(照各自對規格的讀法);mutation 分數兩邊差不多(83–93%)。只跑一次,差距在雜訊範圍內,還不能說原則有效。
+  兩邊都踩到的:測試棒的步驟定義在 `exactOptionalPropertyTypes` 下型別錯誤,測試棒的驗證沒跑 typecheck,要到實作棒合併前才被擋(6 個節點裡 3 次);
+  測試用變數路徑 `await import(path)` 時 mutation 認不出測試,只能 ABSTAIN。
+
 ## 4.10.0 — 每一棒的 prompt 帶上該棒的原則
 
 - 新的 `prompts/principles/`:6 個短的原則檔,濃縮自 pstack 的 principle(MIT,見 `payload/docs/dlm/THIRD-PARTY.md`)。

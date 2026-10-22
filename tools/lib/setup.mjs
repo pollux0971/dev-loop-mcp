@@ -51,7 +51,8 @@ function asker(ask, log) {
   const yesno = async (id, text, def = true) => {
     const raw = String(await ask({ id, text: `${text} [${def ? 'Y/n' : 'y/N'}]: `, default: def ? 'y' : 'n' })).trim().toLowerCase();
     if (!raw) return def;
-    return ['y', 'yes', '是', '好', '要', 'ok'].includes(raw);
+    // v4.10.1: answers from --answers / setupProject arrive as JSON booleans, which String() turns into "true" / "false"
+    return ['y', 'yes', 'true', '是', '好', '要', 'ok'].includes(raw);
   };
   return { choose, input, yesno };
 }

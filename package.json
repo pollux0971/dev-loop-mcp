@@ -1,6 +1,6 @@
 {
   "name": "dev-loop-mcp",
-  "version": "4.10.0",
+  "version": "4.10.1",
   "private": true,
   "type": "module",
   "description": "AI 從需求到合併的開發迴圈:單一窗口、事件帳、機器驗收",
