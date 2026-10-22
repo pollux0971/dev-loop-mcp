@@ -16,7 +16,7 @@ import {
   headSha, isAncestor, mergeNoFf, readConfigBaseline, removeWorktree, syncWithMain, tag, withMergeTree, writeConfigBaseline, git,
 } from './git.mjs';
 import { append, readEvents, verifyChain } from './ledger.mjs';
-import { assemblePrompt, dataFile, readRolePrompt } from './prompt.mjs';
+import { assemblePrompt, dataFile, readPrinciples, readRolePrompt, withPrinciples } from './prompt.mjs';
 import { renderAll, writeRendered } from './render.mjs';
 import { assertValid, validate } from './schema.mjs';
 import { criticSchema, envelopeSchema, reportSchema } from './schemas.mjs';
@@ -506,7 +506,11 @@ function applySpawn(ctx, d, spawn, approvedBy) {
 // ---------------------------------------------------------------- verify & route
 
 function callCritic(ctx, d, node, extra) {
-  const { rules, reminder } = readRolePrompt(ctx.root, 'critic');
+  const role = readRolePrompt(ctx.root, 'critic');
+  const question0 = extra?.testFix ? 'test-fix' : extra?.escalation ? 'escalation' : 'accept';
+  const principleFor = { accept: ['critic-accept'], escalation: ['critic-escalation'], 'test-fix': ['test'] };
+  const rules = withPrinciples(role.rules, readPrinciples(ctx.root, principleFor[question0]));
+  const { reminder } = role;
   const data = [];
   const add = (source, content) => data.push({ source, at: `ledger#${ctx.state.maxSeq}`, content: typeof content === 'string' ? content : JSON.stringify(content, null, 2) });
   add('dag.json#node', node);
@@ -527,7 +531,7 @@ function callCritic(ctx, d, node, extra) {
     const tdiff = fork ? git(d.worktree, `diff ${fork} HEAD -- features/steps ${testGlobs(node, ctx.config).map((g) => `':(glob)${g}'`).join(' ')}`, { allowFail: true }).stdout : '';
     add('test-diff', tdiff.length > 15000 ? `${tdiff.slice(0, 15000)}\n…(截斷)` : tdiff || '(找不到測試棒的改動)');
   }
-  const question = extra?.testFix ? 'test-fix' : extra?.escalation ? 'escalation' : 'accept';
+  const question = question0;
   let prompt;
   try {
     prompt = assemblePrompt({
@@ -908,8 +912,16 @@ export function buildEnvelope(ctx, node, cand, { dispatchId, branch, base }) {
   return envelope;
 }
 
+/** Which principle files a worker leg gets (prompts/principles/<name>.md); a retry also gets `retry`. */
+export function workerPrinciples(leg, retry) {
+  const base = ['characterize', 'test', 'test-fix'].includes(leg) ? ['test'] : leg === 'integrate' ? ['integrate'] : ['dev'];
+  return retry ? [...base, 'retry'] : base;
+}
+
 export function buildWorkerPrompt(ctx, node, envelope, wt) {
-  const { rules, reminder } = readRolePrompt(ctx.root, 'worker');
+  const role = readRolePrompt(ctx.root, 'worker');
+  const rules = withPrinciples(role.rules, readPrinciples(ctx.root, workerPrinciples(envelope.leg, !!envelope.findings?.length)));
+  const { reminder } = role;
   const at = `ledger#${ctx.state.maxSeq}`;
   const data = [];
   if (node.gherkin) {

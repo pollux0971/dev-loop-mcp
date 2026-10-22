@@ -1,4 +1,4 @@
-# dlm API(v4.9.0)
+# dlm API(v4.10.0)
 
 > 這份是 `node tools/dlm.mjs api md` 從 `tools/lib/api.mjs` 產生的,不要手改。機器讀的版本:[openapi.json](openapi.json)(或執行中的 `GET /api/v1/openapi.json`)。
 

@@ -33,6 +33,8 @@ test('越界:實作棒偷改測試 → 每次被退回,第 3 次後封鎖並問�
   s = await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
   const env = readJson(join(proj, 'ledger/dispatch', [...s.dispatches.values()].at(-1).dispatch_id, 'envelope.json'));
   assert.ok(env.findings?.some((f) => /不要碰測試檔/.test(f.detail)), '使用者原話成為下一張工單的 findings');
+  const retryPrompt = readFileSync(join(proj, 'ledger/dispatch', [...s.dispatches.values()].at(-1).dispatch_id, 'prompt.md'), 'utf8');
+  assert.match(retryPrompt, /這是重做。先處理 `findings`/, '重做的工單帶了 retry 原則');
 });
 
 test('說謊:宣稱驗收 exit 0 但重跑是紅的 → evidence 與 acceptance 都 FAIL', async () => {

@@ -32,6 +32,11 @@ test('完整流程:一個能力 + 一個整合點,從提案到使用者確認', 
   assert.ok(sh(proj, 'git tag').includes(`dlm-archive/${devLeg.dispatch_id}`));
   assert.ok(!existsSync(devLeg.worktree), 'worktree 已清掉');
   assert.ok(existsSync(join(proj, 'ledger/dispatch', devLeg.dispatch_id, 'prompt.md')), 'worker 當時看到的 prompt 有留檔');
+  const devPrompt = readFileSync(join(proj, 'ledger/dispatch', devLeg.dispatch_id, 'prompt.md'), 'utf8');
+  const testPrompt = readFileSync(join(proj, 'ledger/dispatch', testLeg.dispatch_id, 'prompt.md'), 'utf8');
+  assert.match(devPrompt, /這一棒的原則[\s\S]*最小改動[\s\S]*<\/rules>/, '實作棒的 prompt 帶了 dev 原則(在 rules 裡)');
+  assert.doesNotMatch(devPrompt, /期望值從 gherkin/, '實作棒沒有拿到測試棒的原則');
+  assert.match(testPrompt, /期望值從 gherkin/, '測試棒的 prompt 帶了 test 原則');
 
   // integration point
   addNode(proj, I1, I1_GHERKIN);

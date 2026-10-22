@@ -2,6 +2,20 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.10.0 — 每一棒的 prompt 帶上該棒的原則
+
+- 新的 `prompts/principles/`:6 個短的原則檔,濃縮自 pstack 的 principle(MIT,見 `payload/docs/dlm/THIRD-PARTY.md`)。
+  dlm 組 prompt 時依棒別接在角色規則後面(`<rules>` 裡),不靠 agent 自己去開 skill;送出的內容照樣存在 `ledger/dispatch/<d-id>/prompt.md`。
+  - `test`(characterize、test、test-fix 棒,以及 Critic 的 test-fix 題):每個測試想兩個改法,行為改壞要紅、只改內部要綠;期望值從 gherkin 算;測看得到的行為。
+  - `dev`:最小改動、檢查放在邊界、散落的分支改成表或狀態機、計算寫成純函式。
+  - `integrate`:只在組合層接線、錯誤在入口處理一次、用真的入口跑一次 @e2e 當證據。
+  - `retry`(工單有 findings 時加上):從第一個出錯的地方修;被同一個檢查擋兩次以上,先寫下並驗證自己的前提。
+  - `critic-accept`:先找出「合併安全是因為哪一件事」並證明;只有會擋合併的問題才能 FAIL。`critic-escalation`:先問工單前提對不對。
+- `paths.rules` 加上 `prompts/principles/*.md`,`dlm check rule-size` 會管到它們。檔案不存在就略過,還沒升級的專案照舊。
+- 還沒做:同一份 bundle 加原則前後各實跑一次、比 `dlm stats` 的退回次數與花費。這要真的 worker,下一次實測時做;效果沒變好就拿掉。
+- 測試:新增一項(棒別對應、缺檔略過、超過上限會被擋),e2e 驗證測試棒與實作棒的 prompt 各自拿到對的原則、重做帶 retry、Critic 的 test-fix 題帶 test。
+  `npm test` 206 個:200 過、6 個略過、0 失敗。
+
 ## 4.9.0 — 六個給使用者用的 skill(改寫自 pstack)
 
 - 新增 6 個 Front 用的 skill,改寫自 [pstack](https://github.com/cursor/plugins/tree/main/pstack)(MIT,授權全文在 `payload/docs/dlm/THIRD-PARTY.md`):

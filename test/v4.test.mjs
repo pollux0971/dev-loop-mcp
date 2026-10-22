@@ -1,7 +1,7 @@
 // What v4 changed: each item matches one problem in the v3 real-run report (see 4.0.0 in docs/dlm/CHANGELOG.md).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { confirmE2e, decide } from '../tools/lib/inbox.mjs';
@@ -45,6 +45,9 @@ test('test-fix(L2):Critic 確認測試寫錯就自動退回測試棒,不問使�
   const s = await tickUntil(proj, (st) => st.nodes.get('calc/v1').status === 'done');
   assert.ok(!openRequests(s).some((r) => r.ref.startsWith('testfix:')));
   assert.ok(readEvents(proj).some((e) => e.type === 'leg_reopen'));
+  const dir = join(proj, 'ledger/dispatch');
+  const criticPrompts = readdirSync(dir).flatMap((d) => readdirSync(join(dir, d)).filter((f) => f.startsWith('critic-prompt')).map((f) => readFileSync(join(dir, d, f), 'utf8')));
+  assert.ok(criticPrompts.some((t) => /"question": "test-fix"/.test(t) && /期望值從 gherkin/.test(t)), 'test-fix 題的 Critic prompt 帶了 test 原則');
 });
 
 test('test-fix 在 state 裡:插一棒、做完回到原 pipeline,退回次數有記', () => {

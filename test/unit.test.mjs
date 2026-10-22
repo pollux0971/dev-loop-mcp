@@ -8,7 +8,8 @@ import { DEFAULTS } from '../tools/lib/config.mjs';
 import { descendantCounts, findCycle, layers, scopeContained, validateDag, withSpawn } from '../tools/lib/dag.mjs';
 import { scanGherkin } from '../tools/lib/gherkin.mjs';
 import { append, checkLedger, readEvents, validateEvent } from '../tools/lib/ledger.mjs';
-import { assemblePrompt, fillTemplate, stripPlatform } from '../tools/lib/prompt.mjs';
+import { assemblePrompt, fillTemplate, readPrinciples, stripPlatform, withPrinciples } from '../tools/lib/prompt.mjs';
+import { workerPrinciples } from '../tools/lib/orchestrator.mjs';
 import { validate } from '../tools/lib/schema.mjs';
 import { replay } from '../tools/lib/state.mjs';
 import { globToRegex, matchGlob } from '../tools/lib/util.mjs';
@@ -226,4 +227,22 @@ test('mutation 找不到相關的單元測試:整合棒 SKIPPED(組合層由整�
   assert.match(dev.detail, /沒有任何單元測試直接 import/);
   const broken = { cwd, sh: () => ({ code: 2, stdout: 'something else broke', stderr: '' }) };
   assert.match(checkMutation(broken, ['apps/cli/src/main.ts'], { id: 'I1' }, config, { leg: 'integrate' })[0].detail, /沒產生可讀的報告/, '其他失敗照舊');
+});
+
+test('v4.9 每棒的原則:棒別對應、重做加 retry、缺檔就略過、rule-size 管得到', () => {
+  assert.deepEqual(workerPrinciples('test', false), ['test']);
+  assert.deepEqual(workerPrinciples('characterize', false), ['test']);
+  assert.deepEqual(workerPrinciples('test-fix', true), ['test', 'retry']);
+  assert.deepEqual(workerPrinciples('dev', true), ['dev', 'retry']);
+  assert.deepEqual(workerPrinciples('integrate', false), ['integrate']);
+  const payload = join(REPO, 'payload');
+  for (const n of ['test', 'dev', 'integrate', 'retry', 'critic-accept', 'critic-escalation']) {
+    assert.ok(readPrinciples(payload, [n]).startsWith('## 這一棒的原則'), `payload 有 ${n} 原則檔`);
+  }
+  assert.equal(readPrinciples(payload, ['nope']), '', '缺檔不丟錯');
+  assert.equal(withPrinciples('R', ''), 'R');
+  const dir = tempDir();
+  mkdirSync(join(dir, 'prompts', 'principles'), { recursive: true });
+  writeFileSync(join(dir, 'prompts', 'principles', 'dev.md'), 'x'.repeat(DEFAULTS.limits.rules_bytes + 1));
+  assert.equal(checkRuleSize(dir, DEFAULTS).result, 'FAIL', '原則檔超過上限會被 rule-size 擋');
 });

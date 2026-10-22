@@ -69,7 +69,7 @@ export const DEFAULTS = {
       ...BUILD_CONFIG_PATHS,
     ],
     tests: ['**/*.test.*', '**/*.spec.*', 'features/**/*.feature', 'features/steps/**', 'docs/integration/**/*.feature'],
-    rules: ['AGENTS.md', 'AUTONOMY.md', 'prompts/*.md', '.claude/skills/*/SKILL.md'],
+    rules: ['AGENTS.md', 'AUTONOMY.md', 'prompts/*.md', 'prompts/principles/*.md', '.claude/skills/*/SKILL.md'],
   },
   verify: {
     // Prefix match; the command itself may only contain alphanumerics, ._/:=@+- and spaces, run as argv without a shell.

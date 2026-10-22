@@ -3,6 +3,10 @@
 `.claude/skills/` 裡的 `explain`、`why`、`catchup`、`sharpen`、`interrogate`、`blast-radius` 改寫自
 [pstack](https://github.com/cursor/plugins/tree/main/pstack)(standalone mirror:`backnotprop/pstack`)的
 how、teach、bro、why、ketchup、recall、sharpen、in-your-own-words、interrogate、blast-radius。
+`prompts/principles/` 的每棒原則濃縮自 pstack 的 principle-test-behavior-not-implementation、tdd、laziness-protocol、
+subtract-before-you-add、model-the-domain、boundary-discipline、fix-root-causes、attack-the-premise、prove-it-works,
+以及 interrogate 的審查 rubric 與 blast-radius。
+
 改寫內容:換成 dlm 的指令與紀錄來源、拿掉 Cursor 專屬設定、所有會改東西的步驟改成先提案給使用者批准。
 
 pstack 的授權如下。

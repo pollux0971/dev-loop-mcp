@@ -19,6 +19,24 @@ export function readRolePrompt(root, role) {
   return { rules: rules.trim(), reminder: reminder.trim() };
 }
 
+/**
+ * v4.9: per-leg principles (prompts/principles/<name>.md), condensed from pstack. Appended to the role rules so every
+ * dispatch carries them deterministically instead of relying on the agent to open a skill. A missing file is skipped,
+ * so projects that have not upgraded keep working.
+ */
+export function readPrinciples(root, names) {
+  const parts = [];
+  for (const name of names) {
+    const p = join(root, 'prompts', 'principles', `${name}.md`);
+    if (existsSync(p)) parts.push(readFileSync(p, 'utf8').trim());
+  }
+  return parts.length ? `## 這一棒的原則\n\n${parts.join('\n')}` : '';
+}
+
+export function withPrinciples(rules, principles) {
+  return principles ? `${rules}\n\n${principles}` : rules;
+}
+
 function fence(content) {
   return String(content).replace(/<\/data>/gi, '<\\/data>');
 }
