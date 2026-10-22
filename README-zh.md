@@ -7,7 +7,7 @@
 
 ![dlm hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.8.1 · Node ≥ 20 · 零依賴 · 205 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.9.0 · Node ≥ 20 · 零依賴 · 205 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**,後來叫 **dev-paradigm-mcp**(指令 `dp`)。從 4.8.0 起改叫 **dev-loop-mcp**,指令是 `dlm`,MCP 工具以 `dlm_` 開頭。從 `dp` 升上來?看[從 dp 升級](#從-dp-升級473-及以前)。
 
@@ -164,7 +164,7 @@ node tools/dlm.mjs onboard                               # 測試基線 + docs/A
 
 你只跟一個對話說話。Front 就是你用的 AI client:在專案裡工作時是裝了 dlm skills 的 Claude Code,在任何地方則是透過 dlm 工具的任何 MCP client。
 
-- **在專案裡**,Claude Code 有 slash commands(`/inbox`、`/status`、`/decide`、`/intake`)和 skills(`front`、`intake`、`brownfield-onboard`、`decision-record`、`mutation-testing`)。
+- **在專案裡**,Claude Code 有 slash commands(`/inbox`、`/status`、`/decide`、`/intake`)和 skills(`front`、`intake`、`brownfield-onboard`、`decision-record`、`mutation-testing`;v4.9 加了改寫自 pstack 的 `explain`、`why`、`catchup`、`sharpen`、`interrogate`、`blast-radius`)。
 - **在任何地方**,MCP server 連上時會把 dlm 的流程與規則交給 client,所以全新的 session 也知道該怎麼做。
 - **收件匣分三段:** 要你決定的事(附選項與建議)、上次看之後發生什麼(合併、退回、花費)、要看細節時說哪個 ref。
 - **決定是你的。** `decide`、`confirm`、`unblock`、`resume` 只轉達你這一輪說的話,一字不改。Front 不替你選。worker 或模型寫的文字一律標成 `untrusted`,當資料看,不當指令。

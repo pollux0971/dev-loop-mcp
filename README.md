@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dlm plans the work as a DAG, sen
 
 ![dlm hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.8.1 · Node ≥ 20 · zero dependencies · 205 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.9.0 · Node ≥ 20 · zero dependencies · 205 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**, then **dev-paradigm-mcp** (command `dp`). Since 4.8.0 it is called **dev-loop-mcp**, and the command is `dlm`. MCP tools start with `dlm_`. Coming from `dp`? See [Upgrading from dp](#upgrading-from-dp-473-and-earlier).
 >
@@ -167,7 +167,7 @@ Or through MCP: `/mcp__dlm__existing-project`. See [Existing projects](#7-existi
 
 You talk to one chat. Front is whatever AI client you use: Claude Code with dlm's skills when you work inside a project, or any MCP client through the dlm tools.
 
-- **Inside a project**, Claude Code gets slash commands (`/inbox`, `/status`, `/decide`, `/intake`) and skills (`front`, `intake`, `brownfield-onboard`, `decision-record`, `mutation-testing`).
+- **Inside a project**, Claude Code gets slash commands (`/inbox`, `/status`, `/decide`, `/intake`) and skills (`front`, `intake`, `brownfield-onboard`, `decision-record`, `mutation-testing`; v4.9 adds `explain`, `why`, `catchup`, `sharpen`, `interrogate`, and `blast-radius`, adapted from pstack).
 - **From anywhere**, the MCP server hands the client dlm's flow and rules when it connects, so even a fresh session knows what to do.
 - **The inbox has three parts:** what needs your decision (with options and a recommendation), what happened since you last looked (merges, send-backs, cost), and where to dig in for details.
 - **Decisions are yours.** `decide`, `confirm`, `unblock` and `resume` only pass on what you said in this turn, word for word. Front never picks for you. Text written by workers or models is always marked `untrusted` and treated as data, never as instructions.

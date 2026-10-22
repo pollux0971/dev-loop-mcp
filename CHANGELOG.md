@@ -2,6 +2,19 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.9.0 — 六個給使用者用的 skill(改寫自 pstack)
+
+- 新增 6 個 Front 用的 skill,改寫自 [pstack](https://github.com/cursor/plugins/tree/main/pstack)(MIT,授權全文在 `payload/docs/dlm/THIRD-PARTY.md`):
+  - `explain`(how、teach、bro):講程式怎麼運作;大專案分切面開唯讀 subagent。brownfield-onboard 補 AS-IS.md 時也用它。
+  - `why`(why):「為什麼這樣寫」「為什麼被退回」,先查 dlm 自己的紀錄(決定原話、dispatch 的工單與驗證、Critic 判決、ADR),再查 git;每條附出處,查不到就說查不到。
+  - `catchup`(ketchup、recall):離開一陣子回來的完整整理;每件等使用者的事寫成讀完就能回答的樣子。用 `inbox --no-mark`,不會把「上次看之後」標成看過。
+  - `sharpen`(sharpen、in-your-own-words):intake 前用自己的話重述需求、指出說太多或太少的地方、先定一個驗證點。intake 第 1 步改成先照它做。
+  - `interrogate`(interrogate):批准提案或確認試用前,兩個獨立的審查者各自挑毛病(gherkin 數字驗算、漏掉的場景、owns 切法),合併成要改 / 可以考慮 / 備註 / 駁回。
+  - `blast-radius`(blast-radius):要動既有程式時,找出 owns 以外會壞的地方,把「安全是因為哪一件事」寫成 script 跑一次;結果拿來決定 characterize 要釘哪些檔。intake 的 brownfield 段落接上它。
+- 跟 pstack 不同的地方:會改東西的步驟一律先提案、使用者說好才 decide;pstack 的「預設不問人」「自動改 skill」沒有收。
+- front 多一段「其他 skill」指向它們;為了留在 6000 bytes 內,精簡了幾句(意思不變),現在 5993 bytes。
+- `npm test` 205 個:199 過、6 個略過、0 失敗。全部一起跑時有一次「實作棒改壞了 characterize 釘住的行為:退回」失敗,單獨跑與重跑都通過,看起來是負載下的時間問題,跟這次改動無關(沒有動 tools/)。
+
 ## 4.8.1 — 程式註解改成英文;輸出超過 64 KB 被截斷
 
 - **輸出被截斷**:`dlm` 的輸出接到 pipe 時,超過 64 KB 的部分會不見(寫到 pipe 是非同步的,`process.exit()` 把還在排隊的丟掉)。
