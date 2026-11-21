@@ -2,6 +2,38 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.12.0 — Python 技術棧;依賴資料夾不再寫死 node_modules;有 virtualenv 的既有 Python 專案
+
+新的 Python 專案(greenfield)和有 virtualenv 的既有 Python 專案(brownfield),現在都能像 node-ts 專案一樣從提案走到合併。
+
+- **python 技術棧(`stacks/python`)**:`dlm init <dir> --stack python`。pytest 跑單元測試,pytest-bdd 跑 gherkin 驗收,依賴裝在專案自己的 `.venv`
+  (`requirements-dev.txt`;`dlm setup` 會問要不要建)。範本有 `pyproject.toml`(`pythonpath = ["src"]`、`--import-mode=importlib`)、
+  `scripts/accept.py`(驗收入口:給 feature 路徑就跑引用那個路徑的步驟模組,沒有模組就 exit 1;不給就全跑,跳過還沒做完的節點)、
+  `features/steps/README.md`、`src/test_layout.py`(確認 `src` 在 import 路徑上;也讓新專案的 `pytest -q src` 不會因為「沒有測試」exit 5)。
+  - 程式放 `src/<能力>/`,單元測試 `test_*.py` 放旁邊;步驟模組放 `features/steps/<能力>/test_<能力>_<版本>.py`。
+  - 合併 gate:`check:dlm → test(.venv/bin/python -m pytest -q src) → accept(.venv/bin/python scripts/accept.py)`。
+  - `pyproject.toml`、`requirements*.txt`、`setup.cfg`、`setup.py`、`pytest.ini`、`tox.ini`、`scripts/**` 是 gate 定義檔,worker 不能改。
+  - 不會被偵測(`detect` 是空的):4.12 以前沒寫 `project.stack` 的專案照舊。
+- **依賴資料夾(`deps`)**:核心不再認得 `node_modules`。技術棧宣告 `deps.dirs`(node-ts = `node_modules`,python = `.venv`):
+  每個副本裡用 symlink、不複製;派工前後比對指紋;worker 在副本裡寫到它底下就退回(訊息會寫出第一個路徑,一個資料夾一行)。
+  合併樹怎麼裝(`deps.install`)、`setup` 要不要提議安裝(`deps.setup`)也由技術棧決定。node-ts 的行為與訊息跟以前一樣
+  (`npm ci --offline --ignore-scripts`、lockfile 對不上時改用 symlink、題目 id 還是 `npm_install`);`node_modules` 的指紋值也一樣,升級時正在跑的派工不受影響。
+  - `.venv` 的指紋不算 `__pycache__` 和 `.pyc`(跑一次 pytest 就會寫),但改到 `.venv` 裡任何 `.py` 都會被抓到。為了不讓人在 `.venv` 偷放 `.pyc`,
+    dlm 判定結果的每一次執行都設 `PYTHONPYCACHEPREFIX`(每次一個新的暫存目錄),Python 不會讀樹裡的 `.pyc`(技術棧的 `deps.judge_env`)。
+- **紅的原因不對,技術棧也能宣告(`add.bad_red`)**:python = 步驟沒綁定(`StepDefinitionNotFoundError`)、縮排錯誤(`IndentationError` / `TabError`)。
+  找不到實作模組(`ModuleNotFoundError` / `ImportError`)照樣是正常的紅。
+- **既有 Python 專案的 virtualenv**:`.venv/`、`venv/`、`env/`(有 `bin/python`)會被找到,測試用它跑(`<venv>/bin/python -m pytest -q` 或 `-m unittest`),
+  characterize 的指令也用同一個 Python;venv 裡的檔不算專案的程式碼。`dlm setup` 把專案改用 python 技術棧、`deps.dirs` 設成那個資料夾(沒有就是空的);
+  gate 照舊跑專案自己的測試,沒有 `scripts/accept.py` 時不會用技術棧的 accept(不當預設、不當證據)。
+  **4.12 以前設定的既有 Python 專案**:`dlm doctor` 看到 virtualenv 不在 `deps.dirs` 時會提醒,重跑一次 `dlm setup` 就好。
+- **python 專案不能加 `conftest.py`(任何一層都不行)**:conftest 的 hook(例如 `pytest_runtest_makereport`)能讓失敗的測試回報通過。
+  fixture 寫在測試模組裡;真的要共用,在 report 的 `ticket_problems` 提出,由 shared 節點處理。
+- **修正:設定裡的 `null` 蓋在物件預設上**:以前 dlm 讀設定時會出錯(`Cannot convert undefined or null to object`),`dlm setup` 還會說「產生的設定不合法,已還原」。
+  現在 `null` 就是把那一項關掉(例如既有 Python 專案的 `deps.setup: null` 關掉技術棧提議的 `.venv` 安裝)。
+- 其他:技術棧可以加 `paths.tests`(`add.tests`)與 `.gitignore` 的行(`gitignore`);`accept_probe` 沒寫 `keys` 時代表「檔案存在」,
+  有 `keys` 時值要非空才算(`"dependencies": {}` 以前會算有)。
+- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 253 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
+
 ## 4.11.1 — 指令列與主控台的使用體驗
 
 指令列(`dlm`):

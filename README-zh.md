@@ -7,7 +7,7 @@
 
 ![dlm hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.11.1 · Node ≥ 20 · 零依賴 · 223 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.12.0 · Node ≥ 20 · 零依賴 · 253 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**,後來叫 **dev-paradigm-mcp**(指令 `dp`)。從 4.8.0 起改叫 **dev-loop-mcp**,指令是 `dlm`,MCP 工具以 `dlm_` 開頭。從 `dp` 升上來?看[從 dp 升級](#從-dp-升級473-及以前)。
 
@@ -146,6 +146,10 @@ node tools/dlm.mjs setup      # 一題一題問:用哪個 AI、Verifier、自治
 node tools/dlm.mjs doctor     # 健康檢查:每一項 ✓ / ⚠ / ✗,有問題的附修法
 ```
 
+預設的技術棧是 `node-ts`(TypeScript / vitest / cucumber-js / stryker)。Python 專案用 `init my-app --stack python`
+(pytest + pytest-bdd,依賴在專案自己的 `.venv`):`setup` 會問要不要用 `requirements-dev.txt` 建 `.venv`。
+`--stack none` 只裝核心。見 [stacks/README.md](stacks/README.md)。
+
 接著在 `my-app` 開 Claude Code 打 `/inbox`,從此只跟這個視窗說話。Front 會問你要不要啟動背景迴圈(`dlm run --daemon`,停止用 `dlm run --stop`),之後 dlm 每 60 秒自己往前推。
 
 ### C. 既有專案(brownfield)
@@ -240,6 +244,7 @@ L2 時,ABSTAIN 交給 **Critic**:一個讀規格、檢查結果、diff,但不讀
 ### 7. 既有專案(brownfield)
 
 - **gate 跑專案自己的測試。** `setup` 偵測 `npm test`、pytest / unittest、`go test`、`cargo test`、`make test`,寫進 `gates.commands`(例 `{"test": "python3 -m unittest"}`)。既有專案不會裝任何技術棧範本。
+- **有 virtualenv 的 Python 專案。** 專案有 `.venv/`、`venv/` 或 `env/`(裡面有 `bin/python`)時,測試用它跑(`.venv/bin/python -m pytest -q`)。`setup` 把專案改用 python 技術棧,並把那個資料夾設成依賴資料夾:每個副本裡都是 symlink、不複製,worker 改到它就退回。4.12 以前設定的專案有 virtualenv 但還不是依賴資料夾時,`dlm doctor` 會提醒你重跑 `dlm setup`。
 - **本來就紅的測試不算 worker 的。** `dlm onboard`(之後用 `dlm baseline` 重記)在主線上跑一次測試,把失敗的記進 `docs/dlm-baseline.json`。gate 紅了但紅的全在基線裡 → 算通過;多一個新的紅就擋下,並指出是哪一個。
 - **改既有程式前先釘住現況。** 節點的 `owns` 涵蓋主線上已有的檔時,提案自動在最前面加一棒 `characterize`:只准寫測試,而且要在現在的程式上全綠。之後的棒都改不到這些測試,實作棒還要讓它們維持綠。一次最多 10 個檔;刻意要改掉的行為寫進 gherkin。
 - **`docs/AS-IS.md`** 描述專案現在的樣子。`onboard` 寫草稿,Front 讀程式後補完。
@@ -406,6 +411,7 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 | `caps.lease_minutes` | `90` | worker 最多跑多久 |
 | `gates.chain` | `check:dlm, typecheck, test, accept` | 每次合併前的全 gate |
 | `gates.commands` | `{}` | gate 名稱不是 npm script 時用的指令(既有專案) |
+| `deps.dirs` | 技術棧給(`node_modules`、`.venv`) | 依賴資料夾:每個副本裡用 symlink,派工前後比對指紋 |
 | `agents.worker` / `critic` / `verifier` | — | `cmd`,或 `accounts` + `model` |
 | `integration.gate_next_version` | `true` | 下一版要等你試過上一版 |
 | `verify.rerun_allow` | `npm run`、`npm test`、`node --test`… | dlm 可以重跑當證據的指令開頭 |
@@ -417,7 +423,7 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 
 ### 自動測試
 
-`npm test`:**205 個,全部通過。** 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
+`npm test`:**253 個,全部通過。** 另外有一個 Python 端到端測試預設不跑,也不算在 skipped 裡。要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`,那個 venv 要裝好 pytest + pytest-bdd(測試本身不下載任何東西)。 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
 
 ### 實跑,2026-10-16
 
@@ -485,13 +491,14 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 - **Cursor 與 Codex 的 `dlm mcp install`**:只實跑過 Claude Code 的。
 - **`max_parallel` 在真的 worker 上滿載**。
 - Gemini CLI、OpenCode 沒有帳號支援。要用就自己寫 `agents.<角色>.cmd`。
+- **python 技術棧配真的 worker**:只有自動測試(假的 worker 寫 pytest-bdd 步驟,pytest 9 / pytest-bdd 9 是真的)。
 
 ## 這個 repo
 
 ```
 tools/      dlm CLI 與 MCP server(零依賴);會複製進每個專案
 payload/    dlm init 寫進專案的檔:規則、prompts、skills、docs/dlm(這裡不認得任何語言或框架)
-stacks/     一個技術棧一個資料夾:範本、預設指令、額外檢查、worker 規則(node-ts = TypeScript / vitest / cucumber / stryker)
+stacks/     一個技術棧一個資料夾:範本、預設指令、額外檢查、worker 規則(node-ts = TypeScript / vitest / cucumber / stryker;python = pytest / pytest-bdd)
 test/       自動測試
 docs/       ARCHITECTURE.md(設計與理由)、adr/、images/(README 的截圖)
 ```

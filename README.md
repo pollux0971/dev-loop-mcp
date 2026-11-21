@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dlm plans the work as a DAG, sen
 
 ![dlm hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.11.1 · Node ≥ 20 · zero dependencies · 223 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.12.0 · Node ≥ 20 · zero dependencies · 253 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**, then **dev-paradigm-mcp** (command `dp`). Since 4.8.0 it is called **dev-loop-mcp**, and the command is `dlm`. MCP tools start with `dlm_`. Coming from `dp`? See [Upgrading from dp](#upgrading-from-dp-473-and-earlier).
 >
@@ -149,6 +149,10 @@ node tools/dlm.mjs setup      # one question at a time: which AI, Verifier, auto
 node tools/dlm.mjs doctor     # health check: ✓ / ⚠ / ✗ for each item, with a fix for each problem
 ```
 
+The default stack is `node-ts` (TypeScript / vitest / cucumber-js / stryker). For a Python project use `init my-app --stack python`
+(pytest + pytest-bdd, dependencies in the project's own `.venv`): `setup` offers to create `.venv` from `requirements-dev.txt`.
+`--stack none` installs only the core. See [stacks/README.md](stacks/README.md).
+
 Then open Claude Code in `my-app` and type `/inbox`. From now on, talk only to that window. Front asks whether to start the background loop (`dlm run --daemon`; stop it with `dlm run --stop`). After that, dlm moves things forward every 60 seconds.
 
 ### C. An existing project (brownfield)
@@ -243,6 +247,7 @@ To change the level, the daily budget or the number of workers, say so to Front.
 ### 7. Existing projects (brownfield)
 
 - **The gate runs the project's own tests.** `setup` detects `npm test`, pytest / unittest, `go test`, `cargo test` or `make test` and writes it to `gates.commands` (e.g. `{"test": "python3 -m unittest"}`). Existing projects don't get any stack template.
+- **Python with a virtualenv.** If the project has `.venv/`, `venv/` or `env/` (with `bin/python`), the tests run with it (`.venv/bin/python -m pytest -q`). `setup` switches the project to the python stack and makes that folder a dependency folder: every copy links it instead of copying it, and a worker that changes it is sent back. `dlm doctor` warns when a project set up before 4.12 has a virtualenv that isn't a dependency folder yet (re-run `dlm setup`).
 - **Tests that were already red aren't the worker's fault.** `dlm onboard` (re-record with `dlm baseline`) runs the tests on main and records the failures in `docs/dlm-baseline.json`. A red gate passes if every red test is in the baseline. One new red test blocks the merge, and dlm names it.
 - **Pin down current behavior before changing it.** When a node's `owns` covers files that already exist on main, the proposal adds a `characterize` leg in front: it may only write tests, and those tests must pass on the current code. Later legs can't change them, and the dev leg must keep them green. At most 10 files at a time. Behavior you mean to change goes in the gherkin instead.
 - **`docs/AS-IS.md`** describes the project as it is today. `onboard` writes a draft, and Front completes it by reading the code.
@@ -409,6 +414,7 @@ Add `--help` to any command to print its help without running it.
 | `caps.lease_minutes` | `90` | How long a worker may run |
 | `gates.chain` | `check:dlm, typecheck, test, accept` | Full gate before every merge |
 | `gates.commands` | `{}` | Commands for gate names that aren't npm scripts (brownfield) |
+| `deps.dirs` | from the stack (`node_modules`, `.venv`) | Dependency folders: linked into every copy, fingerprinted around each dispatch |
 | `agents.worker` / `critic` / `verifier` | — | `cmd`, or `accounts` + `model` |
 | `integration.gate_next_version` | `true` | Next version waits for your trial of the last one |
 | `verify.rerun_allow` | `npm run`, `npm test`, `node --test`, … | Command prefixes dlm may re-run as evidence |
@@ -420,7 +426,7 @@ More: [`payload/docs/dlm/AGENTS-SETUP.md`](payload/docs/dlm/AGENTS-SETUP.md), [`
 
 ### Automated tests
 
-`npm test`: **205 tests, all passing.** They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
+`npm test`: **253 tests, all passing.** One more test, a Python end-to-end run, is off by default and doesn't show in the skipped count. Run it with `DLM_TEST_PYTHON=<venv>/bin/python npm test`, where that venv has pytest + pytest-bdd (the suite downloads nothing). They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
 
 ### Real run, 2026-10-16
 
@@ -488,13 +494,14 @@ Found and fixed during this run: a superseded proposal stayed approvable (→ `s
 - **`dlm mcp install` for Cursor and Codex**: only the Claude Code path was run for real.
 - **`max_parallel` at full load** with real workers.
 - Gemini CLI and OpenCode have no account support. To use them, write `agents.<role>.cmd` yourself.
+- **The python stack with a real worker**: only automated tests (a fake worker writing pytest-bdd steps, real pytest 9 / pytest-bdd 9).
 
 ## This repo
 
 ```
 tools/      the dlm CLI and MCP server (zero dependencies); copied into each project
 payload/    files `dlm init` writes into a project: rules, prompts, skills, docs/dlm (no language or framework in here)
-stacks/     one folder per tech stack: template, default commands, extra checks, worker rules (node-ts = TypeScript / vitest / cucumber / stryker)
+stacks/     one folder per tech stack: template, default commands, extra checks, worker rules (node-ts = TypeScript / vitest / cucumber / stryker; python = pytest / pytest-bdd)
 test/       automated tests
 docs/       ARCHITECTURE.md (design and reasons), adr/, images/ (README screenshots)
 ```
