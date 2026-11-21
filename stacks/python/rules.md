@@ -8,4 +8,5 @@
 - 測試棒的紅要是「實作還不存在」(`ModuleNotFoundError` / `ImportError` 可以);步驟沒綁定、縮排錯誤、語法錯誤會被退回。
 - 只用標準庫和 `requirements-dev.txt` 裡有的套件。不要 `pip install`,不要把專案本身裝進 `.venv`,不要碰 `.venv/`。
 - 執行程式(整合點的 @e2e、任何「跑起來」的證據)一律用 `.venv/bin/python scripts/run.py <套件> [參數]`(用這棵樹自己的 `src`);套件要有 `__main__.py`。不要用 `cd src`、`PYTHONPATH=…`。
+  給使用者看的執行方式(程式的 usage、說明文字)也寫這個形式:在專案根目錄直接 `python -m <套件>` 找不到模組。
 - 不要改 `pyproject.toml`、`requirements*.txt`、`conftest.py`、`scripts/**`(gate 定義檔)。

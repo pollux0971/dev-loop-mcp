@@ -261,7 +261,8 @@ describe('python greenfield end to end', { skip: !pyReady && 'set DLM_TEST_PYTHO
     const inbox = renderInbox(proj, { markSeen: false });
     assert.match(inbox, /E2E:I1/);
     assert.match(inbox, /怎麼跑:\.venv\/bin\/python scripts\/run\.py calc 2 3/);
-    assert.match(inbox, /怎麼跑:在專案根目錄:\.venv\/bin\/python scripts\/run\.py <套件>/, 'the stack hint too');
+    assert.match(inbox, /怎麼跑:在專案根目錄用 \.venv\/bin\/python scripts\/run\.py <套件> \[參數\]\(直接 python -m <套件> 不行,程式在 src\/ 裡\)/, 'the stack hint too');
+    assert.doesNotMatch(inbox, /greet Grace/, 'no made-up module name');
     assert.doesNotMatch(inbox, /怎麼跑:\.venv\/bin\/python scripts\/accept\.py/, 'the acceptance runner is not how to run it');
     const tryRun = run('.venv/bin/python scripts/run.py calc 2 3', { cwd: proj });
     assert.equal(tryRun.code, 0, tryRun.stderr);
@@ -325,6 +326,17 @@ describe('review batch 1: fresh projects and stack-neutral payload', () => {
     writeFileSync(join(copy, 'src/greet/__main__.py'), 'print("copy")\n');
     assert.equal(run('python3 scripts/run.py greet Grace', { cwd: copy }).stdout.trim(), 'copy');
     assert.equal(run('python3 scripts/run.py', { cwd: proj }).code, 2, 'usage without a module');
+    // a module that does not exist: one line, exit 2, no traceback
+    const nope = run('python3 scripts/run.py nope x', { cwd: proj });
+    assert.equal(nope.code, 2);
+    assert.equal(nope.stderr.trim(), '找不到模組 nope(在 src/ 底下)');
+    assert.equal(run('python3 scripts/run.py greet.nope', { cwd: proj }).stderr.trim(), '找不到模組 greet.nope(在 src/ 底下)');
+    // an ImportError inside the project's own code is not hidden
+    writeFileSync(join(proj, 'src/greet/__main__.py'), 'import not_installed_dep\n');
+    const inner = run('python3 scripts/run.py greet Grace', { cwd: proj });
+    assert.notEqual(inner.code, 0);
+    assert.match(inner.stderr, /Traceback[\s\S]*No module named 'not_installed_dep'/);
+    assert.doesNotMatch(inner.stderr, /找不到模組 greet/);
     assert.ok(loadConfig(proj).verify.rerun_allow.includes('.venv/bin/python scripts/run.py'));
   });
 

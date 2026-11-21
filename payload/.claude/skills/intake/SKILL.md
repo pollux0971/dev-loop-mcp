@@ -35,7 +35,8 @@ description: 把使用者的需求變成可批准的 DAG 提案。新版本(bund
        { "id": "I1", "kind": "integration", "title": "…", "intent": "…", "owns": ["apps/cli/**"],
          "depends_on": ["ledger/v1"], "gherkin_file": ".dlm/intake/i1.feature" } ] }
    ```
-   (上面是 node-ts 的 `owns`;python 寫 `"owns": ["src/ledger/**"]`、整合點例 `"owns": ["src/cli/**"]`。)
+   (上面是 node-ts 的 `owns`;python 寫 `"owns": ["src/ledger/**"]`、整合點例 `"owns": ["src/cli/**"]`。
+   python 專案的 intent 與 gherkin 說到「怎麼執行」時寫 `.venv/bin/python scripts/run.py <套件> [參數]`,不要寫 `python -m <套件>`:程式在 `src/` 裡,在根目錄直接 `-m` 找不到。)
    `node tools/dlm.mjs intake bundle --spec .dlm/intake/<release>.json`。路線圖會存成 `docs/ROADMAP.md`(換了 session 也找得到)。
 7. 把提案重點(這一版做什麼、不做什麼、整合點怎麼試、路線圖)給使用者看,他說好才
    `decide node:<提案id> yes --verbatim "<原話>"`。**一版只批一次**。

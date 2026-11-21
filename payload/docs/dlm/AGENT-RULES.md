@@ -137,7 +137,7 @@
 | 證據指令:`.venv/bin/python -m pytest -q src/<能力>`、`.venv/bin/python scripts/accept.py <gherkin>`。不要加環境變數前綴。 宣稱照輸出寫,例:「`.venv/bin/python -m pytest -q src/greet` exit 2:收集 `src/greet/test_core.py` 時 ModuleNotFoundError: No module named 'greet.core'」。`-q` 不會列出通過的測試名稱,不要宣稱「某某測試維持綠」。 | `sandbox-escape`、`evidence`、`acceptance` |
 | 測試棒的紅要是「實作還不存在」(`ModuleNotFoundError` / `ImportError` 可以);步驟沒綁定、縮排錯誤、語法錯誤會被退回。 | `dry-run` |
 | 只用標準庫和 `requirements-dev.txt` 裡有的套件。不要 `pip install`,不要把專案本身裝進 `.venv`,不要碰 `.venv/`。 | `sandbox-escape` |
-| 執行程式(整合點的 @e2e、任何「跑起來」的證據)一律用 `.venv/bin/python scripts/run.py <套件> [參數]`(用這棵樹自己的 `src`);套件要有 `__main__.py`。不要用 `cd src`、`PYTHONPATH=…`。 | `sandbox-escape`、`evidence` |
+| 執行程式(整合點的 @e2e、任何「跑起來」的證據)一律用 `.venv/bin/python scripts/run.py <套件> [參數]`(用這棵樹自己的 `src`);套件要有 `__main__.py`。不要用 `cd src`、`PYTHONPATH=…`。 給使用者看的執行方式(程式的 usage、說明文字)也寫這個形式:在專案根目錄直接 `python -m <套件>` 找不到模組。 | `sandbox-escape`、`evidence` |
 | 不要改 `pyproject.toml`、`requirements*.txt`、`conftest.py`、`scripts/**`(gate 定義檔)。 | `paths` |
 
 ## Critic

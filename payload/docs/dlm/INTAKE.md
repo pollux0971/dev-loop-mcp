@@ -21,6 +21,7 @@
 `dlm intake feature --spec spec.json --gherkin x.feature`。spec 欄位:`id`(`<能力>/v1`、整合點 `I1`、共用 `shared/<名字>`)、
 `title`、`intent`(≤300 字)、`owns`、`depends_on`、可選 `standalone`、`release`、`accept`(預設是技術棧的 `accept_cmd`,node-ts 是 `npm run accept -- <gherkin>`,python 是 `.venv/bin/python scripts/accept.py <gherkin>`;技術棧沒有預設時必填)、`tier`、`pipeline`。
 `owns` 放在技術棧的 layout 規定的位置(`stack.json` 的 `layout.hint`;node-ts:`packages/<能力>/**`,python:`src/<能力>/**`),不在裡面時提案會帶 warning(新專案才檢查)。
+python 專案的 intent / gherkin 寫執行方式時用 `.venv/bin/python scripts/run.py <套件> [參數]`(在根目錄直接 `python -m <套件>` 不行)。
 `shared` 節點沒有預設的 gherkin 路徑:要機器驗收就自己寫 `gherkin` 與 `accept`,不然不要附 gherkin。
 
 ## 既有專案(brownfield,v4.5)

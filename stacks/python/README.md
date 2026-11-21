@@ -3,7 +3,7 @@
 Python 3.10+ + pytest(單元測試)+ pytest-bdd(gherkin 驗收)。依賴裝在專案自己的 `.venv`(`requirements-dev.txt`),dlm 不裝套件。
 
 - `template/`:新專案的 `pyproject.toml`(pytest 設定:`pythonpath = ["src"]`、`--import-mode=importlib`)、`requirements-dev.txt`、
-  `scripts/accept.py`(驗收入口)、`scripts/run.py`(執行入口:`.venv/bin/python scripts/run.py <套件> [參數]`,用這棵樹自己的 `src`)、
+  `scripts/accept.py`(驗收入口)、`scripts/run.py`(執行入口:`.venv/bin/python scripts/run.py <套件> [參數]`,用這棵樹自己的 `src`;在根目錄直接 `python -m <套件>` 不行)、
   `features/steps/README.md`、`src/test_layout.py`。
 - `rules.md`:給 worker 的 Python / pytest-bdd 寫法規則。
 - 沒有 `checks.mjs`;「紅的原因不對」的判斷用 `stack.json` 的 `add.bad_red`(步驟沒綁定、縮排錯誤)。找不到實作模組照樣算正常的紅。

@@ -43,7 +43,7 @@
     ]
   },
   "gitignore": [".venv/", "__pycache__/", ".pytest_cache/"],
-  "try_hint": "在專案根目錄:.venv/bin/python scripts/run.py <套件> [參數](例 .venv/bin/python scripts/run.py greet Grace)",
+  "try_hint": "在專案根目錄用 .venv/bin/python scripts/run.py <套件> [參數](直接 python -m <套件> 不行,程式在 src/ 裡)",
   "layout": {
     "workspaces": ["src"],
     "unit_tests": "test_*.py",

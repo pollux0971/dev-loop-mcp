@@ -55,6 +55,8 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   而且通過重跑白名單與字元檢查的指令(看 dlm 的重跑紀錄,不看 worker 報告裡寫的退出碼;測試與驗收指令除外),再加上技術棧的 `try_hint`。
   worker 寫在報告裡、dlm 沒跑過的指令(例如 `curl … | sh`)不會出現在這裡。驗收結果的 evidence 項多一個選填的 `rerun`(dlm 跑的指令與退出碼)。python 範本多一個 `scripts/run.py <套件> [參數]`:用這棵樹自己的 `src` 執行套件
   (以前在專案根目錄 `python3 -m <套件>` 會 No module named,只有 `PYTHONPATH=src` 才行);它也是證據指令,python 規則要整合點用它跑 @e2e。
+  `scripts/run.py` 找不到模組時只印一行「找不到模組 X(在 src/ 底下)」並 exit 2;程式自己裡面的 ImportError 照樣顯示完整錯誤。
+  python 的提示寫明「直接 `python -m <套件>` 不行」;intake 與 python 規則要給使用者看的執行方式用 `scripts/run.py` 的形式。
   `.venv` 不會裝專案本身、也不加 `.pth`:`.venv` 連到每個副本,那樣副本會 import 到根目錄的程式。
   `e2e_request` 事件多一個選填的 `try` 欄位。
 - **`dlm init <dir> --name X` 用 X 登記到這台電腦的專案清單**(以前一律用資料夾名稱)。名稱不合規則或已經有人用時,改用資料夾名稱並說明原因;
