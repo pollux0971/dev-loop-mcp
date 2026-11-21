@@ -68,10 +68,17 @@ export function checkReportSanity(report) {
 
 /**
  * The test leg's "red" must be red for the right reason: the implementation does not exist yet. Syntax errors, unbound steps and pending also make the command exit non-zero, but that is not red, it is broken.
+ * v4.12: extra = the stack's own patterns (config.stack_add.bad_red: [{ pattern, why }]; python = pytest-bdd's unbound step, IndentationError).
+ * A missing implementation module stays a normal red in every stack.
  * Returns null if it looks like a normal red; otherwise returns the reason.
  */
-export function badRedReason(output) {
+export function badRedReason(output, extra = []) {
   const text = String(output ?? '');
+  for (const { pattern, why } of extra ?? []) {
+    let re;
+    try { re = new RegExp(pattern); } catch { continue; }
+    if (re.test(text)) return why;
+  }
   // "The requested module does not provide an export" means the implementation does not have that function yet, which is a normal red
   if (/\bSyntaxError\b(?!: The requested module)/.test(text)) return '紅的原因是語法錯誤,不是實作不存在';
   const summary = text.match(/\d+ (?:scenarios?|steps?) \(([^)]*)\)/g) ?? [];
@@ -88,7 +95,7 @@ export function checkAcceptance(ex, envelope, config) {
     let ok = a.expect_exit === -1 ? res.code !== 0 : res.code === a.expect_exit;
     const want = a.expect_exit === -1 ? '非 0(紅)' : String(a.expect_exit);
     let detail = `${a.cmd} → exit ${res.code},預期 ${want}`;
-    const bad = a.expect_exit === -1 && ok ? badRedReason(output) : null;
+    const bad = a.expect_exit === -1 && ok ? badRedReason(output, config.stack_add?.bad_red) : null;
     if (bad) { ok = false; detail += `;${bad}`; }
     out.push(r('acceptance', ok ? 'PASS' : 'FAIL', detail, tail(output, 1500)));
   }
@@ -103,7 +110,7 @@ export function checkDryRun(ex, node, config) {
   const cmd = tpl.replaceAll('{gherkin}', node.gherkin);
   const res = ex.sh(cmd, config.verify.rerun_timeout_seconds * 1000);
   const output = res.stdout + res.stderr;
-  const bad = badRedReason(output);
+  const bad = badRedReason(output, config.stack_add?.bad_red);
   const ok = res.code === 0 && !bad;
   return [r('dry-run', ok ? 'PASS' : 'FAIL', `${cmd} → exit ${res.code}${bad ? `;${bad}` : ''}`, tail(output, 1500))];
 }
