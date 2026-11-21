@@ -19,4 +19,8 @@ docs/integration/**
 scripts/boundaries.owners.json
 scripts/boundaries.allow.json
 scripts/gates.config.json
+# python stack (v4.12)
+pyproject.toml
+requirements-dev.txt
+src/test_layout.py
 gitignore

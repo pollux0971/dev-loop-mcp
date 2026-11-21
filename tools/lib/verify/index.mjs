@@ -74,7 +74,7 @@ export async function runVerify(ctx) {
   // Checks that execute code all run on a throwaway copy, inside the verify profile sandbox: tests written by the worker cannot touch the worktree or the host
   const scratch = scratchCopy(root, wt, dispatch.dispatch_id, depDirs(config));
   linkDeps(root, scratch, depDirs(config));
-  const ex = hostExecutor(scratch);
+  const ex = hostExecutor(scratch, config);
   const leg = dispatch.leg;
   const isLast = leg === pipelineFor(node, config).at(-1);
   let reruns = [];

@@ -36,7 +36,7 @@ export function plannedFiles(name, { profile = 'full', stack = DEFAULT_STACK } =
   const add = (dir, f, dest) => {
     let content = readFileSync(join(dir, f));
     const seed = matchAny(f, seedGlobs);
-    if (seed && name && /\.(md|json)$/.test(dest)) content = Buffer.from(content.toString('utf8').replaceAll('{{PROJECT_NAME}}', name));
+    if (seed && name && /\.(md|json|toml)$/.test(dest)) content = Buffer.from(content.toString('utf8').replaceAll('{{PROJECT_NAME}}', name));
     out.push({ dest, content, seed });
   };
   for (const f of listFiles(payload)) {
@@ -94,13 +94,16 @@ function write(target, actions, removals, profile = 'full', stack = DEFAULT_STAC
   writeJson(join(target, MANIFEST), { version: readVersion(), ...(profile !== 'full' ? { profile } : {}), ...(profile === 'full' ? { stack } : {}), files });
 }
 
-/** Lines dlm needs in .gitignore (an existing project's own .gitignore is not overwritten by the template; missing lines are appended at the end). */
+/**
+ * Lines dlm needs in .gitignore (an existing project's own .gitignore is not overwritten by the template; missing lines are appended at the end).
+ * v4.12: extra = the stack's own lines (stack.json gitignore, e.g. python's .venv/ and __pycache__/), for a new project.
+ */
 const DLM_IGNORES = ['.dlm/', '*.tmp-*'];
-function ensureIgnores(dir) {
+function ensureIgnores(dir, extra = []) {
   const p = join(dir, '.gitignore');
   const cur = existsSync(p) ? readFileSync(p, 'utf8') : '';
   const have = new Set(cur.split('\n').map((l) => l.trim()));
-  const missing = DLM_IGNORES.filter((l) => !have.has(l));
+  const missing = [...new Set([...DLM_IGNORES, ...extra])].filter((l) => !have.has(l));
   if (!missing.length) return false;
   atomicWrite(p, `${cur}${cur && !cur.endsWith('\n') ? '\n' : ''}# dlm(dev-loop-mcp)\n${missing.join('\n')}\n`);
   return true;
@@ -141,10 +144,14 @@ export function init(target, { name, existing = false, commit = true, stack = DE
   if (conflicts.length) throw new DlmError(`有 ${conflicts.length} 個同名檔內容不同,一個都沒寫:\n  - ${conflicts.join('\n  - ')}`);
   write(dir, actions, [], profile, stack);
   // v4.11: a new project records its stack (an existing project's is detected, or set by dlm setup)
+  let stackIgnores = false;
   if (profile === 'full') {
     const cfgPath = join(dir, 'dlm.config.json');
     const raw = readJson(cfgPath, {});
     if (!raw.project?.stack) writeJson(cfgPath, { ...raw, project: { ...(raw.project ?? {}), stack } });
+    // v4.12: the stack's .gitignore lines (python: .venv/, __pycache__/, .pytest_cache/) go in before the first commit
+    const lines = stack === 'none' ? [] : (readJson(join(REPO_ROOT, 'stacks', stack, 'stack.json'), {}).gitignore ?? []);
+    if (lines.length) stackIgnores = ensureIgnores(dir, lines);
   }
   const dag = loadDag(dir);
   const events = readEvents(dir);
@@ -157,7 +164,7 @@ export function init(target, { name, existing = false, commit = true, stack = DE
     git = 'initialized';
   } else {
     // v4.7.3: a project already in git used to commit nothing (see commitDlmFiles). Add .dlm/ to .gitignore, otherwise dlm's whole working directory shows up in git status
-    const ignores = ensureIgnores(dir);
+    const ignores = ensureIgnores(dir) || stackIgnores;
     const created = actions.filter((a) => a.op === 'create').map((a) => a.dest);
     if (commit) committed = commitDlmFiles(dir, 'dlm init --existing', { touched: [...created, MANIFEST, ...RENDERED, ...(ignores ? ['.gitignore'] : [])], profile, stack });
   }

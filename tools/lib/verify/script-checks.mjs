@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { getNode } from '../dag.mjs';
+import { withJudgeEnv } from '../sandbox.mjs';
 import { git } from '../git.mjs';
 import { listFiles, matchAny, run, runArgv, tail } from '../util.mjs';
 
@@ -11,13 +12,14 @@ export const r = (check, outcome, detail, evidence) => ({ check, outcome, detail
  * Executor: acceptance, evidence re-runs and standalone all go through it.
  * hostExecutor runs directly in the directory (the verification copy, unit tests).
  */
-export function hostExecutor(cwd) {
+export function hostExecutor(cwd, config = null) {
   // The acceptance copy is under .dlm/ and has no .git: do not let git search upward and find the outer main repo (see sandboxCommand in sandbox.mjs)
   const env = { GIT_CEILING_DIRECTORIES: dirname(resolve(cwd)) };
+  // v4.12: every command run here is judged by dlm, so it gets the stack's judging environment (see withJudgeEnv)
   return {
     cwd,
-    sh: (cmd, timeoutMs) => run(cmd, { cwd, env, timeoutMs }),
-    argv: (argv, timeoutMs) => runArgv(argv[0], argv.slice(1), { cwd, env, timeoutMs }),
+    sh: (cmd, timeoutMs) => withJudgeEnv(config, (judge) => run(cmd, { cwd, env: { ...env, ...judge }, timeoutMs })),
+    argv: (argv, timeoutMs) => withJudgeEnv(config, (judge) => runArgv(argv[0], argv.slice(1), { cwd, env: { ...env, ...judge }, timeoutMs })),
   };
 }
 

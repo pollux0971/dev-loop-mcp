@@ -1,0 +1,51 @@
+{
+  "$comment": "python 技術棧:pytest(單元測試)+ pytest-bdd(gherkin 驗收),依賴在專案自己的 .venv。detect 是空的:4.12 以前沒寫 project.stack 的專案不會被認成 python,只有 dlm init --stack python 或 dlm setup 會寫進去",
+  "name": "python",
+  "description": "Python 3.10+ / pytest / pytest-bdd,依賴在 .venv(requirements-dev.txt)",
+  "detect": [],
+  "accept_cmd": ".venv/bin/python scripts/accept.py {gherkin}",
+  "accept_probe": { "file": "scripts/accept.py" },
+  "defaults": {
+    "project": { "language": "python" },
+    "gates": {
+      "chain": ["check:dlm", "test", "accept"],
+      "commands": {
+        "test": ".venv/bin/python -m pytest -q src",
+        "accept": ".venv/bin/python scripts/accept.py"
+      }
+    },
+    "verify": {
+      "dry_run_cmd": null,
+      "typecheck_cmd": null,
+      "mutation": { "cmd": null }
+    },
+    "deps": {
+      "$comment": ".venv 在每個副本裡是 symlink(合併樹也是:沒有 install);dlm 判定的每一次執行都設 PYTHONPYCACHEPREFIX,Python 不會讀 .venv 裡被偷放的 .pyc",
+      "dirs": [".venv"],
+      "install": null,
+      "setup": {
+        "when": { "file": "pyproject.toml" },
+        "dir": ".venv",
+        "cmd": "python3 -m venv .venv && .venv/bin/python -m pip install -q -r requirements-dev.txt",
+        "label": "建立 .venv 並安裝 requirements-dev.txt"
+      },
+      "judge_env": { "PYTHONPYCACHEPREFIX": "{tmp}" }
+    }
+  },
+  "add": {
+    "rerun_allow": [".venv/bin/python -m pytest", ".venv/bin/python scripts/accept.py", "python3 -m pytest", "python3 -m unittest"],
+    "forbidden": ["pyproject.toml", "requirements*.txt", "setup.cfg", "setup.py", "pytest.ini", "tox.ini", "conftest.py", "**/conftest.py", "scripts/**"],
+    "critic_bash": [".venv/bin/python -m pytest*", ".venv/bin/python scripts/accept.py*", "python3 -m pytest*", "python3 -m unittest*"],
+    "tests": ["**/test_*.py", "**/*_test.py"],
+    "bad_red": [
+      { "pattern": "StepDefinitionNotFoundError", "why": "有步驟沒綁定(pytest-bdd 找不到步驟定義):紅的原因不是實作不存在" },
+      { "pattern": "\\b(IndentationError|TabError)\\b", "why": "紅的原因是測試檔縮排錯誤(壞掉的測試檔),不是實作不存在" }
+    ]
+  },
+  "gitignore": [".venv/", "__pycache__/", ".pytest_cache/"],
+  "layout": {
+    "workspaces": ["src"],
+    "unit_tests": "test_*.py",
+    "hint": "新專案的程式放 src/<能力>/(單元測試 test_*.py 放旁邊);驗收步驟模組放 features/steps/<能力>/test_<能力>_<版本>.py,整合點的放 features/steps/integration/"
+  }
+}

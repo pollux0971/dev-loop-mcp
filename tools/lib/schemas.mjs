@@ -143,6 +143,8 @@ export const configSchema = {
             },
           ],
         },
+        // environment for the runs dlm judges ('{tmp}' = a fresh directory per run; python: PYTHONPYCACHEPREFIX)
+        judge_env: { type: 'object', additionalProperties: { type: 'string' } },
       },
     },
     auth: {

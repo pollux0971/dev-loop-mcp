@@ -10,9 +10,10 @@
 //   critic   worktree of the handed-in branch
 import { spawn } from 'node:child_process';
 import {
-  closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync,
+  closeSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync,
   symlinkSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { childEnv, ensureDir, runArgv, sha256, toPosix } from './util.mjs';
 
@@ -29,11 +30,36 @@ export function sandboxCommand(config, profile, cmd, opts = {}) {
   return { file: 'sh', args: ['-c', cmd], env: childEnv(env) };
 }
 
+/**
+ * v4.12: run fn with the stack's environment for runs whose result dlm judges (config.deps.judge_env: verify copy, evidence reruns, acceptance
+ * prechecks, merge-tree gates, baseline, Critic). '{tmp}' in a value becomes a fresh directory, removed afterwards. python sets
+ * PYTHONPYCACHEPREFIX={tmp}: the dependency fingerprint ignores bytecode caches (a normal pytest run writes them), so a worker could plant
+ * a forged .pyc under the linked .venv with the .py untouched; with the prefix, Python never reads a .pyc from inside the tree.
+ * The worker's own runs do not get it (sandboxSpawn).
+ */
+export function withJudgeEnv(config, fn) {
+  const spec = config?.deps?.judge_env;
+  if (!spec || !Object.keys(spec).length) return fn({});
+  let tmp = null;
+  const env = {};
+  for (const [k, v] of Object.entries(spec)) {
+    env[k] = String(v).includes('{tmp}') ? String(v).replaceAll('{tmp}', (tmp ??= mkdtempSync(join(tmpdir(), 'dlm-judge-')))) : String(v);
+  }
+  try {
+    return fn(env);
+  } finally {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 /** Run synchronously. Never throws; on timeout returns code=124. */
 export function sandboxExec(config, profile, cmd, { cwd, env, timeoutMs, input } = {}) {
-  const c = sandboxCommand(config, profile, cmd, { cwd, env });
-  // c.env is already the full environment (passed through childEnv, with the variables to clear removed); running childEnv again would refill the cleared ones from process.env
-  return runArgv(c.file, c.args, { cwd, env: c.env, timeoutMs, input, exactEnv: true });
+  return withJudgeEnv(config, (judge) => {
+    // the judging environment wins over the caller's: what it pins down must not be undone by a variable passed in
+    const c = sandboxCommand(config, profile, cmd, { cwd, env: { ...env, ...judge } });
+    // c.env is already the full environment (passed through childEnv, with the variables to clear removed); running childEnv again would refill the cleared ones from process.env
+    return runArgv(c.file, c.args, { cwd, env: c.env, timeoutMs, input, exactEnv: true });
+  });
 }
 
 /** Start in the background (worker). Returns { pid }: it must be cleaned up when the lease expires. */

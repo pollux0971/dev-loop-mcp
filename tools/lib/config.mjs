@@ -54,8 +54,9 @@ export const DEFAULTS = {
   // v4.12: the project's dependency folders (top-level names). They are linked into every copy instead of copied, their fingerprint is
   // compared around each dispatch, and a worker writing under them is a violation. node_modules is the default so a project with stack 'none'
   // keeps the old behavior; each stack sets its own. install = how the merge tree gets a clean copy ({ lockfile, argv, out_of_sync, hint };
-  // null = link the root's). setup = what dlm setup / doctor offer when the folder is missing ({ when: { file, keys? }, dir, cmd, retry?, label, commit_files? })
-  deps: { dirs: ['node_modules'], install: null, setup: null },
+  // null = link the root's). setup = what dlm setup / doctor offer when the folder is missing ({ when: { file, keys? }, dir, cmd, retry?, label, commit_files? }).
+  // judge_env = environment for the runs dlm judges ('{tmp}' = a fresh directory per run), see withJudgeEnv in sandbox.mjs
+  deps: { dirs: ['node_modules'], install: null, setup: null, judge_env: {} },
   autonomy: { level: 1 },
   // User authorization (decide / confirm / resume / unblock): trust what Front relays; --verbatim may be omitted.
   // When verbatim words signed by the hook and matching are given (within the last window_minutes minutes), the event records the hash of that sentence

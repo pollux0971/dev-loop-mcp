@@ -40,9 +40,9 @@ const HELP = `dlm —— dev-loop-mcp v${VERSION}
        或:dlm init <dir> → cd <dir> → dlm setup → dlm doctor → 在 Claude Code 打 /inbox
 
 安裝與設定
-  dlm init <dir> [--name X] [--existing] [--no-commit] [--stack node-ts|none]
+  dlm init <dir> [--name X] [--existing] [--no-commit] [--stack node-ts|python|none]
                                               建新專案(或 --existing 補進既有專案;已經有 git 時會把 dlm 的檔 commit)。
-                                              --stack 選技術棧範本(stacks/ 底下的資料夾,預設 node-ts;none = 只裝核心)
+                                              --stack 選技術棧範本(stacks/ 底下的資料夾:node-ts(預設)、python;none = 只裝核心)
   dlm setup [--yes] [--answers file.json]     互動問答:選 AI、Verifier、自治等級,寫好設定並 commit
   dlm doctor [--json]                         健康檢查:每一項 ✓ / ⚠ / ✗,不對的附修法
   dlm upgrade [--dry-run]                     升級 dlm 管理的檔(衝突就一個都不寫)

@@ -1,0 +1,12 @@
+# Gate definition file (dlm: workers may not change it). The project itself is never installed into .venv:
+# pytest finds the code through pythonpath = ["src"].
+[project]
+name = "{{PROJECT_NAME}}"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src", "features/steps"]
+bdd_features_base_dir = "."
+addopts = "--import-mode=importlib"

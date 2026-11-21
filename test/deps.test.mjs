@@ -27,7 +27,7 @@ const escapeOf = (proj) => readEvents(proj).find((e) => e.type === 'reject' && e
 
 describe('deps config', () => {
   test('core default is node_modules with no install / setup; node-ts brings npm ci and npm install', () => {
-    assert.deepEqual(DEFAULTS.deps, { dirs: ['node_modules'], install: null, setup: null });
+    assert.deepEqual(DEFAULTS.deps, { dirs: ['node_modules'], install: null, setup: null, judge_env: {} });
     assert.deepEqual(depDirs({}), ['node_modules']);
     assert.deepEqual(depDirs({ deps: { dirs: ['.venv', '.git', '.dlm', '..'] } }), ['.venv']);
     const proj = join(tempDir(), 'p');
@@ -147,7 +147,8 @@ describe('deps isolation in a real dispatch (.venv)', () => {
     const proj = venvProject('venv-write');
     addNode(proj, CALC, CALC_GHERKIN);
     await tickUntil(proj, () => !!escapeOf(proj));
-    assert.match(escapeOf(proj).detail, /\.venv\/\(把依賴資料夾換掉了\)/);
+    assert.match(escapeOf(proj).detail, /\.venv\/\(把依賴資料夾 \.venv 換掉了\)/);
+    assert.equal(escapeOf(proj).detail.match(/把依賴資料夾/g).length, 1, 'one line per folder');
     assert.ok(!existsSync(join(proj, '.venv')));
     await waitWorkers(proj);
   });

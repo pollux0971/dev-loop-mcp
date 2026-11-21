@@ -111,12 +111,17 @@ function syncSandbox(ctx, d, message) {
   const after = treeManifest(d.sandbox, { skip: dirs, skipPaths: SANDBOX_DLM_FILES });
   const changed = diffManifest(before, after);
   const underDep = (p) => dirs.find((n) => p === `${n}/` || p === n || p.startsWith(`${n}/`));
+  const depHit = new Set();
   const violations = [];
   const safe = [];
   for (const p of changed) {
     if (p === '.git' || p.startsWith('.git/')) violations.push(`${p}(在副本裡建立 .git)`);
     else if (p.startsWith('.dlm/')) violations.push(`${p}(寫到 dlm 的工作目錄)`);
-    else if (underDep(p)) violations.push(`${underDep(p)}/(把依賴資料夾換掉了)`);
+    else if (underDep(p)) {
+      // one line per dependency folder, naming the first path found under it
+      const n = underDep(p);
+      if (!depHit.has(n)) { depHit.add(n); violations.push(`${p}(把依賴資料夾 ${n} 換掉了)`); }
+    }
     else if (String(after[p] ?? '').startsWith('link:')) violations.push(`${p}(建立 symlink,可能指到範圍外)`);
     else safe.push(p);
   }
@@ -977,7 +982,7 @@ export function integrationAlreadyGreen(ctx, d, node) {
   const scratch = scratchCopy(ctx.root, d.worktree, `${d.dispatch_id}-green`, depDirs(ctx.config));
   try {
     linkDeps(ctx.root, scratch, depDirs(ctx.config));
-    const res = hostExecutor(scratch).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
+    const res = hostExecutor(scratch, ctx.config).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
     return { green: res.code === 0, cmd: node.accept, exit: res.code };
   } finally {
     removeTree(scratch);
@@ -995,7 +1000,7 @@ function integrationGreenBeforeTest(ctx, node, cand, wt) {
   const scratch = scratchCopy(ctx.root, wt, `precheck-${slug(node.id)}`, depDirs(ctx.config));
   try {
     linkDeps(ctx.root, scratch, depDirs(ctx.config));
-    const res = hostExecutor(scratch).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
+    const res = hostExecutor(scratch, ctx.config).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
     return res.code === 0 ? { cmd: node.accept } : null;
   } finally {
     removeTree(scratch);
