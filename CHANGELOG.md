@@ -57,7 +57,9 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   (以前在專案根目錄 `python3 -m <套件>` 會 No module named,只有 `PYTHONPATH=src` 才行);它也是證據指令,python 規則要整合點用它跑 @e2e。
   `.venv` 不會裝專案本身、也不加 `.pth`:`.venv` 連到每個副本,那樣副本會 import 到根目錄的程式。
   `e2e_request` 事件多一個選填的 `try` 欄位。
-- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 267 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
+- **`dlm init <dir> --name X` 用 X 登記到這台電腦的專案清單**(以前一律用資料夾名稱)。名稱不合規則或已經有人用時,改用資料夾名稱並說明原因;
+  MCP 的 `dlm_init_project` 也一樣(以前名稱不行時,檔案已經裝好了卻回報失敗)。
+- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 269 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
 
 已知問題:
 

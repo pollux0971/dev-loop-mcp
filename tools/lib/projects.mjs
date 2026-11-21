@@ -55,6 +55,23 @@ export function addProject(path, { name = null } = {}) {
   return { name: n, ...projects[n], existed: false };
 }
 
+/**
+ * v4.12: register a project just created by init under the name the user gave (--name / initProject name). The files are already written,
+ * so a name the registry cannot take (bad characters, too long, taken) does not fail: it is registered under the folder-derived name,
+ * and `note` says why.
+ */
+export function registerInitialized(path, name) {
+  const wanted = typeof name === 'string' && name ? name : null;
+  if (!wanted) return addProject(path);
+  try {
+    return addProject(path, { name: wanted });
+  } catch (e) {
+    if (!(e instanceof DlmError)) throw e;
+    const p = addProject(path);
+    return { ...p, note: `沒用「${wanted}」登記(${e.message}),改用 ${p.name}` };
+  }
+}
+
 export function removeProject(name) {
   const projects = loadProjects();
   if (!projects[name]) throw new DlmError(`沒有專案「${name}」`);

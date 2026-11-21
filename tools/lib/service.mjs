@@ -10,7 +10,7 @@ import { FLOW, PROMPTS, RULES, toolName } from './flow.mjs';
 import { init, upgrade } from './install.mjs';
 import { VERSION, accountRows } from './ops.mjs';
 import { isLegacyProject, projectCli, projectPaths } from './legacy.mjs';
-import { addProject, isDlmProject, loadProjects, projectVersion, removeProject, resolveProject } from './projects.mjs';
+import { addProject, isDlmProject, loadProjects, projectVersion, registerInitialized, removeProject, resolveProject } from './projects.mjs';
 import { DlmError } from './util.mjs';
 import { fileURLToPath } from 'node:url';
 
@@ -138,8 +138,11 @@ const MACHINE = {
   initProject: (a) => {
     if (!String(a.path).startsWith('/') && !/^[A-Za-z]:[\\/]/.test(String(a.path))) throw new DlmError('path 要是絕對路徑');
     const r = init(a.path, { name: a.name, existing: !!a.existing, ...(a.stack ? { stack: a.stack } : {}) });
-    const p = addProject(a.path, { name: a.name ?? null });
-    return { project: p.name, path: p.path, created: r.created.length, kept: r.kept.length, git: r.git, next: `${toolName('setupProject')}(project: "${p.name}")` };
+    const p = registerInitialized(a.path, a.name);
+    return {
+      project: p.name, path: p.path, created: r.created.length, kept: r.kept.length, git: r.git, ...(p.note ? { note: p.note } : {}),
+      next: `${toolName('setupProject')}(project: "${p.name}")`,
+    };
   },
   upgradeProject: (a, params) => {
     const p = findProject(params.project);

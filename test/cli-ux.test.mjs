@@ -201,3 +201,30 @@ describe('hand-try "how to run" lines come only from dlm\'s own re-runs', () => 
     assert.ok(!ev.some((r) => r.rerun && /curl|ls/.test(r.rerun.cmd)), 'the others were never run');
   });
 });
+
+describe('init --name registers that name on this machine', () => {
+  test('CLI: --name wins over the folder name; a name the registry refuses falls back with one line', () => {
+    const base = tempDir();
+    const r = dlm(`init '${join(base, 'hello')}' --name hello2`);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /已登記到這台電腦的專案清單:hello2/);
+    assert.match(dlm('project list').stdout, /hello2\s.*\/hello\b/);
+    const bad = dlm(`init '${join(base, 'odd')}' --name 'has space!'`);
+    assert.equal(bad.code, 0, bad.stderr);
+    assert.match(bad.stdout, /沒用「has space!」登記(.*),改用 odd/);
+    assert.match(bad.stdout, /已登記到這台電腦的專案清單:odd/);
+  });
+
+  test('MCP / API initProject: same rule, and the reason comes back as note', async () => {
+    const { matchRoute } = await import('../tools/lib/api.mjs');
+    const { execRoute } = await import('../tools/lib/service.mjs');
+    const base = tempDir();
+    const route = matchRoute('POST', '/api/v1/projects/init').route;
+    const a = await execRoute(route, {}, { path: join(base, 'web'), name: 'web-named' });
+    assert.equal(a.project ?? a.body?.project, 'web-named', JSON.stringify(a));
+    const b = await execRoute(route, {}, { path: join(base, 'web2'), name: 'web-named' });
+    const bb = b.body ?? b;
+    assert.equal(bb.project, 'web2', 'the name is taken: folder name');
+    assert.match(bb.note, /已經有叫「web-named」的專案/);
+  });
+});

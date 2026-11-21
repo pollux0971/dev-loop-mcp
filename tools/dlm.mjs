@@ -16,7 +16,7 @@ import { runHook } from './lib/hooks.mjs';
 import { mergeMcpJson, setup } from './lib/setup.mjs';
 import { ROLES, accountEnv, accountsFile, addAccount, cliOf, getAccount, loadAccounts, loginStatus, removeAccount, updateAccount } from './lib/accounts.mjs';
 import { VERSION, accountRows, decideOp, haltOp, loopPid, loopStart, loopStop, refreshRendered, runLockPath, runOp, runStopPath, setRole, setSettings } from './lib/ops.mjs';
-import { addProject, isDlmProject, loadProjects, projectVersion, removeProject } from './lib/projects.mjs';
+import { addProject, isDlmProject, loadProjects, projectVersion, registerInitialized, removeProject } from './lib/projects.mjs';
 import { isLegacyProject, legacyMessage } from './lib/legacy.mjs';
 import { hubToken, serveHub } from './lib/hub.mjs';
 import { apiMarkdown, flowMarkdown, openapiJson } from './lib/apidoc.mjs';
@@ -284,7 +284,11 @@ async function dispatchCommand(cmd, rest) {
     case 'init': {
       const r = init(needPos(pos[0], 'dir', 'dlm init <dir> [--name X] [--existing] [--stack X]'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'], ...(typeof flags.stack === 'string' ? { stack: flags.stack } : {}) });
       console.log(`建立 ${r.created.length} 個檔${r.kept.length ? `,保留你既有的 ${r.kept.length} 個` : ''};git ${r.git}${r.committed ? `,已 commit ${r.committed.slice(0, 8)}` : ''}`);
-      try { const p = addProject(pos[0]); console.log(`已登記到這台電腦的專案清單:${p.name}(dlm project list)`); } catch { /* 登記失敗不影響 init */ }
+      try {
+        const p = registerInitialized(pos[0], flags.name);
+        if (p.note) console.log(p.note);
+        console.log(`已登記到這台電腦的專案清單:${p.name}(dlm project list)`);
+      } catch { /* 登記失敗不影響 init */ }
       const here = resolve(pos[0]) === process.cwd();
       console.log(`下一步:${here ? '' : `cd ${pos[0]} && `}node tools/dlm.mjs setup(一題一題帶你設定,大約兩分鐘)`);
       return 0;
