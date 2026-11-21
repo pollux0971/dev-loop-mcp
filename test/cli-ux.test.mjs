@@ -81,7 +81,7 @@ describe('dlm setup: answers format and Ctrl+D', () => {
 
   test('--help and the non-terminal error name the answer ids and give an example', () => {
     const help = dlm('setup --help').stdout;
-    for (const id of ['mode', 'test_cmd', 'platform', 'worker_cmd', 'verifier', 'autonomy', 'critic', 'budget', 'parallel', 'npm_install', 'commit']) {
+    for (const id of ['mode', 'test_cmd', 'main_branch', 'platform', 'worker_cmd', 'verifier', 'autonomy', 'critic', 'budget', 'parallel', 'npm_install', 'commit']) {
       assert.match(help, new RegExp(`\\b${id}\\b`), id);
     }
     assert.match(help, /AGENTS-SETUP\.md/);
@@ -89,7 +89,7 @@ describe('dlm setup: answers format and Ctrl+D', () => {
     assert.equal(r.code, 1);
     assert.match(r.stderr, /--answers a\.json/);
     assert.match(r.stderr, /"mode": "greenfield"/);
-    assert.match(r.stderr, /題目 id:mode test_cmd platform/);
+    assert.match(r.stderr, /題目 id:mode test_cmd main_branch platform/);
   });
 
   const hasScript = run('script -qec true /dev/null').code === 0;
@@ -101,5 +101,75 @@ describe('dlm setup: answers format and Ctrl+D', () => {
     assert.match(r.stdout, /EXIT=130/);
     assert.doesNotMatch(r.stdout, /AbortError/);
     assert.equal(readFileSync(join(proj, 'dlm.config.json'), 'utf8'), cfg);
+  });
+});
+
+// v4.12 review batch 2
+describe('a repo whose branch is master', () => {
+  test('setup asks to use master; doctor has no ✗ for git; tick runs', async () => {
+    const { init } = await import('../tools/lib/install.mjs');
+    const { setup } = await import('../tools/lib/setup.mjs');
+    const { doctor } = await import('../tools/lib/doctor.mjs');
+    const { tick } = await import('../tools/lib/orchestrator.mjs');
+    const { readJson } = await import('../tools/lib/util.mjs');
+    const proj = join(tempDir(), 'm');
+    mkdirSync(proj);
+    run('git init -q -b master && echo hi > README.md && git add -A && git -c user.name=t -c user.email=t@t commit -qm first', { cwd: proj });
+    init(proj, { name: 'm', existing: true });
+    // before setup: main does not exist → blocking, with a fix that works (not `git switch main`)
+    const pre = (await doctor(proj)).results.find((r) => r.name === 'git');
+    assert.equal(pre.status, 'fail');
+    assert.match(pre.detail, /主線分支 main 不存在/);
+    assert.match(pre.fix, /main_branch 設成 "master"/);
+    assert.match(pre.fix, /git branch -m master main/);
+    assert.doesNotMatch(pre.fix, /git switch/);
+    const asked = [];
+    await setup(proj, { ask: async (q) => { asked.push(q.id); return q.id === 'npm_install' ? 'n' : ''; }, detect: { claude: true }, log: () => {} });
+    assert.ok(asked.includes('main_branch'));
+    assert.equal(readJson(join(proj, 'dlm.config.json')).main_branch, 'master');
+    const git = (await doctor(proj)).results.find((r) => r.name === 'git');
+    assert.notEqual(git.status, 'fail', JSON.stringify(git));
+    const t = await tick(proj, { log: () => {} });
+    assert.equal(t.ok, true, t.reason);
+  });
+
+  test('a repo on main is not asked about the branch', async () => {
+    const { setup } = await import('../tools/lib/setup.mjs');
+    const proj = makeProject();
+    const asked = [];
+    await setup(proj, { ask: async (q) => { asked.push(q.id); return q.id === 'npm_install' ? 'n' : ''; }, detect: { claude: true }, log: () => {} });
+    assert.ok(!asked.includes('main_branch'));
+  });
+
+  test('dlm gates on an empty DAG says the check:dlm red is expected; init . skips the cd', () => {
+    const proj = join(tempDir(), 'g');
+    assert.equal(dlm(`init '${proj}' --name g`).code, 0);
+    const r = dlm('gates', { cwd: proj });
+    assert.match(r.stdout, /還沒有任何節點,check:dlm 失敗是正常的/);
+    const here = join(tempDir(), 'h');
+    mkdirSync(here);
+    const i = dlm('init . --name h', { cwd: here });
+    assert.equal(i.code, 0, i.stderr);
+    assert.match(i.stdout, /下一步:node tools\/dlm\.mjs setup/);
+    assert.doesNotMatch(i.stdout, /cd \./);
+  });
+});
+
+describe('Verifier forms disagree: both reasons are kept', () => {
+  test('ABSTAIN detail, verify results and dlm show carry each form\'s verdict and reason', async () => {
+    const { FAKE_VERIFIER, addNode, tickUntil, waitWorkers } = await import('./helpers.mjs');
+    const counter = join(tempDir(), 'fv-counter');
+    const proj = makeProject({ config: { agents: { verifier: { backend: 'cmd', cmd: `FV=disagree-why FV_COUNTER='${counter}' node ${FAKE_VERIFIER}` } } } });
+    addNode(proj, CALC, CALC_GHERKIN);
+    const s = await tickUntil(proj, (st) => [...st.dispatches.values()].some((d) => d.leg === 'dev' && d.verify));
+    await waitWorkers(proj);
+    const dev = [...s.dispatches.values()].find((d) => d.leg === 'dev');
+    const ab = dev.verify.results.find((r) => r.outcome === 'ABSTAIN' && r.forms);
+    assert.ok(ab, JSON.stringify(dev.verify.results));
+    assert.deepEqual(ab.forms.map((f) => [f.form, f.verdict]), [['a', 'FAIL'], ['b', 'NO_OBJECTION']]);
+    assert.match(ab.detail, /a FAIL:exit 2 是收集錯誤,不是測試失敗;b NO_OBJECTION:ModuleNotFoundError 表示實作還不存在/);
+    const shown = dlm(`show ${dev.dispatch_id}`, { cwd: proj }).stdout;
+    assert.match(shown, /exit 2 是收集錯誤/);
+    assert.match(shown, /ModuleNotFoundError 表示實作還不存在/);
   });
 });

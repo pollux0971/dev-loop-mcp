@@ -7,7 +7,7 @@
 
 ![dlm hub:這台電腦所有專案一頁看完](docs/images/hub.png)
 
-v4.12.0 · Node ≥ 20 · 零依賴 · 259 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
+v4.12.0 · Node ≥ 20 · 零依賴 · 265 個自動測試 · worker CLI:Claude Code(實跑過)、Codex(還沒實跑)
 
 > 原名 **dev-paradigm**,後來叫 **dev-paradigm-mcp**(指令 `dp`)。從 4.8.0 起改叫 **dev-loop-mcp**,指令是 `dlm`,MCP 工具以 `dlm_` 開頭。從 `dp` 升上來?看[從 dp 升級](#從-dp-升級473-及以前)。
 
@@ -182,7 +182,7 @@ node tools/dlm.mjs onboard                               # 測試基線 + docs/A
 - **版本彼此等待。** 下一版的節點依賴上一版的整合點,要等它合併**而且**你確認可以用了才開工。
 - **節點種類:** `phase`(一個能力的一版,例 `todo/v1`)、`integration`(`I1`)、`shared`(共用的東西,例如 `package.json`;只有 shared 節點能改 build 與 gate 的檔)。
 - **工具的 schema 列出每個欄位。** `dlm_propose_feature` 與 `dlm_propose_bundle` 說明每個欄位(型別取自 DAG 自己的 schema)。格式錯了當場擋下,並指出是哪一個欄位,例 `body.bundle.nodes[0].intent: 長度 > 300`。
-- **提案會提醒陷阱。** 提案照樣建立,但結果會帶 `warnings`(收件匣也看得到):新專案的節點把程式放在 `packages/`、`apps/` 以外(範本的測試與 mutation 只看那兩處);或整合點的 gherkin 一字不差沿用能力的句子(它一開始就是綠的,測試棒永遠紅不了)。
+- **提案會提醒陷阱。** 提案照樣建立,但結果會帶 `warnings`(收件匣也看得到):新專案的節點把程式放在技術棧的 layout 資料夾以外(`layout.workspaces`:node-ts 是 `packages/`、`apps/`,python 是 `src/`;範本的單元測試只看那裡);或整合點的 gherkin 一字不差沿用能力的句子(它一開始就是綠的,測試棒永遠紅不了)。
 - **側向小功能。** worker 發現有個小功能得先有,可以提一個子節點(`v1.1`)。L2 時,範圍在父節點之內的子節點自動批准;否則問你。
 
 ### 3. 一棒一棒施工,機器驗收
@@ -423,7 +423,7 @@ node tools/dlm.mjs hub                 # 所有專案;點一個進它的主控�
 
 ### 自動測試
 
-`npm test`:**259 個,全部通過。** 另外有一個 Python 端到端測試預設不跑,也不算在 skipped 裡。要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`,那個 venv 要裝好 pytest + pytest-bdd(測試本身不下載任何東西)。 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
+`npm test`:**265 個,全部通過。** 另外有一個 Python 端到端測試預設不跑,也不算在 skipped 裡。要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`,那個 venv 要裝好 pytest + pytest-bdd(測試本身不下載任何東西)。 用的是假的 worker、agent、小模型(`test/fixtures/`),在真的 git repo 裡跑。涵蓋完整流程(建專案 → 提案 → 批准 → 測試棒紅 → 實作棒綠 → 臨時樹全 gate → 合併 → 整合點 → 你確認)、失敗路徑(越界、說謊的證據、沒交報告、第三次封鎖、當機重跑、停機、預算、Critic 判決、帳本被改)、安裝與升級、小模型呼叫層、帳號、hub 的 API 與 SSE,以及 stdio 上的 MCP server。
 
 ### 實跑,2026-10-16
 

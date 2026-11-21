@@ -7,7 +7,7 @@ You talk to one chat window. In the background, dlm plans the work as a DAG, sen
 
 ![dlm hub: every project on this machine on one page](docs/images/hub.png)
 
-v4.12.0 · Node ≥ 20 · zero dependencies · 259 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
+v4.12.0 · Node ≥ 20 · zero dependencies · 265 automated tests · worker CLIs: Claude Code (tested for real), Codex (not yet tested for real)
 
 > Formerly **dev-paradigm**, then **dev-paradigm-mcp** (command `dp`). Since 4.8.0 it is called **dev-loop-mcp**, and the command is `dlm`. MCP tools start with `dlm_`. Coming from `dp`? See [Upgrading from dp](#upgrading-from-dp-473-and-earlier).
 >
@@ -185,7 +185,7 @@ New work always goes in as a **proposal** first. dlm writes it into the DAG only
 - **Versions wait for each other.** The next version's nodes depend on the previous integration point. They start only after it is merged **and** you have confirmed it works.
 - **Node kinds:** `phase` (one version of one capability, e.g. `todo/v1`), `integration` (`I1`), `shared` (shared things like `package.json`; only a shared node may touch build and gate files).
 - **The tool schema lists every field.** `dlm_propose_feature` and `dlm_propose_bundle` describe each field (types taken from the DAG's own schema). Mistakes are rejected right away, with the exact field named, e.g. `body.bundle.nodes[0].intent: 長度 > 300` (length > 300).
-- **Proposals warn about traps.** The proposal still goes through, but comes back with `warnings` (also shown in the inbox) when: a new project's node puts code outside `packages/` and `apps/` (the template's tests and mutation testing only look there), or an integration point's gherkin reuses a capability's sentences word for word (it would already be green, so its test leg could never start red).
+- **Proposals warn about traps.** The proposal still goes through, but comes back with `warnings` (also shown in the inbox) when: a new project's node puts code outside the stack's layout folders (`layout.workspaces`: node-ts `packages/` and `apps/`, python `src/`; the template's unit tests only look there), or an integration point's gherkin reuses a capability's sentences word for word (it would already be green, so its test leg could never start red).
 - **Side branches.** If a worker finds a small feature that must exist first, it can propose a child node (`v1.1`). At L2, a child that stays inside its parent's scope is approved automatically; otherwise you are asked.
 
 ### 3. Relay legs and machine checks
@@ -426,7 +426,7 @@ More: [`payload/docs/dlm/AGENTS-SETUP.md`](payload/docs/dlm/AGENTS-SETUP.md), [`
 
 ### Automated tests
 
-`npm test`: **259 tests, all passing.** One more test, a Python end-to-end run, is off by default and doesn't show in the skipped count. Run it with `DLM_TEST_PYTHON=<venv>/bin/python npm test`, where that venv has pytest + pytest-bdd (the suite downloads nothing). They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
+`npm test`: **265 tests, all passing.** One more test, a Python end-to-end run, is off by default and doesn't show in the skipped count. Run it with `DLM_TEST_PYTHON=<venv>/bin/python npm test`, where that venv has pytest + pytest-bdd (the suite downloads nothing). They use fake workers, agents and small models (`test/fixtures/`) inside real git repos. They cover the full flow (create → propose → approve → red test leg → green dev leg → full gate in a temp tree → merge → integration point → your confirmation), failure paths (out-of-scope writes, lying evidence, missing reports, three-strikes block, crash re-runs, halt, budget, Critic verdicts, tampered ledger), install and upgrade, the small-model layer, accounts, the hub API and SSE, and the MCP server over stdio.
 
 ### Real run, 2026-10-16
 

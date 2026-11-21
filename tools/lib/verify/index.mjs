@@ -44,7 +44,10 @@ export async function modelCheck(root, config, name, vars, label) {
   const verdicts = [...new Set(answers.map((a) => a.verdict))];
   const model = answers[0].model;
   if (verdicts.length > 1) {
-    return { check: name, outcome: 'ABSTAIN', detail: `${label}:兩種問法答案不一致(${answers.map((a) => a.verdict).join(' vs ')})`, model };
+    // v4.12: keep each form's reason (before, only the verdicts were kept, and the user asked to decide could not see why one form objected)
+    const forms = answers.map((a, i) => ({ form: variants[i], verdict: a.verdict, reason: tail(String(a.reason ?? ''), 300).trim() }));
+    const why = forms.map((f) => `${f.form} ${f.verdict}:${f.reason || '(沒給理由)'}`).join(';');
+    return { check: name, outcome: 'ABSTAIN', detail: `${label}:兩種問法答案不一致(${answers.map((a) => a.verdict).join(' vs ')})。${why}`, model, forms };
   }
   const only = answers[0];
   return { check: name, outcome: only.verdict, detail: `${label}:${only.reason}`, model };

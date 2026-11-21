@@ -37,7 +37,14 @@ function checkGit(root, config) {
   const inRepo = run('git rev-parse --is-inside-work-tree', { cwd: root }).code === 0;
   if (!inRepo) return fail('git', '這個目錄不是 git repo', 'git init -b main,或在專案根目錄執行');
   const branch = run('git rev-parse --abbrev-ref HEAD', { cwd: root }).stdout.trim();
-  if (branch !== config.main_branch) return warn('git', `目前在 ${branch},背景迴圈只在 ${config.main_branch} 上跑`, `git switch ${config.main_branch}`);
+  const main = config.main_branch;
+  // v4.12: the configured main branch does not exist (a repo on master, say): every tick refuses to run, so this blocks.
+  // `git switch main` would only fail with "invalid reference"
+  if (run(`git rev-parse --verify --quiet 'refs/heads/${main.replace(/'/g, '')}'`, { cwd: root }).code !== 0) {
+    return fail('git', `主線分支 ${main} 不存在(現在在 ${branch}):背景迴圈只在 main_branch 上跑`,
+      `在 dlm.config.json 把 main_branch 設成 "${branch}"(或重跑 dlm setup),或把分支改名:git branch -m ${branch} ${main}`);
+  }
+  if (branch !== main) return warn('git', `目前在 ${branch},背景迴圈只在 ${main} 上跑`, `git switch ${main}`);
   const dirty = run('git status --porcelain --untracked-files=no', { cwd: root }).stdout.trim();
   if (dirty) return warn('git', '有未 commit 的變更,tick 會拒絕執行', 'git add -A && git commit -m "..."(或用 dlm setup 結尾的自動 commit)');
   return ok('git', `在 ${branch},乾淨`);

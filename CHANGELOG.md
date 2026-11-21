@@ -38,7 +38,16 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   (新的 node-ts 專案拿到的行跟以前一樣);`dlm.config.json` 的說明不再提 stryker / mutation,也拿掉跟預設值一樣的 `verify.mutation`。
 - **`dlm setup --answers`**:`--help` 和「要在終端機互動執行」的錯誤列出題目 id 和例子;每個 id 的意思見 `docs/dlm/AGENTS-SETUP.md`。
 - **`dlm setup` 按 Ctrl+D**:不再印 `AbortError` 的堆疊。還沒寫任何檔就說「已取消,設定沒有寫入」,已經寫了 `dlm.config.json` 會說;exit 130。
-- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 259 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
+- **主線不叫 main 的 repo(例如 git 預設的 `master`)**:`dlm setup` 看到沒有 `main_branch` 分支、目前在別的分支時,問「主線用 master?」(題目 id `main_branch`,預設是)。
+  `dlm doctor` 在主線分支不存在時改成 ✗(會擋:背景迴圈只在主線上跑),修法是把 `main_branch` 設成目前的分支或 `git branch -m`;以前叫你 `git switch main`,那會失敗。
+- **說明不只講 node-ts**:intake skill、`docs/dlm/INTAKE.md`、`features/` 的說明與 gherkin 樣板、MCP 工具裡 `owns` / `accept` / bundle 的說明,
+  改成「程式放哪裡看技術棧的 layout」,並各給一個 node-ts 與 python 的例子;`dlm_get_project` 多回 `stack` 與 `layout`(程式該放哪)。
+  python 專案的 layout 提醒不再提 mutation(它沒有 mutation)。
+- **`dlm gates` 在還沒有任何節點時**多印一行:check:dlm 失敗是正常的,先提第一版。`dlm init .` 的「下一步」不再印 `cd .`。
+- **python 範本**:gherkin 的標籤(`@todo @v1`)會變成 pytest 的 mark,以前每次驗收都印 `PytestUnknownMarkWarning`;`pyproject.toml` 現在把它關掉。
+- **Verifier 兩種問法答案不一致時留下兩邊的理由**:以前只記「NO_OBJECTION vs FAIL」,要你決定時看不出為什麼有一邊反對。
+  現在 ABSTAIN 的說明寫出兩邊的判決與理由(各取最後 300 字),驗收結果多一個 `forms` 欄位;收件匣、`dlm show`、主控台都看得到。
+- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 265 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
 
 ## 4.11.1 — 指令列與主控台的使用體驗
 

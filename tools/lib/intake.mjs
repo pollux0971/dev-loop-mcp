@@ -124,14 +124,19 @@ function pendingOverlapWarnings(root, nodes, superseded) {
 export function layoutWarnings(root, nodes) {
   if (brownfieldConfig(root)) return [];
   let layout;
-  try { layout = loadStack(loadConfig(root).project.stack).layout; } catch { return []; }
+  let mutation = false;
+  try {
+    const c = loadConfig(root);
+    layout = loadStack(c.project.stack).layout;
+    mutation = !!c.verify?.mutation?.cmd;
+  } catch { return []; }
   const dirs = layout?.workspaces ?? [];
   if (!dirs.length) return [];
   const inside = (g) => dirs.some((d) => g === d || g.startsWith(`${d}/`));
   return nodes.filter((n) => n.kind === 'phase' && (n.owns ?? []).length && !n.owns.some(inside)).map((n) => {
     const tests = dirs.map((d) => `${d}/**/${layout.unit_tests ?? '*'}`).join('、');
     return `${n.id} 的 owns(${n.owns.join('、')})不在 ${dirs.map((d) => `${d}/`).join('、')} 底下:`
-      + `範本的單元測試只跑 ${tests},mutation 也只測那裡的程式,這個節點的單元測試不會進合併 gate。${layout.hint ?? ''}`;
+      + `範本的單元測試只跑 ${tests}${mutation ? ',mutation 也只測那裡的程式' : ''},這個節點的單元測試不會進合併 gate。${layout.hint ?? ''}`;
   });
 }
 

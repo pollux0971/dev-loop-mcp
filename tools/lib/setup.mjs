@@ -122,6 +122,17 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     bfGates = brownfieldGates(proj, testCmd === 'npm test' && npmTest ? null : testCmd);
   }
 
+  // 0b. v4.12: the main branch. A repo on another branch (git's default master, say) with no `main_branch` branch: ask to use the current one,
+  // otherwise every tick refuses to run and doctor's old advice (`git switch main`) fails
+  let mainBranch = cur.main_branch;
+  const branchExists = (b) => git(root, `rev-parse --verify --quiet 'refs/heads/${b.replace(/'/g, '')}'`, { allowFail: true }).code === 0;
+  const head = git(root, 'symbolic-ref --quiet --short HEAD', { allowFail: true });
+  const curBranch = head.code === 0 ? head.stdout.trim() : '';
+  if (curBranch && curBranch !== mainBranch && !branchExists(mainBranch) && branchExists(curBranch)
+    && await yesno('main_branch', `這個 repo 沒有 ${mainBranch} 分支。主線用 ${curBranch}?`, true)) {
+    mainBranch = curBranch;
+  }
+
   // 1. Dev AI
   const platform = await choose('platform', '施工用哪個 AI 工具?', [
     { key: 'claude', label: 'Claude Code', note: env.claude ? '已安裝' : '沒找到 claude 指令' },
@@ -180,6 +191,7 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
   // Write the config (keeping your other settings); restore it if validation fails
   const next = {
     ...raw,
+    ...(mainBranch !== cur.main_branch ? { main_branch: mainBranch } : {}),
     project: { ...(raw.project ?? {}), mode, ...(mode === 'brownfield' ? { language: proj.language } : {}) },
     platform: platform === 'custom' ? 'generic' : platform,
     agents,

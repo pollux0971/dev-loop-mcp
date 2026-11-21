@@ -234,7 +234,7 @@ describe('python greenfield end to end', { skip: !pyReady && 'set DLM_TEST_PYTHO
     sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm config');
     assert.equal(sh(proj, 'git status --porcelain'), '', '.venv/ is ignored');
     addNode(proj, { id: 'calc/v1', title: '加法', intent: '提供 run(a, b) 回傳兩數之和', owns: ['src/calc/**'] },
-      'Feature: calc\n  Scenario: adds two numbers\n    When I add 2 and 3\n    Then the result is 5\n');
+      '@calc @v1\nFeature: calc\n  Scenario: adds two numbers\n    When I add 2 and 3\n    Then the result is 5\n');
     const s = await tickUntil(proj, (st) => ['done', 'blocked'].includes(st.nodes.get('calc/v1')?.status), { max: 30 });
     const evs = readEvents(proj);
     assert.equal(s.nodes.get('calc/v1').status, 'done', JSON.stringify(evs.filter((e) => ['reject', 'gates'].includes(e.type)).slice(-3)));
@@ -247,6 +247,10 @@ describe('python greenfield end to end', { skip: !pyReady && 'set DLM_TEST_PYTHO
     assert.equal(gates.ok, true);
     assert.deepEqual(gates.results.map((g) => [g.name, g.exit]), [['check:dlm', 0], ['test', 0], ['accept', 0]]);
     assert.match(sh(proj, 'git show main:src/calc/core.py'), /return a \+ b/);
+    // gherkin tags become pytest marks: the template silences the unknown-mark warning
+    const acc = run('.venv/bin/python scripts/accept.py features/calc/v1.feature', { cwd: proj });
+    assert.equal(acc.code, 0, acc.stdout + acc.stderr);
+    assert.doesNotMatch(acc.stdout + acc.stderr, /PytestUnknownMarkWarning/);
   });
 });
 
@@ -290,6 +294,17 @@ describe('review batch 1: fresh projects and stack-neutral payload', () => {
     const py = lines(pyProject());
     for (const l of ['node_modules/', '.mutate.lock', '.stryker-tmp/', 'reports/', 'coverage/']) assert.ok(!py.includes(l), l);
     for (const l of ['.dlm/', '*.tmp-*', '.venv/', '__pycache__/', '.pytest_cache/']) assert.ok(py.includes(l), l);
+  });
+
+  test('python template silences PytestUnknownMarkWarning (gherkin tags become marks)', () => {
+    assert.match(readFileSync(join(pyProject(), 'pyproject.toml'), 'utf8'), /^filterwarnings = \["ignore::pytest\.PytestUnknownMarkWarning"\]$/m);
+  });
+
+  test('project status reports the stack and its layout hint (an MCP-only Front reads it)', async () => {
+    const { status } = await import('../tools/lib/ops.mjs');
+    const st = status(pyProject());
+    assert.equal(st.stack, 'python');
+    assert.match(st.layout, /src\/<能力>/);
   });
 
   test('payload dlm.config.json names no test framework', () => {

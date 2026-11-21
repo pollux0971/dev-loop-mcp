@@ -16,7 +16,7 @@ description: 把使用者的需求變成可批准的 DAG 提案。新版本(bund
    - v1 = 最小、能單獨跑、有用的一刀(通常是一條主流程 + 最少的資料)。
    - 之後每一版只加一兩件事,而且建立在上一版已經穩定的東西上。先做被依賴的(資料模型、核心計算),再做加值的(報表、匯出、同步)。
    - 每一版寫一句「這一版使用者能做什麼」。和使用者對齊路線圖,特別是「哪些不在 v1」。
-3. 只把**這一版**切成節點:一個能力一個資料夾,`owns` 互不重疊,放在技術棧規定的位置(node-ts:`packages/<能力>/**`)。兩個能力要共用的格式 → 另提契約變更。
+3. 只把**這一版**切成節點:一個能力一個資料夾,`owns` 互不重疊,放在技術棧的 layout 規定的位置(`tools/stacks/<技術棧>/stack.json` 的 `layout.hint`;node-ts:`packages/<能力>/**`、命令列在 `apps/<名稱>/**`;python:`src/<能力>/**`)。不在裡面的提案會帶 warning。兩個能力要共用的格式 → 另提契約變更。
 4. 每一版最後一個節點是整合點 `I<n>`(`kind: "integration"`,`depends_on` 這一版所有節點,gherkin 至少一個 `@e2e` 場景):
    那是使用者親手試用、確認這一版能用的時間點。**下一版會自動等這個整合點合併並試用過才開工**——一版一版疊,不會在不穩的地基上加功能。
 5. 跟使用者一起寫 gherkin(英文 Gherkin,場景寫可觀察結果,不寫實作)。寫完**逐一驗算**每個場景裡的數字
@@ -35,6 +35,7 @@ description: 把使用者的需求變成可批准的 DAG 提案。新版本(bund
        { "id": "I1", "kind": "integration", "title": "…", "intent": "…", "owns": ["apps/cli/**"],
          "depends_on": ["ledger/v1"], "gherkin_file": ".dlm/intake/i1.feature" } ] }
    ```
+   (上面是 node-ts 的 `owns`;python 寫 `"owns": ["src/ledger/**"]`、整合點例 `"owns": ["src/cli/**"]`。)
    `node tools/dlm.mjs intake bundle --spec .dlm/intake/<release>.json`。路線圖會存成 `docs/ROADMAP.md`(換了 session 也找得到)。
 7. 把提案重點(這一版做什麼、不做什麼、整合點怎麼試、路線圖)給使用者看,他說好才
    `decide node:<提案id> yes --verbatim "<原話>"`。**一版只批一次**。

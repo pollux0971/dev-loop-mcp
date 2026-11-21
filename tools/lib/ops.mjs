@@ -22,6 +22,7 @@ import { renderAll, writeRendered } from './render.mjs';
 import { BASELINE, onboard, recordBaseline } from './brownfield.mjs';
 import { CLAUDE_CRITIC_CMD, CLAUDE_VERIFIER_CMD, CLAUDE_WORKER_CMD, setup } from './setup.mjs';
 import { computeSnapshot } from './snapshot.mjs';
+import { loadStack } from './stack.mjs';
 import { replay } from './state.mjs';
 import { DlmError, ensureDir, lockHolder, pidAlive, readJson, tryLock } from './util.mjs';
 
@@ -205,11 +206,17 @@ export function setSettings(root, { autonomy_level, daily_usd, parallel, verbati
 
 // ------------------------------------------------------------------ project operations
 
+function stackLayout(name) {
+  try { return loadStack(name).layout?.hint ?? null; } catch { return null; }
+}
+
 export function status(root) {
   const ctx = new Ctx(root);
   const s = computeSnapshot({ root, config: ctx.config, dag: ctx.dag, state: ctx.state });
   return {
     project: basename(root), root, version: VERSION, mode: ctx.config.project?.mode ?? 'greenfield',
+    // v4.12: the stack and where a new project's code goes (an MCP-only Front reads this instead of the stack's files)
+    stack: ctx.config.project?.stack ?? 'none', layout: stackLayout(ctx.config.project?.stack),
     ledger_seq: ctx.state.maxSeq, last_event_ts: ctx.events.at(-1)?.ts ?? null,
     ...s, loop: loopStatus(root),
     awaiting_user: { decisions: s.awaiting_user.decisions.length, e2e: s.awaiting_user.e2e.length, halted: !!s.halted },

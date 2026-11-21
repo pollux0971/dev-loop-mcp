@@ -45,7 +45,7 @@ const HELP = `dlm —— dev-loop-mcp v${VERSION}
                                               --stack 選技術棧範本(stacks/ 底下的資料夾:node-ts(預設)、python;none = 只裝核心)
   dlm setup [--yes] [--answers file.json]     互動問答:選 AI、Verifier、自治等級,寫好設定並 commit
   dlm setup --answers a.json                  不互動:a.json = {"題目 id": 答案},沒給的用預設(id 與例子見 docs/dlm/AGENTS-SETUP.md)
-  dlm setup 的題目 id                         mode test_cmd platform worker_cmd verifier autonomy critic budget parallel npm_install commit
+  dlm setup 的題目 id                         mode test_cmd main_branch platform worker_cmd verifier autonomy critic budget parallel npm_install commit
   dlm doctor [--json]                         健康檢查:每一項 ✓ / ⚠ / ✗,不對的附修法
   dlm upgrade [--dry-run]                     升級 dlm 管理的檔(衝突就一個都不寫)
 
@@ -285,7 +285,8 @@ async function dispatchCommand(cmd, rest) {
       const r = init(needPos(pos[0], 'dir', 'dlm init <dir> [--name X] [--existing] [--stack X]'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'], ...(typeof flags.stack === 'string' ? { stack: flags.stack } : {}) });
       console.log(`建立 ${r.created.length} 個檔${r.kept.length ? `,保留你既有的 ${r.kept.length} 個` : ''};git ${r.git}${r.committed ? `,已 commit ${r.committed.slice(0, 8)}` : ''}`);
       try { const p = addProject(pos[0]); console.log(`已登記到這台電腦的專案清單:${p.name}(dlm project list)`); } catch { /* 登記失敗不影響 init */ }
-      console.log(`下一步:cd ${pos[0]} && node tools/dlm.mjs setup(一題一題帶你設定,大約兩分鐘)`);
+      const here = resolve(pos[0]) === process.cwd();
+      console.log(`下一步:${here ? '' : `cd ${pos[0]} && `}node tools/dlm.mjs setup(一題一題帶你設定,大約兩分鐘)`);
       return 0;
     }
     case 'setup': {
@@ -302,7 +303,7 @@ async function dispatchCommand(cmd, rest) {
         if (!process.stdin.isTTY) {
           throw new DlmError('dlm setup 要在終端機互動執行;不互動請加 --yes(全用預設)或 --answers a.json。\n'
             + '  a.json 例:{"mode": "greenfield", "platform": "claude", "autonomy": "1", "budget": "5", "npm_install": false, "commit": true}\n'
-            + '  題目 id:mode test_cmd platform worker_cmd verifier autonomy critic budget parallel npm_install commit(見 docs/dlm/AGENTS-SETUP.md)');
+            + '  題目 id:mode test_cmd main_branch platform worker_cmd verifier autonomy critic budget parallel npm_install commit(見 docs/dlm/AGENTS-SETUP.md)');
         }
         const { createInterface } = await import('node:readline/promises');
         const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -518,6 +519,8 @@ async function dispatchCommand(cmd, rest) {
       const gdag = loadDag(root);
       writePendingFeatures(root, pendingFeatures(gdag, replay(readEvents(root), gdag)));
       const r = runGates(root, loadConfig(root), { log });
+      // v4.12: check:dlm is red on purpose while the DAG is empty (nothing approved yet); say so where the user sees it
+      if (!gdag.nodes.length) console.log('提醒:還沒有任何節點,check:dlm 失敗是正常的;先提第一版(跟 Front 說你要做什麼,或 dlm intake)');
       return r.ok ? 0 : 1;
     }
     case 'render': {

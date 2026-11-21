@@ -19,7 +19,8 @@
 ## feature(單一節點)
 
 `dlm intake feature --spec spec.json --gherkin x.feature`。spec 欄位:`id`(`<能力>/v1`、整合點 `I1`、共用 `shared/<名字>`)、
-`title`、`intent`(≤300 字)、`owns`、`depends_on`、可選 `standalone`、`release`、`accept`(預設是技術棧的 `accept_cmd`,node-ts 是 `npm run accept -- <gherkin>`;技術棧沒有預設時必填)、`tier`、`pipeline`。
+`title`、`intent`(≤300 字)、`owns`、`depends_on`、可選 `standalone`、`release`、`accept`(預設是技術棧的 `accept_cmd`,node-ts 是 `npm run accept -- <gherkin>`,python 是 `.venv/bin/python scripts/accept.py <gherkin>`;技術棧沒有預設時必填)、`tier`、`pipeline`。
+`owns` 放在技術棧的 layout 規定的位置(`stack.json` 的 `layout.hint`;node-ts:`packages/<能力>/**`,python:`src/<能力>/**`),不在裡面時提案會帶 warning(新專案才檢查)。
 `shared` 節點沒有預設的 gherkin 路徑:要機器驗收就自己寫 `gherkin` 與 `accept`,不然不要附 gherkin。
 
 ## 既有專案(brownfield,v4.5)
@@ -33,7 +34,7 @@
   `"characterize": { "targets": [既有檔], "tests": [釘住它們的測試檔], "cmd": "只跑這些測試的指令" }`,pipeline 變成
   `characterize → test → dev`。characterize 棒只能寫 `tests`、不能改任何原始碼,`cmd` 必須在現在的程式上綠;
   之後每一棒都不能改這些測試,實作棒還要讓 `cmd` 維持綠。一次最多 10 個檔;`"skip": "理由"` 可以不釘。
-- **accept 與 tests**:技術棧沒有預設驗收指令(或既有專案沒有它要的東西,node-ts:`accept` script)時,節點要自己寫 `accept`(專案的測試指令,只跑這個節點的測試),
+- **accept 與 tests**:技術棧沒有預設驗收指令(或既有專案沒有它要的東西,node-ts:`accept` script,python:`scripts/accept.py`)時,節點要自己寫 `accept`(專案的測試指令,只跑這個節點的測試),
   建議也寫 `tests`(這個節點的測試檔 glob)。gherkin 仍是規格,測試棒照每個場景各寫一個測試。
 - 既有專案 `dlm init --existing` 不裝任何技術棧範本(package.json、tsconfig、scripts/*.ts…),gate 跑專案自己的測試。
 

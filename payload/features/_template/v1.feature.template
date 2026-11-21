@@ -7,8 +7,10 @@ Feature: (one line: what this phase delivers)
     Given (shared precondition, fixtures only)
 
   Scenario: The module runs on its own
-    # The node-ts stack already defines these two steps (features/steps/common.steps.ts); copy them verbatim and they run.
-    # The command to run and the expected output are written in standalone.json (the key is derived from this file's capability tag, e.g. @todo -> 01-todo).
+    # Whether these two steps already exist depends on the stack (see features/steps/README.md).
+    # node-ts defines them in features/steps/common.steps.ts: copy them verbatim and they run; the command and the expected output
+    # are written in standalone.json (the key is derived from this file's capability tag, e.g. @todo -> 01-todo).
+    # python has no shared steps: the step module defines them, or write your own When/Then for "runs on its own".
     When the standalone dev command is run
     Then it exits with status 0
 

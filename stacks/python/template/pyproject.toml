@@ -10,3 +10,5 @@ pythonpath = ["src"]
 testpaths = ["src", "features/steps"]
 bdd_features_base_dir = "."
 addopts = "--import-mode=importlib"
+# pytest-bdd turns gherkin tags (@todo @v1) into marks; they are not registered, so do not warn on every acceptance run
+filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]

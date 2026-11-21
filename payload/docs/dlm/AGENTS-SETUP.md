@@ -10,6 +10,7 @@
 |---|---|---|
 | `mode` | 新專案還是既有專案 | `greenfield` / `brownfield`(預設看 `project.mode`,沒寫就看偵測到的程式檔) |
 | `test_cmd` | 既有專案的測試指令(只有 brownfield 問) | 例 `python3 -m pytest -q`、`npm test` |
+| `main_branch` | 這個 repo 沒有 `main_branch`(預設 `main`)分支、目前在別的分支時:主線用目前的分支? | `true` / `false`(`true` = 寫進 `main_branch`) |
 | `platform` | 施工用哪個 AI | `claude` / `custom`(或選項編號 `1` / `2`) |
 | `worker_cmd` | 施工 AI 的啟動指令 | 一行指令;`custom` 一定要給 |
 | `verifier` | Verifier 小模型 | `haiku` / `none` / `keep`(只有 Claude 問) |

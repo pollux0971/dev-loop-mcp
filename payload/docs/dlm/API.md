@@ -171,7 +171,7 @@ operationId `removeProject` · MCP `dlm_remove_project`
 
 operationId `setupProject` · MCP `dlm_setup_project` · `dlm op setup`
 
-不互動的 dlm setup:寫 dlm.config.json、裝 hooks、commit,回傳健康檢查。answers 沒給的用預設。mode:greenfield / brownfield;platform:claude / custom(custom 要 worker_cmd);verifier:haiku / none;autonomy:"0" / "1" / "2";critic、npm_install、commit:true / false。brownfield 的 test_cmd 沒給時用偵測到的測試指令,偵測不到就會失敗。npm_install 預設 false(要下載)。
+不互動的 dlm setup:寫 dlm.config.json、裝 hooks、commit,回傳健康檢查。answers 沒給的用預設。mode:greenfield / brownfield;platform:claude / custom(custom 要 worker_cmd);verifier:haiku / none;autonomy:"0" / "1" / "2";critic、npm_install、commit:true / false。main_branch:true(預設)= repo 沒有設定的主線分支時改用目前的分支。brownfield 的 test_cmd 沒給時用偵測到的測試指令,偵測不到就會失敗。npm_install 預設 false(要下載)。
 
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
@@ -188,6 +188,7 @@ operationId `setupProject` · MCP `dlm_setup_project` · `dlm op setup`
 | `answers.parallel` | body | integer |  |  |
 | `answers.npm_install` | body | boolean |  |  |
 | `answers.commit` | body | boolean |  |  |
+| `answers.main_branch` | body | boolean |  | repo 沒有 main_branch 分支時,主線改用目前的分支(預設 true) |
 
 ### `PATCH /api/v1/projects/{project}/settings`
 
@@ -376,9 +377,9 @@ operationId `proposeFeature` · MCP `dlm_propose_feature` · `dlm op propose_fea
 | `spec.kind` | body | `phase` \| `integration` \| `shared` |  | phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔) |
 | `spec.title` | body | string | 必填 | 短標題 |
 | `spec.intent` | body | string | 必填 | 這個節點要做到什麼(300 字內) |
-| `spec.owns` | body | string[] | 必填 | 這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dlm 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔 |
+| `spec.owns` | body | string[] | 必填 | 這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案照技術棧的 layout(dlm_get_project 的 stack;範本的單元測試只看那裡):node-ts 的能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊)、命令列等組合層放 apps/<名稱>/**;python 的能力放 src/<能力>/**(測試 test_*.py 放旁邊)。既有專案照它自己的版面,只寫真的會改的檔 |
 | `spec.gherkin` | body | string |  | gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設) |
-| `spec.accept` | body | string |  | 驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試) |
+| `spec.accept` | body | string |  | 驗收指令(選填,預設是技術棧的:node-ts 是 npm run accept -- <gherkin>,python 是 .venv/bin/python scripts/accept.py <gherkin>;既有專案沒有它要的東西時必填:用專案的測試指令只跑這個節點的測試) |
 | `spec.standalone` | body | string |  | 這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸 |
 | `spec.depends_on` | body | string[] |  | 要先完成的節點 id |
 | `spec.parent` | body | string |  | 父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq |
@@ -404,7 +405,7 @@ operationId `proposeBundle` · MCP `dlm_propose_bundle` · `dlm op propose_bundl
 | 參數 | 位置 | 型別 | | 說明 |
 |---|---|---|---|---|
 | `project` | path | string | 必填 | 專案名稱(或 MCP 裡的專案目錄絕對路徑) |
-| `bundle` | body | object | 必填 | 一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。整合點的 gherkin 不要沿用能力 gherkin 的句子(一字不差會綁到能力的步驟定義,能力做完就已經綠了,整合點的測試棒做不出紅燈);命令列等組合層放在整合點的 owns(apps/<名稱>/**),能力節點只做 packages/<能力>/**。例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["packages/notes/**"],"gherkin_text":"Feature: …"},{"id":"I1","kind":"integration","title":"…","intent":"…","owns":["apps/cli/**"],"depends_on":["notes/v1"],"gherkin_text":"Feature: …\n  @e2e\n  Scenario: …"}]} |
+| `bundle` | body | object | 必填 | 一整個版本:這一版的節點 + 一個整合點(kind=integration,依賴這一版所有其他節點,gherkin 至少一個 @e2e 場景)。整合點的 gherkin 不要沿用能力 gherkin 的句子(一字不差會綁到能力的步驟定義,能力做完就已經綠了,整合點的測試棒做不出紅燈);命令列等組合層放在整合點的 owns,能力節點只做自己的資料夾(node-ts:apps/<名稱>/** 與 packages/<能力>/**;python:例 src/cli/** 與 src/<能力>/**)。例:{"release":"v1","goal":"能記一筆、列出來","nodes":[{"id":"notes/v1","title":"…","intent":"…","owns":["packages/notes/**"],"gherkin_text":"Feature: …"},{"id":"I1","kind":"integration","title":"…","intent":"…","owns":["apps/cli/**"],"depends_on":["notes/v1"],"gherkin_text":"Feature: …\n  @e2e\n  Scenario: …"}]} |
 | `bundle.release` | body | string | 必填 | 版本(例 v1) |
 | `bundle.goal` | body | string |  | 這一版使用者能做什麼(一句話,會出現在要使用者批准的問題裡) |
 | `bundle.roadmap` | body | string |  | 路線圖全文(選填,Markdown;存成 docs/ROADMAP.md,每版一行「- v1: …」) |
@@ -414,9 +415,9 @@ operationId `proposeBundle` · MCP `dlm_propose_bundle` · `dlm op propose_bundl
 | `bundle.nodes[].kind` | body | `phase` \| `integration` \| `shared` |  | phase(預設:一個能力的一版)、integration(這一版的整合點,含 @e2e 場景,使用者親手試用)、shared(共用的東西;只有它能改 package.json 這類 gate 定義檔) |
 | `bundle.nodes[].title` | body | string | 必填 | 短標題 |
 | `bundle.nodes[].intent` | body | string | 必填 | 這個節點要做到什麼(300 字內) |
-| `bundle.nodes[].owns` | body | string[] | 必填 | 這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案(dlm 範本,TypeScript):能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊),命令列等組合層放 apps/<名稱>/**,範本的 npm test 與 mutation 只看這兩處;既有專案照它自己的版面,只寫真的會改的檔 |
+| `bundle.nodes[].owns` | body | string[] | 必填 | 這個節點可以寫的檔(glob),每個節點都要有,整合點也是;寫到範圍外會被退回。不同節點的 owns 不能重疊。新專案照技術棧的 layout(dlm_get_project 的 stack;範本的單元測試只看那裡):node-ts 的能力放 packages/<能力>/**(程式在 src/,測試 *.test.ts 放旁邊)、命令列等組合層放 apps/<名稱>/**;python 的能力放 src/<能力>/**(測試 test_*.py 放旁邊)。既有專案照它自己的版面,只寫真的會改的檔 |
 | `bundle.nodes[].gherkin` | body | string |  | gherkin 檔的路徑(選填:phase 預設 features/<能力>/<版本>.feature,integration 預設 docs/integration/<id>.feature;shared 沒有預設) |
-| `bundle.nodes[].accept` | body | string |  | 驗收指令(選填,預設 npm run accept -- <gherkin>;既有專案沒有 accept script 時必填:用專案的測試指令只跑這個節點的測試) |
+| `bundle.nodes[].accept` | body | string |  | 驗收指令(選填,預設是技術棧的:node-ts 是 npm run accept -- <gherkin>,python 是 .venv/bin/python scripts/accept.py <gherkin>;既有專案沒有它要的東西時必填:用專案的測試指令只跑這個節點的測試) |
 | `bundle.nodes[].standalone` | body | string |  | 這個節點自己能單獨跑的檢查指令(選填);之後的整合棒也會再跑,壞了算回歸 |
 | `bundle.nodes[].depends_on` | body | string[] |  | 要先完成的節點 id |
 | `bundle.nodes[].parent` | body | string |  | 父節點 id(要跟 relation 一起寫)。例:試用發現某個能力有 bug,提一個修它的節點,parent 寫那個整合點、relation 寫 prereq |

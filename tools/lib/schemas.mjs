@@ -292,6 +292,8 @@ export const EVENT_FIELDS = {
             detail: { type: 'string' },
             evidence: { type: 'string' },
             model: { type: 'string' },
+            // v4.12 (optional, additive): when the Verifier's two forms disagree, each form's verdict and reason
+            forms: { type: 'array', items: { type: 'object', properties: { form: str, verdict: str, reason: { type: 'string' } } } },
           },
         },
       },
