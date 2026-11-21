@@ -86,12 +86,22 @@ function plan(target, files, manifest) {
   return { actions, conflicts, removals };
 }
 
-function write(target, actions, removals, profile = 'full', stack = DEFAULT_STACK) {
+/**
+ * seed_files (v4.12): the seed-only files dlm created (not the user's own files it kept). They are the project's from then on, but
+ * detectProject must not count them as existing code (a fresh python project has src/test_layout.py and was taken for brownfield).
+ * upgrade keeps the list of the previous install.
+ */
+function write(target, actions, removals, profile = 'full', stack = DEFAULT_STACK, prevSeeds = []) {
   for (const a of actions) if (a.op === 'create' || a.op === 'update') atomicWrite(join(target, a.dest), a.content);
   for (const r of removals) unlinkSync(join(target, r));
   const files = {};
   for (const a of actions) if (!a.seed) files[a.dest] = a.sha;
-  writeJson(join(target, MANIFEST), { version: readVersion(), ...(profile !== 'full' ? { profile } : {}), ...(profile === 'full' ? { stack } : {}), files });
+  const seeds = [...new Set([...prevSeeds, ...actions.filter((a) => a.seed && a.op === 'create').map((a) => a.dest)])]
+    .filter((f) => existsSync(join(target, f))).sort();
+  writeJson(join(target, MANIFEST), {
+    version: readVersion(), ...(profile !== 'full' ? { profile } : {}), ...(profile === 'full' ? { stack } : {}), files,
+    ...(seeds.length ? { seed_files: seeds } : {}),
+  });
 }
 
 /**
@@ -148,7 +158,10 @@ export function init(target, { name, existing = false, commit = true, stack = DE
   if (profile === 'full') {
     const cfgPath = join(dir, 'dlm.config.json');
     const raw = readJson(cfgPath, {});
-    if (!raw.project?.stack) writeJson(cfgPath, { ...raw, project: { ...(raw.project ?? {}), stack } });
+    // v4.12: and that it is new (greenfield), so `dlm setup` does not guess from the template's own files
+    if (!raw.project?.stack || !raw.project?.mode) {
+      writeJson(cfgPath, { ...raw, project: { ...(raw.project ?? {}), stack: raw.project?.stack ?? stack, mode: raw.project?.mode ?? 'greenfield' } });
+    }
     // v4.12: the stack's .gitignore lines (python: .venv/, __pycache__/, .pytest_cache/) go in before the first commit
     const lines = stack === 'none' ? [] : (readJson(join(REPO_ROOT, 'stacks', stack, 'stack.json'), {}).gitignore ?? []);
     if (lines.length) stackIgnores = ensureIgnores(dir, lines);
@@ -207,7 +220,7 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
     const blocked = blockerNow();
     return { ...s, create: s.create.filter((f) => f !== 'dlm.config.json'), migrate: migrationPlan(dir), ...(blocked ? { blocked } : {}) };
   }
-  if (!legacy) return finishUpgrade(dir, { actions, removals, profile, stack, commit, summary: summarize() });
+  if (!legacy) return finishUpgrade(dir, { actions, removals, profile, stack, commit, summary: summarize(), prevSeeds: manifest.seed_files ?? [] });
 
   const refuse = (why) => new DlmError(`這是 4.8.0 以前(dp)的專案,升級時要把 .dp/ 搬成 .dlm/:${why}`);
   const early = blockerNow();
@@ -229,8 +242,8 @@ export function upgrade(target, { dryRun = false, commit = true } = {}) {
   }
 }
 
-function finishUpgrade(dir, { actions, removals, profile, stack, commit, summary, legacy = null }) {
-  write(dir, actions, removals, profile, stack);
+function finishUpgrade(dir, { actions, removals, profile, stack, commit, summary, legacy = null, prevSeeds = [] }) {
+  write(dir, actions, removals, profile, stack, prevSeeds);
   // STATUS.md and the other generated files come from the old version's templates (dp's wording, for one);
   // `dlm check` compares them with what this version renders and would fail until the next tick
   if (existsSync(join(dir, 'dag.json'))) {

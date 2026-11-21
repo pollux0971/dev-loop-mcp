@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readEvents } from '../tools/lib/ledger.mjs';
 import { run } from '../tools/lib/util.mjs';
@@ -67,5 +67,39 @@ describe('CLI 的使用體驗', () => {
     assert.equal(r.code, 1);
     assert.match(r.stderr, new RegExp(`沒有待決事項 node:p-999\\(現在等你決定的:node:${p.id}\\)`));
     assert.equal(readEvents(proj).length, before, '前面那件也不能被偷偷記下來');
+  });
+});
+
+// v4.12 review batch 1
+describe('dlm setup: answers format and Ctrl+D', () => {
+  const pyInit = () => {
+    const proj = join(tempDir(), 'app');
+    const r = dlm(`init '${proj}' --name app --stack python`);
+    assert.equal(r.code, 0, r.stderr);
+    return proj;
+  };
+
+  test('--help and the non-terminal error name the answer ids and give an example', () => {
+    const help = dlm('setup --help').stdout;
+    for (const id of ['mode', 'test_cmd', 'platform', 'worker_cmd', 'verifier', 'autonomy', 'critic', 'budget', 'parallel', 'npm_install', 'commit']) {
+      assert.match(help, new RegExp(`\\b${id}\\b`), id);
+    }
+    assert.match(help, /AGENTS-SETUP\.md/);
+    const r = run(`node '${DLM}' setup < /dev/null`, { cwd: pyInit() });
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /--answers a\.json/);
+    assert.match(r.stderr, /"mode": "greenfield"/);
+    assert.match(r.stderr, /題目 id:mode test_cmd platform/);
+  });
+
+  const hasScript = run('script -qec true /dev/null').code === 0;
+  test('Ctrl+D at the first prompt: "已取消,設定沒有寫入", nothing written, exit 130', { skip: !hasScript && 'no script(1) for a pseudo terminal' }, () => {
+    const proj = pyInit();
+    const cfg = readFileSync(join(proj, 'dlm.config.json'), 'utf8');
+    const r = run(`(sleep 1; printf '\\004') | script -qec "node '${DLM}' setup; echo EXIT=\\$?" /dev/null`, { cwd: proj, timeoutMs: 30000 });
+    assert.match(r.stdout, /已取消,設定沒有寫入/);
+    assert.match(r.stdout, /EXIT=130/);
+    assert.doesNotMatch(r.stdout, /AbortError/);
+    assert.equal(readFileSync(join(proj, 'dlm.config.json'), 'utf8'), cfg);
   });
 });

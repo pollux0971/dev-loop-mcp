@@ -46,6 +46,7 @@
     "forbidden": ["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "tsconfig.json", "vitest*.config.*", "cucumber.js", "stryker.config.json", "scripts/**"],
     "critic_bash": ["npm test*", "npm run *", "npx vitest*", "npx cucumber-js*"]
   },
+  "gitignore": ["node_modules/", ".mutate.lock", ".stryker-tmp/", "reports/", "coverage/"],
   "layout": {
     "workspaces": ["packages", "apps"],
     "unit_tests": "*.test.ts",

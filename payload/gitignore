@@ -1,7 +1,2 @@
-node_modules/
 .dlm/
 *.tmp-*
-.mutate.lock
-.stryker-tmp/
-reports/
-coverage/

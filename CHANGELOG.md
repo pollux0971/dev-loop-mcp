@@ -32,7 +32,13 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   現在 `null` 就是把那一項關掉(例如既有 Python 專案的 `deps.setup: null` 關掉技術棧提議的 `.venv` 安裝)。
 - 其他:技術棧可以加 `paths.tests`(`add.tests`)與 `.gitignore` 的行(`gitignore`);`accept_probe` 沒寫 `keys` 時代表「檔案存在」,
   有 `keys` 時值要非空才算(`"dependencies": {}` 以前會算有)。
-- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 253 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
+- **新專案不會被當成既有專案**:`dlm init`(新專案)在 `dlm.config.json` 寫 `project.mode: "greenfield"`;偵測既有程式時也不算 dlm 自己裝的檔
+  (`.dlm-install.json` 多記一份 `seed_files`)。以前 `--stack python` 的新專案因為範本的 `src/test_layout.py` 被算成 1 個程式檔,`dlm setup` 預設選 Brownfield。
+- **`.gitignore` 與 `dlm.config.json` 範本不綁技術棧**:`node_modules/`、`.stryker-tmp/`、`.mutate.lock`、`reports/`、`coverage/` 改由 node-ts 加
+  (新的 node-ts 專案拿到的行跟以前一樣);`dlm.config.json` 的說明不再提 stryker / mutation,也拿掉跟預設值一樣的 `verify.mutation`。
+- **`dlm setup --answers`**:`--help` 和「要在終端機互動執行」的錯誤列出題目 id 和例子;每個 id 的意思見 `docs/dlm/AGENTS-SETUP.md`。
+- **`dlm setup` 按 Ctrl+D**:不再印 `AbortError` 的堆疊。還沒寫任何檔就說「已取消,設定沒有寫入」,已經寫了 `dlm.config.json` 會說;exit 130。
+- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 259 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
 
 ## 4.11.1 — 指令列與主控台的使用體驗
 

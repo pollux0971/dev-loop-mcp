@@ -4,9 +4,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, utimesSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
+import { detectProject } from '../tools/lib/brownfield.mjs';
 import { loadConfig } from '../tools/lib/config.mjs';
 import { doctor } from '../tools/lib/doctor.mjs';
-import { init } from '../tools/lib/install.mjs';
+import { init, upgrade } from '../tools/lib/install.mjs';
 import { sandboxExec, withJudgeEnv } from '../tools/lib/sandbox.mjs';
 import { setup } from '../tools/lib/setup.mjs';
 import { loadStack, stackName } from '../tools/lib/stack.mjs';
@@ -246,5 +247,53 @@ describe('python greenfield end to end', { skip: !pyReady && 'set DLM_TEST_PYTHO
     assert.equal(gates.ok, true);
     assert.deepEqual(gates.results.map((g) => [g.name, g.exit]), [['check:dlm', 0], ['test', 0], ['accept', 0]]);
     assert.match(sh(proj, 'git show main:src/calc/core.py'), /return a \+ b/);
+  });
+});
+
+describe('review batch 1: fresh projects and stack-neutral payload', () => {
+  test('a fresh python project is not taken for an existing one; setup with mode unanswered stays greenfield', async () => {
+    const proj = pyProject();
+    assert.equal(readJson(join(proj, 'dlm.config.json')).project.mode, 'greenfield', 'init writes the mode');
+    const d = detectProject(proj);
+    assert.equal(d.code_files, 0, 'src/test_layout.py is dlm\'s');
+    assert.equal(d.test_files, 0);
+    assert.equal(d.suggested_mode, 'greenfield');
+    assert.ok(readJson(join(proj, '.dlm-install.json')).seed_files.includes('src/test_layout.py'));
+    const asked = [];
+    await setup(proj, { ask: async (q) => { asked.push(q.id); return q.id === 'npm_install' ? 'n' : ''; }, detect: { claude: true }, log: () => {} });
+    assert.ok(asked.includes('mode'));
+    assert.equal(loadConfig(proj).project.mode, 'greenfield');
+    // even without project.mode (a config from before), detection alone says greenfield
+    const raw = readJson(join(proj, 'dlm.config.json'));
+    delete raw.project.mode;
+    writeJson(join(proj, 'dlm.config.json'), raw);
+    assert.equal(detectProject(proj).suggested_mode, 'greenfield');
+    // the user's own code still counts
+    mkdirSync(join(proj, 'src/app'), { recursive: true });
+    writeFileSync(join(proj, 'src/app/main.py'), 'print(1)\n');
+    assert.equal(detectProject(proj).code_files, 1);
+  });
+
+  test('upgrade keeps the seed list', () => {
+    const proj = pyProject();
+    upgrade(proj);
+    assert.ok(readJson(join(proj, '.dlm-install.json')).seed_files.includes('src/test_layout.py'));
+  });
+
+  test('.gitignore: payload is stack-neutral; node-ts gets exactly the lines it had before; python gets no node lines', () => {
+    const lines = (p) => readFileSync(join(p, '.gitignore'), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    assert.deepEqual(readFileSync(join(REPO, 'payload/gitignore'), 'utf8').trim().split('\n'), ['.dlm/', '*.tmp-*']);
+    const node = join(tempDir(), 'n');
+    init(node, { name: 'n' });
+    assert.deepEqual(lines(node).sort(), ['node_modules/', '.dlm/', '*.tmp-*', '.mutate.lock', '.stryker-tmp/', 'reports/', 'coverage/'].sort(), 'same as 4.11');
+    assert.equal(sh(node, 'git status --porcelain'), '');
+    const py = lines(pyProject());
+    for (const l of ['node_modules/', '.mutate.lock', '.stryker-tmp/', 'reports/', 'coverage/']) assert.ok(!py.includes(l), l);
+    for (const l of ['.dlm/', '*.tmp-*', '.venv/', '__pycache__/', '.pytest_cache/']) assert.ok(py.includes(l), l);
+  });
+
+  test('payload dlm.config.json names no test framework', () => {
+    const text = readFileSync(join(REPO, 'payload/dlm.config.json'), 'utf8');
+    assert.doesNotMatch(text, /stryker|mutation|vitest|cucumber|pytest/i);
   });
 });

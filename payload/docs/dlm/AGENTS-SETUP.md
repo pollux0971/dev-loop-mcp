@@ -2,6 +2,30 @@
 
 全部在 `dlm.config.json` 的 `agents`。下面是範例,**旗標請依你安裝的 CLI 版本確認**(`--help`)。
 
+## 不互動跑 `dlm setup`(`--answers`)
+
+`dlm setup --answers a.json`:`a.json` 是 `{ "題目 id": 答案 }`,沒給的題目用預設值(跟互動時按 Enter 一樣)。`--yes` = 全部用預設。
+
+| id | 問什麼 | 答案 |
+|---|---|---|
+| `mode` | 新專案還是既有專案 | `greenfield` / `brownfield`(預設看 `project.mode`,沒寫就看偵測到的程式檔) |
+| `test_cmd` | 既有專案的測試指令(只有 brownfield 問) | 例 `python3 -m pytest -q`、`npm test` |
+| `platform` | 施工用哪個 AI | `claude` / `custom`(或選項編號 `1` / `2`) |
+| `worker_cmd` | 施工 AI 的啟動指令 | 一行指令;`custom` 一定要給 |
+| `verifier` | Verifier 小模型 | `haiku` / `none` / `keep`(只有 Claude 問) |
+| `autonomy` | 自治等級 | `"0"` / `"1"` / `"2"` |
+| `critic` | 要不要開 Critic(只有 L2 問) | `true` / `false`(`y` / `n` 也可以) |
+| `budget` | 每天最多花多少美金 | 數字 |
+| `parallel` | 同時最多幾個 worker | 正整數 |
+| `npm_install` | 依賴資料夾還沒有時要不要裝(技術棧決定裝什麼:node-ts = `npm install`,python = 建 `.venv`) | `true` / `false` |
+| `commit` | 最後要不要把設定 commit 起來 | `true` / `false` |
+
+```json
+{ "mode": "greenfield", "platform": "claude", "verifier": "haiku", "autonomy": "1", "budget": "5", "parallel": "3", "npm_install": false, "commit": true }
+```
+
+互動時按 Ctrl+D 取消:還沒寫任何檔就印「已取消,設定沒有寫入」;已經寫了 `dlm.config.json` 會告訴你(exit 130)。
+
 ## worker(必填)
 
 dlm 在**沒有 .git 的副本**裡以 `sh -c` 執行它(見 SECURITY.md),環境變數:`DLM_PROMPT`(prompt 檔)、

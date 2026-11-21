@@ -39,7 +39,11 @@ export function findVenv(root) {
 
 function projectFiles(root) {
   const venv = findVenv(root);
-  return listFiles(root, { skip: venv ? [...SKIP_DIRS, venv] : SKIP_DIRS }).filter((f) => !matchAny(f, DLM_PATHS));
+  // v4.12: and every file dlm installed itself (.dlm-install.json: managed files and the seed-only files it created, e.g. a stack's
+  // src/test_layout.py), so a fresh project from a stack template is not counted as existing code
+  const manifest = readJson(join(root, '.dlm-install.json'), null);
+  const installed = new Set([...Object.keys(manifest?.files ?? {}), ...(manifest?.seed_files ?? [])]);
+  return listFiles(root, { skip: venv ? [...SKIP_DIRS, venv] : SKIP_DIRS }).filter((f) => !matchAny(f, DLM_PATHS) && !installed.has(f));
 }
 
 function packageJson(root) {
