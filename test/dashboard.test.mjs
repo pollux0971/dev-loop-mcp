@@ -23,6 +23,11 @@ describe('dlm dashboard(唯讀主控台)', () => {
     const html = renderDashboard(d);
     assert.match(html, /ui\.view = data\.initial_view \|\|/, '頁面用 initial_view 決定第一頁');
     assert.doesNotMatch(html, /saved\.view/, '不再記住上次看的頁(沒有在開發時要回到規劃頁)');
+    // The page script must at least compile (there is no browser in the tests; the behaviour was checked in headless Chrome)
+    const script = html.match(/<script>\n([\s\S]*?)<\/script>/)[1];
+    assert.doesNotThrow(() => new Function(script), '主控台的程式要能編譯');
+    assert.match(html, /addEventListener\('hashchange'/, '網址記住目前頁面');
+    assert.match(html, /連不上 dlm/, '斷線要說出來');
   });
 
   test('等你的決定、節點狀態、花費都從帳本重播出來;不寫任何事件', async () => {

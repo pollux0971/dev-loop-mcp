@@ -265,6 +265,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .kpi span{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.5px;text-transform:uppercase}
 .kpi b{display:block;font-size:22px;font-weight:600;margin-top:2px}
 .banner{margin:10px 10px 0;border-radius:14px;padding:8px 14px;background:rgba(255,217,138,.1);color:var(--gate);font-size:13px;flex:0 0 auto}
+.banner.off{background:rgba(255,178,187,.12);color:var(--fail)}
+code.copy{cursor:pointer;border-radius:6px;padding:1px 4px;margin:-1px -4px;transition:background .15s}
+code.copy:hover{background:var(--s4)} code.copy.done{color:var(--pass)}
+[role=button]{cursor:pointer}
 
 /* Planning page: on the left is your planning chat with Front (ledger replay), on the right is the roadmap progress */
 .ps-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;flex:1;min-height:0;padding:10px}
@@ -359,6 +363,72 @@ var ui = { acct:{ form:{ name:'', cli:'claude', plan:'' }, roles:null, login:nul
 ui.view = data.initial_view || ((data.in_progress || []).length || (data.review || []).length || (data.blocked || []).length
   || (data.decisions || []).some(function(d){ return /^(accept|escalation|stuck|testfix|spawn):/.test(d.ref); }) ? 'console' : 'planning');
 try { var saved = JSON.parse(localStorage.getItem('dlm-console') || '{}'); ui.railOpen = !!saved.railOpen; } catch (e) {}
+ui.open = {};        // which collapsible rows are open (kept across the 5-second refresh)
+ui.offline = null;   // time the live refresh last failed; null while connected
+var BASE_TITLE = document.title;
+
+/* The address bar holds the page (and, on the console, the node): reload keeps your place, Back works, a link can be shared.
+   #console/calc%2Fv1 · #planning · #pipeline · #timeline · #cost · #accounts */
+var VIEWS = { console:1, planning:1, pipeline:1, timeline:1, cost:1, accounts:1 };
+var lastHash = null;
+function readHash(){
+  var h = location.hash.slice(1);
+  if (!h) return false;
+  var i = h.indexOf('/'), v = i < 0 ? h : h.slice(0, i);
+  if (!VIEWS[v]) return false;
+  ui.view = v;
+  if (v === 'console' && i >= 0) { try { ui.node = decodeURIComponent(h.slice(i + 1)); ui.pinned = true; } catch (e) {} }
+  else if (v === 'console') ui.pinned = false;
+  return true;
+}
+function writeHash(){
+  var h = '#' + ui.view + (ui.view === 'console' && ui.pinned && ui.node ? '/' + encodeURIComponent(ui.node) : '');
+  if (location.hash === h) { lastHash = h; return; }
+  lastHash = h;
+  // A new page is a new history entry (Back returns to it); the first write only records where we are
+  try { if (location.hash) history.pushState(null, '', h); else history.replaceState(null, '', h); } catch (e) { location.hash = h; }
+}
+readHash();
+window.addEventListener('hashchange', onHistory);
+window.addEventListener('popstate', onHistory);
+function onHistory(){
+  if (location.hash === lastHash) return;
+  stop(); ui.cursor = null; ui.tab = null;
+  if (!readHash()) ui.view = 'console';
+  lastHash = location.hash;
+  render();
+}
+
+/* Copy a command. The clipboard API needs a secure page; the snapshot opened from a file falls back to selecting the text. */
+function copyText(text, done){
+  function fallback(){
+    var ta = el('textarea', { style:'position:fixed;top:-1000px;opacity:0' });
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove(); done(ok);
+  }
+  try {
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(function(){ done(true); }, fallback);
+    else fallback();
+  } catch (e) { fallback(); }
+}
+function cmdCode(text){
+  return el('code', { cls:'copy', title:'點一下複製', 'aria-label':'複製指令 ' + text, text:text, onclick:function(ev){
+    if (ev) ev.stopPropagation();
+    var c = this;
+    copyText(text, function(ok){ c.textContent = ok ? '已複製 ✓' : '請手動選取複製'; c.classList.toggle('done', ok); setTimeout(function(){ c.textContent = text; c.classList.remove('done'); }, 1400); });
+  } });
+}
+/* A row that opens and closes in place; ui.open remembers it so the next refresh does not fold it again */
+function opener(key){
+  return function(ev){
+    if (ev && ev.target && (ev.target.tagName === 'PRE' || ev.target.closest && ev.target.closest('pre'))) return;
+    ui.open[key] = !ui.open[key];
+    this.classList.toggle('open', !!ui.open[key]);
+    this.setAttribute('aria-expanded', ui.open[key] ? 'true' : 'false');
+  };
+}
+function openAttrs(key, cls){ return { cls: cls + (ui.open[key] ? ' open' : ''), 'aria-expanded': ui.open[key] ? 'true' : 'false', onclick: opener(key) }; }
 function save(){ try { localStorage.setItem('dlm-console', JSON.stringify({ railOpen: ui.railOpen })); } catch (e) {} }
 
 var STATUS = { done:'完成', 'in-progress':'施工中', review:'驗收中', todo:'未開始', blocked:'卡住', stale:'需重驗' };
@@ -373,6 +443,12 @@ function el(tag, attrs, kids){
     var v = attrs[k]; if (v == null || v === false) continue;
     if (k === 'text') e.textContent = v; else if (k === 'cls') e.className = v; else if (k === 'style') e.style.cssText = v;
     else if (k.slice(0,2) === 'on') e[k] = v; else e.setAttribute(k, v);
+  }
+  // Anything clickable that is not a real control gets focus and Enter / Space, so the page works from the keyboard
+  if (attrs && attrs.onclick && !/^(BUTTON|A|INPUT|SELECT|LABEL|OPTION)$/.test(e.tagName)) {
+    e.tabIndex = 0;
+    if (!e.getAttribute('role')) e.setAttribute('role', 'button');
+    e.onkeydown = function(ev){ if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === e) { ev.preventDefault(); e.click(); } };
   }
   add(e, kids); return e;
 }
@@ -410,14 +486,43 @@ function play(){
 function stop(){ if (ui.playing) clearInterval(ui.playing); ui.playing = null; }
 
 /* ── Layout ─────────────────────────────── */
+/* Scrolling panes, in page order. A refresh rebuilds the page; these keep where you were reading. */
+var SCROLLERS = '.stream,.spine-stream,.ps-stream,.pg-wrap,.stepper,.todo,.ascii';
+function snapshotUi(){
+  var list = Array.prototype.map.call(document.querySelectorAll(SCROLLERS), function(s){
+    return { top:s.scrollTop, left:s.scrollLeft, bottom:s.scrollHeight - s.scrollTop - s.clientHeight < 30 };
+  });
+  var focusables = Array.prototype.slice.call(document.querySelectorAll('#app [tabindex],#app button,#app input,#app select'));
+  var a = document.activeElement, fi = focusables.indexOf(a);
+  return { key: ui.view + '|' + ui.node + '|' + ui.tab + '|' + ui.tlNode, list:list, win:window.scrollY, focus: fi >= 0 ? { i:fi, text:a.textContent } : null };
+}
+function restoreUi(snap){
+  var same = snap && snap.key === ui.view + '|' + ui.node + '|' + ui.tab + '|' + ui.tlNode;
+  Array.prototype.forEach.call(document.querySelectorAll(SCROLLERS), function(s, i){
+    var was = same ? snap.list[i] : null;
+    // A pane that follows new events stays at the bottom only if you were already at the bottom
+    if (s.hasAttribute('data-autoscroll') && (!was || was.bottom)) s.scrollTop = s.scrollHeight;
+    else if (was) { s.scrollTop = was.top; s.scrollLeft = was.left; }
+  });
+  if (same && snap.win) window.scrollTo(0, snap.win);
+  if (same && snap.focus) {
+    var f = document.querySelectorAll('#app [tabindex],#app button,#app input,#app select')[snap.focus.i];
+    if (f && f.textContent === snap.focus.text) f.focus({ preventScroll:true });
+  }
+}
+
 function render(){
-  if (!ui.node || !nodeById(ui.node)) ui.node = defaultNode();
+  if (!ui.node || !nodeById(ui.node)) { ui.node = defaultNode(); ui.pinned = false; }
+  var snap = document.getElementById('app').childNodes.length ? snapshotUi() : null;
   var app = document.getElementById('app');
   app.className = 'app' + (ui.railOpen ? ' rail-open' : '') + (ui.playing ? ' playing' : '');
   app.textContent = '';
   app.appendChild(rail());
   var main = el('div', { cls:'main' });
   app.appendChild(main);
+  if (ui.offline) main.appendChild(el('div', { cls:'banner off', role:'status', text:'連不上 dlm(' + ui.offline + ' 起)。畫面停在最後一次拿到的資料;dlm dashboard --serve 可能關了,重開後這頁會自己接上。' }));
+  var waiting = data.decisions.length + data.e2e.length;
+  document.title = (ui.offline ? '⚠ ' : data.halted ? '⏸ ' : waiting ? '(' + waiting + ') ' : '') + BASE_TITLE;
   if (ui.view === 'console') renderConsole(main);
   else if (ui.view === 'planning') renderPlanning(main);
   else if (ui.view === 'pipeline') renderPipeline(main);
@@ -425,7 +530,8 @@ function render(){
   else if (ui.view === 'accounts') renderAccounts(main);
   else renderCost(main);
   main.appendChild(inputbar());
-  Array.prototype.forEach.call(document.querySelectorAll('[data-autoscroll]'), function(s){ s.scrollTop = s.scrollHeight; });
+  restoreUi(snap);
+  writeHash();
 }
 
 function rail(){
@@ -433,19 +539,19 @@ function rail(){
   var navs = [['console','▣','主控台'],['planning','✎','規劃'],['pipeline','▦','管線'],['timeline','≡','時間軸'],['cost','$','花費'],['accounts','◎','帳號']];
   return el('nav', { cls:'rail' }, [
     el('div', { cls:'top' }, [
-      el('div', { cls:'logo', title:'展開 / 收起', onclick:function(){ ui.railOpen = !ui.railOpen; save(); render(); }, text:'dlm' }),
+      el('div', { cls:'logo', title:'展開 / 收起', 'aria-label':'展開或收起側欄', 'aria-expanded': ui.railOpen ? 'true' : 'false', onclick:function(){ ui.railOpen = !ui.railOpen; save(); render(); }, text:'dlm' }),
       span('wordmark', 'dev-loop-mcp')
     ]),
     HUB ? el('button', { cls:'nav', title:'所有專案(dlm hub)', onclick:function(){ location.href = HUB; } }, [span('ic', '⌂'), span('lb', '所有專案')]) : null,
     navs.map(function(n){
-      return el('button', { cls:'nav' + (ui.view === n[0] ? ' on' : ''), title:n[2], onclick:function(){ ui.view = n[0]; save(); render(); } }, [
+      return el('button', { cls:'nav' + (ui.view === n[0] ? ' on' : ''), title:n[2], 'aria-label':n[2], 'aria-current': ui.view === n[0] ? 'page' : null, onclick:function(){ ui.view = n[0]; save(); render(); } }, [
         span('ic', n[1]), span('lb', n[2] + (n[0] === 'pipeline' && waiting ? ' · ' + waiting : ''))
       ]);
     }),
     el('div', { cls:'grow' }),
     el('div', { cls:'foot' }, [
-      el('span', { cls:'fx' }, [el('span', { cls:'dot' + (LIVE && !data.halted ? ' live' : '') })]),
-      span('fl', LIVE ? (data.halted ? '停機中' : '即時 · 每 ' + LIVE / 1000 + 's') : '快照 ' + when(data.generated_at))
+      el('span', { cls:'fx' }, [el('span', { cls:'dot' + (LIVE && !data.halted && !ui.offline ? ' live' : '') })]),
+      span('fl', LIVE ? (ui.offline ? '連不上' : data.halted ? '停機中' : '即時 · 每 ' + LIVE / 1000 + 's') : '快照 ' + when(data.generated_at))
     ])
   ]);
 }
@@ -610,7 +716,7 @@ function workerPane(n){
     if (rep) {
       var card = el('div', { cls:'card rep' + (fix ? ' fix' : '') + (rep.kind === 'escalation' ? ' bad' : '') }, [
         el('h4', {}, [rep.kind === 'escalation' ? '交件 · 回報卡住' : '交件報告', el('span', { cls:'r', text: done.raw && done.raw.commit ? '@' + done.raw.commit.slice(0, 7) : '' })]),
-        rep.summary ? el('div', { cls:'think', onclick:function(){ this.classList.toggle('open'); }, text:rep.summary }) : null,
+        rep.summary ? el('div', Object.assign(openAttrs('rep-' + d.id, 'think'), { text:rep.summary })) : null,
         rep.claims.map(function(c){
           var ok = !c.unverified && c.exit === 0, bad = !c.unverified && c.exit != null && c.exit !== 0;
           return el('div', { cls:'claim ' + (c.unverified ? 'unv' : ok ? 'ok' : bad ? 'bad' : '') }, [
@@ -680,7 +786,7 @@ function verifierPane(n){
       var v = e.raw.verdict;
       s.appendChild(el('div', { cls:'card crit' }, [
         el('h4', {}, ['critic · ' + (e.raw.ref || ''), el('span', { cls:'r' }, [span('stamp ' + (v === 'PASS' ? 'pass' : v === 'FAIL' ? 'fail' : 'ask'), v === 'ASK_USER' ? '問你' : v)])]),
-        e.detail ? el('div', { cls:'think', onclick:function(){ this.classList.toggle('open'); }, text:e.detail }) : null
+        e.detail ? el('div', Object.assign(openAttrs('crit-' + e.seq, 'think'), { text:e.detail })) : null
       ]));
     } else if (e.type === 'gates') {
       s.appendChild(el('span', { cls:'ln' }, [span('who w-sys', 'gates'), (e.raw.results || []).map(function(r){ return r.known_red ? span('warn', '≈ ' + r.name + '(' + r.known_red + ' 個基線本來就紅)  ') : span(r.exit === 0 ? 'ok' : 'bad', (r.exit === 0 ? '✓ ' : '✗ ') + r.name + '  '); })]));
@@ -729,15 +835,18 @@ function spinePane(n){
 /* ── Bottom: what needs your decision (read only: it only shows what to say / what to type) ── */
 function inputbar(){
   var q = data.decisions[0], e2e = data.e2e[0], waiting = data.decisions.length + data.e2e.length, cmd = null, text;
-  if (q) { cmd = 'dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>'); text = [q.question + (q.recommendation ? '(建議 ' + q.recommendation + ')' : '') + '  ', el('code', { text:cmd })]; }
-  else if (e2e) { cmd = 'dlm confirm ' + e2e.id + ' yes'; text = ['親手試用 ' + e2e.id + ':' + e2e.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') + '  ', el('code', { text:cmd })]; }
+  if (q) { cmd = 'dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>'); text = [(waiting > 1 ? '1/' + waiting + ' · ' : '') + q.question + (q.recommendation ? '(建議 ' + q.recommendation + ')' : '') + '  ', el('code', { text:cmd })]; }
+  else if (e2e) { cmd = 'dlm confirm ' + e2e.id + ' yes'; text = [(waiting > 1 ? '1/' + waiting + ' · ' : '') + '親手試用 ' + e2e.id + ':' + e2e.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') + '  ', el('code', { text:cmd })]; }
   else text = [data.halted ? '停機中:' + data.halted.reason : '沒有要你決定的事。背景迴圈會自己推進;要新功能就在 Front 說。'];
   var btn = cmd ? el('button', { cls:'send', onclick:function(){
-    var b = this; try { navigator.clipboard.writeText(cmd).then(function(){ b.textContent = '已複製'; setTimeout(function(){ b.textContent = '複製指令'; }, 1500); }); } catch (err) {}
+    var b = this;
+    copyText(cmd, function(ok){ b.textContent = ok ? '已複製' : '請手動複製'; setTimeout(function(){ b.textContent = '複製指令'; }, 1500); });
   }, text:'複製指令' }) : el('span', { cls:'send ghost', text:'唯讀' });
+  // More than one thing waiting: point at the page that lists them all, each with its own copy
+  var more = waiting > 1 ? el('button', { cls:'send ghost', title:'全部列在管線頁', onclick:function(){ ui.view = 'pipeline'; render(); }, text:'看全部 ' + waiting }) : null;
   return el('div', { cls:'inputbar' }, [
     el('span', { cls:'owner' + (waiting ? ' ask' : '') }, [span('odot'), waiting ? '要你決定 · ' + waiting : 'FRONT']),
-    el('div', { cls:'field' }, [el('div', { cls:'q', title: q ? q.question : '' }, text), btn])
+    el('div', { cls:'field' }, [el('div', { cls:'q', title: q ? q.question : '' }, text), more, btn])
   ]);
 }
 
@@ -767,10 +876,10 @@ function renderPipeline(main){
   var askPanel = el('div', { cls:'panel' });
   if (!waiting) askPanel.appendChild(el('div', { cls:'empty-pane', text:'沒有。' }));
   data.decisions.forEach(function(q){
-    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', q.ref), el('div', { cls:'ar-q' }, [q.question, el('small', { text:(q.options || []).map(function(o){ return o.key + '=' + o.label; }).join(' · ') + (q.reason ? ' · ' + q.reason : '') })]), el('code', { text:'dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>') })]));
+    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', q.ref), el('div', { cls:'ar-q' }, [q.question, el('small', { text:(q.options || []).map(function(o){ return o.key + '=' + o.label; }).join(' · ') + (q.reason ? ' · ' + q.reason : '') })]), cmdCode('dlm decide ' + q.ref + ' ' + (q.recommendation || '<選項>'))]));
   });
   data.e2e.forEach(function(x){
-    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', x.id), el('div', { cls:'ar-q' }, ['親手試用', el('small', { text:x.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') })]), el('code', { text:'dlm confirm ' + x.id + ' yes' })]));
+    askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', x.id), el('div', { cls:'ar-q' }, ['親手試用', el('small', { text:x.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') })]), cmdCode('dlm confirm ' + x.id + ' yes')]));
   });
   wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'要你決定 · ' + waiting }), askPanel]));
 
@@ -867,7 +976,7 @@ function renderPlanning(main){
           ]));
         });
         p.gherkin.forEach(function(g){
-          body.appendChild(el('div', { cls:'gk-file', onclick:function(ev){ if (ev.target.tagName !== 'PRE') this.classList.toggle('open'); } }, ['▸ ' + g.path + ' · ' + g.scenarios + ' 個場景', el('pre', { text:g.text })]));
+          body.appendChild(el('div', openAttrs('gk-' + p.id + ':' + g.path, 'gk-file'), ['▸ ' + g.path + ' · ' + g.scenarios + ' 個場景', el('pre', { text:g.text })]));
         });
       }
       var replacedBy = null;
@@ -946,7 +1055,7 @@ function renderTimeline(main){
   var lim = ui.more.tl || 150;
   evs.slice(0, lim).forEach(function(e){
     var w = ACTOR[e.actor] || [e.actor, 'w-work'];
-    var row = el('div', { cls:'tl-row t-' + e.type + (e.detail ? ' has' : ''), onclick: e.detail ? function(){ this.classList.toggle('open'); } : null }, [
+    var row = el('div', e.detail ? openAttrs('tl-' + e.seq, 'tl-row t-' + e.type + ' has') : { cls:'tl-row t-' + e.type }, [
       span('seq', '#' + e.seq), span('ts', when(e.ts)), span('ac ' + w[1], w[0]),
       el('div', { cls:'tx' }, [e.text + (e.detail ? '  ▸' : ''), e.detail ? el('pre', { text:e.detail }) : null])
     ]);
@@ -1035,7 +1144,7 @@ function renderAccounts(main){
     cfg.registry.forEach(function(a){
       var u = usage[a.name] || {}, lg = ui.acct.login && ui.acct.login !== 'loading' ? ui.acct.login[a.name] : null;
       var loginCell = !LIVE ? el('td', { text:'—' }) : !lg ? el('td', { text:'檢查中…' }) : lg.ok ? el('td', { cls:'ok', text:lg.detail || '已登入' }) :
-        el('td', { cls:'bad' }, ['沒登入:在終端機跑 ', el('code', { text:'node tools/dlm.mjs account login ' + a.name })]);
+        el('td', { cls:'bad' }, ['沒登入:在終端機跑 ', cmdCode('node tools/dlm.mjs account login ' + a.name)]);
       t.appendChild(el('tr', {}, [
         el('td', { cls:'hl', text:a.name }), el('td', { text:a.cli + (a.plan ? ' · ' + a.plan : '') }), loginCell,
         el('td', { text:(roleOf[a.name] || []).join('、') || '—' }), el('td', { text:(u.dispatches_5h || 0) + ' 次' }),
@@ -1103,12 +1212,19 @@ if (LIVE) setInterval(function(){
   if (ui.playing) return;
   // Do not redraw while the accounts page is being typed in (it would clear the input box)
   if (ui.view === 'accounts' && document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName)) return;
-  fetch('data.json', { cache:'no-store' }).then(function(r){ return r.json(); }).then(function(nd){
-    if (nd.ledger_seq === data.ledger_seq && JSON.stringify(nd.in_progress) === JSON.stringify(data.in_progress)) return;
+  fetch('data.json', { cache:'no-store' }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(nd){
+    var back = !!ui.offline;
+    ui.offline = null;
+    if (!back && nd.ledger_seq === data.ledger_seq && JSON.stringify(nd.in_progress) === JSON.stringify(data.in_progress)) return;
     data = nd;
     if (!ui.pinned) ui.node = null;
+    if (ui.cursor == null || back) render();
+  }).catch(function(){
+    // Say so instead of quietly showing old data under a "live" label
+    if (ui.offline) return;
+    ui.offline = new Date().toTimeString().slice(0, 5);
     if (ui.cursor == null) render();
-  }).catch(function(){});
+  });
 }, LIVE);
 })();
 </script>

@@ -110,6 +110,9 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
+      // --key=value is the same as --key value
+      const eq = a.indexOf('=');
+      if (eq > 2) { flags[a.slice(2, eq)] = a.slice(eq + 1); continue; }
       const key = a.slice(2);
       const next = argv[i + 1];
       if (next === undefined || next.startsWith('--')) flags[key] = true;
@@ -136,21 +139,91 @@ function need(flags, key, hint) {
   return flags[key];
 }
 
+/** A missing positional argument: show the usage line, not a flag that does not exist. */
+function needPos(value, name, usage) {
+  if (!value) throw new DlmError(`缺 <${name}>。用法:${usage}`);
+  return value;
+}
+
+/** A numeric flag. Returns undefined when it was not given; throws when the value is not a number in range. */
+function numFlag(flags, key, { min = -Infinity, max = Infinity, integer = false, what = '數字' } = {}) {
+  const v = flags[key];
+  if (v === undefined) return undefined;
+  const n = v === true || String(v).trim() === '' ? NaN : Number(v);
+  if (!Number.isFinite(n) || n < min || n > max || (integer && !Number.isInteger(n))) {
+    throw new DlmError(`--${key} 要是${what}(收到 ${v === true ? '空的' : v})`);
+  }
+  return n;
+}
+
 function summaryLine(s) {
   return `完成 ${s.counts.done}/${s.counts.nodes} · 進行 ${s.in_progress.length} · 審核 ${s.review.length} · 可派 ${s.dispatchable.length} · 卡住 ${s.blocked.length} · 待你 ${s.awaiting_user.decisions.length + s.awaiting_user.e2e.length} · $${s.budget.today_usd}`;
+}
+
+/** One line telling the user what to do next, from the same snapshot status prints. Null when there is nothing to add. */
+function nextStep(s, loopRunning) {
+  const waiting = s.awaiting_user.decisions.length + s.awaiting_user.e2e.length;
+  if (s.halted) return '停機中:處理好原因後 dlm resume --verbatim "繼續"';
+  if (waiting) return `有 ${waiting} 件事等你:dlm inbox`;
+  if (!s.counts.nodes) return '還沒有任何節點:在 Claude Code 說你想做什麼(或 dlm intake)';
+  const work = s.in_progress.length + s.review.length + s.dispatchable.length + s.backoff.length;
+  if (work && !loopRunning) return '有工作可以做,但背景迴圈沒在跑:dlm run --daemon(或 dlm tick 跑一輪)';
+  if (s.blocked.length) return `有 ${s.blocked.length} 個節點卡住:dlm show <節點> 看原因,修好後 dlm unblock <節點>`;
+  if (!work && s.counts.done === s.counts.nodes) return '這一版都完成了:說下一版想做什麼';
+  return null;
 }
 
 /** After a command that writes events finishes, regenerate STATUS/DECISIONS so the generated files always match the ledger (the commit is left to the next tick). */
 const MUTATING = new Set(['inbox', 'decide', 'confirm', 'halt', 'resume', 'unblock', 'intake']);
 // commands that work outside a project, or that handle an old dp project themselves (upgrade migrates it, doctor explains)
 const NO_PROJECT = new Set([undefined, 'help', '--help', 'init', 'upgrade', 'doctor', 'mcp', 'hub', 'project', 'account', 'api']);
+// op answers "not a project" itself as JSON; hook runs for every prompt and must never fail a session because of where it was started
+const SELF_GUARDED = new Set(['op', 'hook']);
+
+/**
+ * The project a command works on: --root if given, otherwise the nearest folder at or above the current one that holds
+ * a dlm project (so commands work from a subfolder). Falls back to the current folder when there is none.
+ */
+function findRoot(flagRoot) {
+  if (flagRoot && flagRoot !== true) return resolve(flagRoot);
+  const start = process.cwd();
+  for (let dir = start; ;) {
+    if (existsSync(join(dir, 'dlm.config.json')) || isLegacyProject(dir)) return dir;
+    const up = dirname(dir);
+    if (up === dir) return start;
+    dir = up;
+  }
+}
+
+/** The known commands closest to a mistyped one (edit distance <= 2, or a prefix), as text to print, or null. */
+function closestCommand(cmd) {
+  const dist = (a, b) => {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        // two neighbouring letters swapped count as one slip (stauts -> status)
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+    return d[a.length][b.length];
+  };
+  const names = [...Object.keys(FLAGS).filter((k) => k !== 'hook'), 'help'];
+  const c = String(cmd).replace(/^-+/, '').toLowerCase();
+  if (!c) return null;
+  const scored = names.map((n) => [n, n.startsWith(c) || c.startsWith(n) ? 1 : dist(c, n)]).sort((x, y) => x[1] - y[1]);
+  if (scored[0][1] > 2) return null;
+  // equally close candidates are all offered (at most two)
+  return scored.filter((x) => x[1] === scored[0][1]).slice(0, 2).map((x) => `dlm ${x[0]}`).join(' 或 ');
+}
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const code = await dispatchCommand(cmd, rest);
   if (code === 0 && MUTATING.has(cmd) && !(cmd === 'inbox' && rest.includes('--no-mark'))) {
     const { flags } = parseArgs(rest);
-    refreshRendered(resolve(flags.root ?? process.cwd()));
+    refreshRendered(findRoot(flags.root));
   }
   return code;
 }
@@ -162,22 +235,32 @@ const FLAGS = {
   status: ['json'], dashboard: ['out', 'serve', 'interval'], inbox: ['no-mark'], show: [], decide: ['verbatim', 'as'], confirm: ['verbatim'],
   halt: ['reason', 'keep-workers'], resume: ['verbatim'], unblock: ['verbatim'],
   intake: ['spec', 'gherkin', 'supersedes'], onboard: ['no-commit'], baseline: ['no-commit'], check: [], gates: [], render: [], stats: [], hook: [],
+  settings: ['autonomy', 'budget', 'parallel', 'verbatim'],
   account: ['cli', 'plan', 'home', 'model', 'json', 'max-parallel'], mcp: ['client'],
   project: ['name', 'json'], hub: ['port', 'interval'], op: ['args'], api: [],
 };
 
 function commandHelp(cmd) {
-  const lines = HELP.split('\n').filter((l) => new RegExp(`\\bdp ${cmd}\\b`).test(l));
-  return lines.length ? lines.join('\n') : HELP;
+  const lines = HELP.split('\n').filter((l) => new RegExp(`^\\s+dlm ${cmd}(?![\\w-])`).test(l));
+  return lines.length ? `${lines.join('\n')}\n(全部指令:dlm --help)` : HELP;
 }
 
 async function dispatchCommand(cmd, rest) {
   const { pos, flags } = parseArgs(rest);
-  const root = resolve(flags.root ?? process.cwd());
+  const root = findRoot(flags.root);
   const log = (l) => console.log(l);
+  if (cmd === '-h') cmd = '--help';
+  if (['--version', '-v', '-V', 'version'].includes(cmd)) {
+    console.log(VERSION);
+    return 0;
+  }
   if (cmd && cmd !== 'help' && cmd !== '--help' && (flags.help || rest.includes('-h'))) {
     console.log(commandHelp(cmd));
     return 0;
+  }
+  if (cmd && !NO_PROJECT.has(cmd) && !FLAGS[cmd]) {
+    const near = closestCommand(cmd);
+    throw new DlmError(`不認識的指令 ${cmd}${near ? `。你是不是要打 ${near}?` : ''}\n全部指令:dlm --help`);
   }
   if (FLAGS[cmd]) {
     const unknown = Object.keys(flags).filter((k) => k !== 'root' && !FLAGS[cmd].includes(k));
@@ -185,6 +268,11 @@ async function dispatchCommand(cmd, rest) {
   }
   // 4.8.0 renamed dp to dlm: project commands in a project that still has dp's file names would read the defaults
   if (!NO_PROJECT.has(cmd) && isLegacyProject(root)) throw new DlmError(legacyMessage(root));
+  // Project commands outside a project used to run on defaults: status printed zeros and inbox left STATUS.md and a ledger in whatever folder you were in
+  if (!NO_PROJECT.has(cmd) && !SELF_GUARDED.has(cmd) && !existsSync(join(root, 'dlm.config.json'))) {
+    throw new DlmError(`${root} 不是 dlm 專案(這裡和上層目錄都沒有 dlm.config.json)。\n`
+      + '先 cd 到專案裡,或加 --root <專案目錄>;看有哪些專案:dlm project list;建新的:dlm init <dir>');
+  }
   switch (cmd) {
     case undefined:
     case 'help':
@@ -192,7 +280,7 @@ async function dispatchCommand(cmd, rest) {
       console.log(HELP);
       return 0;
     case 'init': {
-      const r = init(need({ dir: pos[0] }, 'dir', 'dlm init <dir>'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'], ...(typeof flags.stack === 'string' ? { stack: flags.stack } : {}) });
+      const r = init(needPos(pos[0], 'dir', 'dlm init <dir> [--name X] [--existing] [--stack X]'), { name: flags.name, existing: !!flags.existing, commit: !flags['no-commit'], ...(typeof flags.stack === 'string' ? { stack: flags.stack } : {}) });
       console.log(`建立 ${r.created.length} 個檔${r.kept.length ? `,保留你既有的 ${r.kept.length} 個` : ''};git ${r.git}${r.committed ? `,已 commit ${r.committed.slice(0, 8)}` : ''}`);
       try { const p = addProject(pos[0]); console.log(`已登記到這台電腦的專案清單:${p.name}(dlm project list)`); } catch { /* 登記失敗不影響 init */ }
       console.log(`下一步:cd ${pos[0]} && node tools/dlm.mjs setup(一題一題帶你設定,大約兩分鐘)`);
@@ -257,21 +345,23 @@ async function dispatchCommand(cmd, rest) {
         console.log(!r.was_running ? '背景迴圈沒在跑' : r.stopped ? `背景迴圈(pid ${r.pid})已結束` : `已要求背景迴圈(pid ${r.pid})結束;${r.note}`);
         return 0;
       }
+      const intervalSec = numFlag(flags, 'interval', { min: 0.1, max: 86400, what: ' 0.1–86400 的秒數' }) ?? 60;
+      const maxTicks = numFlag(flags, 'max-ticks', { min: 1, integer: true, what: '正整數' }) ?? null;
       const running = loopPid(root);
-      if (running) throw new DlmError(`背景迴圈已經在跑(pid ${running});同一個 repo 只能有一個`);
+      if (running) throw new DlmError(`背景迴圈已經在跑(pid ${running});同一個 repo 只能有一個。要停:dlm run --stop`);
       ensureDir(join(root, '.dlm'));
       if (flags.daemon) {
-        const r = await loopStart(root, { interval: flags.interval ?? 60, maxTicks: flags['max-ticks'] ?? null });
+        const r = await loopStart(root, { interval: intervalSec, maxTicks });
         console.log(`背景迴圈已啟動 pid ${r.pid},紀錄在 .dlm/run.log(停止:dlm run --stop)`);
         return 0;
       }
       if (existsSync(runStopPath(root))) unlinkSync(runStopPath(root));
       const release = tryLock(runLockPath(root));
-      if (!release) throw new DlmError(`背景迴圈已經在跑(pid ${loopPid(root) ?? '?'});同一個 repo 只能有一個`);
+      if (!release) throw new DlmError(`背景迴圈已經在跑(pid ${loopPid(root) ?? '?'});同一個 repo 只能有一個。要停:dlm run --stop`);
       process.on('exit', release);
       for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { release(); process.exit(0); });
-      const interval = Number(flags.interval ?? 60) * 1000;
-      const max = flags['max-ticks'] ? Number(flags['max-ticks']) : Infinity;
+      const interval = intervalSec * 1000;
+      const max = maxTicks ?? Infinity;
       for (let i = 1; i <= max; i++) {
         if (existsSync(runStopPath(root))) { unlinkSync(runStopPath(root)); console.log('收到停止要求,結束'); return 0; }
         const r = await tick(root, { log });
@@ -295,6 +385,10 @@ async function dispatchCommand(cmd, rest) {
       const pid = loopPid(root);
       console.log(flags.json ? JSON.stringify({ ...s, loop: pid ? { running: true, pid } : { running: false } }, null, 2)
         : `${summaryLine(s)}\n背景迴圈:${pid ? `執行中(pid ${pid})` : '沒在跑'}${s.halted ? `;停機中:${s.halted.reason}` : ''}`);
+      if (!flags.json) {
+        const next = nextStep(s, !!pid);
+        if (next) console.log(`下一步:${next}`);
+      }
       return 0;
     }
     case 'dashboard': {
@@ -316,11 +410,11 @@ async function dispatchCommand(cmd, rest) {
       console.log(renderInbox(root, { markSeen: !flags['no-mark'] }));
       return 0;
     case 'show':
-      console.log(show(root, need({ ref: pos[0] }, 'ref')));
+      console.log(show(root, needPos(pos[0], 'ref', 'dlm show <ref|節點|dispatch>(dlm inbox 會列出 ref)')));
       return 0;
     case 'decide': {
       const [ref, choice] = pos;
-      if (!ref || !choice) throw new DlmError('dlm decide <ref> <choice> --verbatim "..."');
+      if (!ref || !choice) throw new DlmError('缺 <ref> 或 <choice>。用法:dlm decide <ref> <choice> --verbatim "..."(dlm inbox 會列出 ref 與選項)');
       // Without --as: the user's decision is written only by the user; a Critic's stand-in can only be written by the orchestrator inside a tick
       if (flags.as !== undefined) throw new DlmError('--as 已移除:dlm decide 只記錄使用者的決定;Critic 的判決由 tick 代寫');
       // v4: one sentence decides several things (v3 real run: four nodes waited for merge at once and the user had to say yes one by one)
@@ -329,13 +423,13 @@ async function dispatchCommand(cmd, rest) {
     }
     case 'confirm': {
       const [node, yn] = pos;
-      if (!node || !['yes', 'no'].includes(yn)) throw new DlmError('dlm confirm <node> yes|no --verbatim "..."');
+      if (!node || !['yes', 'no'].includes(yn)) throw new DlmError('用法:dlm confirm <node> yes|no --verbatim "..."(yes = 試過可以,no = 不行)');
       const ev = confirmE2e(root, node, yn === 'yes', flags.verbatim === true ? '' : flags.verbatim);
       console.log(`已記錄 #${ev.seq}`);
       return 0;
     }
     case 'unblock': {
-      const ev = unblockByUser(root, need({ node: pos[0] }, 'node', 'dlm unblock <節點>'), flags.verbatim === true ? '' : flags.verbatim);
+      const ev = unblockByUser(root, needPos(pos[0], 'node', 'dlm unblock <節點> --verbatim "..."'), flags.verbatim === true ? '' : flags.verbatim);
       console.log(`#${ev.seq} 已解除 ${pos[0]};下一個 tick 會重新派工`);
       return 0;
     }
@@ -361,8 +455,16 @@ async function dispatchCommand(cmd, rest) {
       return 0;
     case 'settings': {
       // v4.7.3: change only the items the user said to change (before, you had to rerun dlm setup, which asked about and wrote all the other settings too)
-      const num = (k) => (flags[k] === undefined || flags[k] === true ? undefined : Number(flags[k]));
-      const r = setSettings(root, { autonomy_level: num('autonomy'), daily_usd: num('budget'), parallel: num('parallel'), verbatim: flags.verbatim });
+      const asked = { autonomy_level: numFlag(flags, 'autonomy'), daily_usd: numFlag(flags, 'budget'), parallel: numFlag(flags, 'parallel') };
+      if (Object.values(asked).every((v) => v === undefined)) throw new DlmError(`沒有要改的:給 --autonomy、--budget、--parallel 其中至少一個\n${commandHelp('settings')}`);
+      let r;
+      try {
+        r = setSettings(root, { ...asked, verbatim: flags.verbatim });
+      } catch (e) {
+        // setSettings names the API fields; on the command line the user typed flags
+        if (e instanceof DlmError) e.message = e.message.replace('autonomy_level', '--autonomy').replace('daily_usd', '--budget').replace(/^parallel/, '--parallel');
+        throw e;
+      }
       for (const [k, v] of Object.entries(r.changed)) console.log(`✓ ${k}:${v.from} → ${v.to}`);
       for (const n of r.notes ?? []) console.log(`提醒:${n}`);
       return 0;
@@ -423,10 +525,10 @@ async function dispatchCommand(cmd, rest) {
         console.log(`提案 ${p.id} 已建立(整個版本一次批准),等使用者決定 node:${p.id}`);
         for (const w of p.warnings) console.log(`⚠ ${w}`);
       } else if (mode === 'apply') {
-        const r = applyProposal(root, need({ id: arg }, 'id'));
+        const r = applyProposal(root, needPos(arg, 'proposal-id', 'dlm intake apply <proposal-id>'));
         console.log(r.applied ? `已加入 ${r.nodes.join(', ')}` : '已經套用過了');
       } else {
-        throw new DlmError('dlm intake feature|bundle|apply');
+        throw new DlmError(`${mode ? `dlm intake 沒有 ${mode}` : '缺子指令'}。用法:\n${commandHelp('intake')}`);
       }
       return 0;
     }
@@ -466,7 +568,7 @@ async function dispatchCommand(cmd, rest) {
         console.log(JSON.stringify({ ok: false, error: `參數不是合法的 JSON:${e.message}`, status: 400 }));
         return 1;
       }
-      const r = await runOp(need({ name: pos[0] }, 'name', 'dlm op <操作>'), root, args);
+      const r = await runOp(needPos(pos[0], '操作', "dlm op <操作> [--args '{json}']"), root, args);
       console.log(JSON.stringify(r));
       return r.ok ? 0 : 1;
     }
@@ -489,8 +591,7 @@ async function dispatchCommand(cmd, rest) {
       return 0;
     }
     default:
-      console.error(`不認識的指令 ${cmd}\n\n${HELP}`);
-      return 1;
+      throw new DlmError(`不認識的指令 ${cmd}\n全部指令:dlm --help`);
   }
 }
 
@@ -516,7 +617,7 @@ function accountCommand(root, pos, flags) {
       return 0;
     }
     case 'login': {
-      const a = getAccount(need({ name }, 'name', 'dlm account login <name>'));
+      const a = getAccount(needPos(name, 'name', 'dlm account login <name>'));
       if (!process.stdin.isTTY) throw new DlmError(`登入要開瀏覽器,請在終端機自己跑:node tools/dlm.mjs account login ${a.name}`);
       const c = cliOf(a.cli);
       console.log(`用 ${c.label} 登入帳號 ${a.name}(目錄 ${a.home})。登入你要給這個帳號用的那個訂閱。`);
@@ -538,7 +639,7 @@ function accountCommand(root, pos, flags) {
       return 0;
     }
     case 'set': {
-      const a = updateAccount(need({ name }, 'name', 'dlm account set <name> [--plan X] [--max-parallel N|none]'), {
+      const a = updateAccount(needPos(name, 'name', 'dlm account set <name> [--plan X] [--max-parallel N|none]'), {
         ...(flags.plan !== undefined ? { plan: flags.plan === true || flags.plan === 'none' ? null : flags.plan } : {}),
         ...(flags['max-parallel'] !== undefined ? { maxParallel: flags['max-parallel'] === 'none' ? null : flags['max-parallel'] } : {}),
       });
@@ -546,14 +647,14 @@ function accountCommand(root, pos, flags) {
       return 0;
     }
     case 'rm': {
-      const r = removeAccount(need({ name }, 'name', 'dlm account rm <name>'));
+      const r = removeAccount(needPos(name, 'name', 'dlm account rm <name>'));
       console.log(`已移除 ${r.removed}${r.home_deleted ? '(連同 dlm 建的登入目錄)' : '(你指定的目錄沒動)'}`);
       const using = rolesUsing(root)[r.removed];
       if (using) console.log(`提醒:dlm.config.json 的 ${using.join('、')} 還在用它,派工時會報錯;用 dlm account use 改掉`);
       return 0;
     }
     case 'use': {
-      const spec = need({ list }, 'list', `dlm account use ${name} a,b(none = 不用帳號)`);
+      const spec = needPos(list, '帳號清單', `dlm account use ${name ?? '<worker|critic|verifier>'} a,b(none = 不用帳號)`);
       const r = setRole(root, { role: name, accounts: spec === 'none' ? [] : spec.split(','), ...(flags.model && flags.model !== true ? { model: flags.model } : {}) });
       console.log(r.accounts.length ? `✓ ${r.role} 輪流用 ${r.accounts.join('、')}${r.model ? `(模型 ${r.model})` : ''}` : `✓ ${r.role} 不用帳號了${r.role === 'verifier' && r.backend === 'none' ? '(Verifier 關掉)' : ''}`);
       if (r.custom_cmd && r.accounts.length) {
@@ -564,7 +665,7 @@ function accountCommand(root, pos, flags) {
       return 0;
     }
     default:
-      throw new DlmError(`dlm account add|login|list|use|rm\n${commandHelp('account')}`);
+      throw new DlmError(`${sub ? `dlm account 沒有 ${sub}` : '缺子指令'}。用法:\n${commandHelp('account')}`);
   }
 }
 
@@ -586,12 +687,12 @@ function projectCommand(pos, flags) {
       return 0;
     }
     case 'rm': {
-      const r = removeProject(need({ name: arg }, 'name', 'dlm project rm <name>'));
+      const r = removeProject(needPos(arg, 'name', 'dlm project rm <name>(dlm project list 看名字)'));
       console.log(`已從清單拿掉 ${r.removed}(${r.path} 的檔案沒動)`);
       return 0;
     }
     default:
-      throw new DlmError(`dlm project add|list|rm\n${commandHelp('project')}`);
+      throw new DlmError(`${sub ? `dlm project 沒有 ${sub}` : '缺子指令'}。用法:\n${commandHelp('project')}`);
   }
 }
 
@@ -694,7 +795,7 @@ function mcpCommand(root, pos, flags) {
     }
     throw new DlmError('--client 是 claude、cursor、codex 或 project');
   }
-  if (pos.length) throw new DlmError('dlm mcp [install|config|tools]');
+  if (pos.length) throw new DlmError(`dlm mcp 沒有 ${pos[0]}。用法:\n${commandHelp('mcp')}`);
   if (process.stdin.isTTY) console.error('dlm mcp 是給 Claude Code 等工具啟動的 stdio server;要安裝請跑 dlm mcp install。(Ctrl-C 離開)');
   return serveMcp({ cwd: root });
 }

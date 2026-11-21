@@ -2,6 +2,39 @@
 
 v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.md`(git 歷史)。底下 4.8.0 以前的條目照當時的名字寫(dp、`dp.config.json`、`dp_*` 工具)。
 
+## 4.11.1 — 指令列與主控台的使用體驗
+
+指令列(`dlm`):
+
+- **不在專案裡**:`dlm status`、`inbox`、`tick` 等在不是專案的資料夾跑,以前會用預設值照跑:`status` 印一排 0,`inbox` 還在那個資料夾留下
+  `STATUS.md`、`ledger/`、`.dlm/`。現在直接說「不是 dlm 專案」,並告訴你 `--root`、`dlm project list`、`dlm init`。
+- **子資料夾**:在專案的子資料夾裡跑,會往上找到專案(以前當成空專案)。
+- **一次決定好幾件**:`dlm decide a,b yes` 裡 b 打錯時,a 會先被記下、指令卻只報錯。現在先全部檢查,有一個不對就一件都不記;
+  ref 打錯時列出現在等你決定的有哪些。
+- **說明**:單一指令的 `--help`(例如 `dlm run --help`)只印那個指令(4.8.0 改名時漏改,一直印整份);打錯指令只印兩行並猜你要打什麼
+  (`stauts` → `status`),不再噴整份說明。加上 `dlm --version`、`dlm -h`。
+- **旗標**:`--interval=5` 跟 `--interval 5` 一樣;`--max-ticks abc`、`--interval 0`、`--budget abc` 直接拒絕(以前 `--max-ticks abc` 什麼都沒做就結束)。
+  缺位置參數時說「缺 <dir>」與用法(以前說「缺 --dir」,但沒有這個旗標)。
+- `dlm status` 多一行「下一步」;`dlm inbox` 沒有新事件時不再顯示 `ledger #1–#0`。
+
+主控台(`dlm dashboard`):
+
+- **網址記住頁面**:`#pipeline`、`#console/calc%2Fv1` 這樣;重新整理不會跳回第一頁,瀏覽器的上一頁能用,連結可以分享。
+- **斷線看得到**:`dlm dashboard --serve` 關掉後,頁面以前照樣寫「即時」顯示舊資料;現在出現紅色橫幅、分頁標題加 ⚠,重開後自己接上。
+- **自動更新不打斷你**:每 5 秒的重畫不再把捲軸拉回去、不再收起你展開的列(時間軸、交件報告、gherkin)、不丟掉鍵盤焦點;
+  跟著新事件的窗格只有在你本來就在最底下時才跟著捲。
+- **鍵盤**:可以點的卡片、表格列、可展開的列都能用 Tab 選到、Enter / 空白鍵觸發;側欄按鈕有 `aria-label` 與目前頁面標記。
+- **複製指令**:管線頁每一個 `dlm decide` / `dlm confirm`、帳號頁的 `dlm account login` 點一下就複製(以前只有底下第一件能複製);
+  從檔案開的快照沒有剪貼簿權限時改用選取複製。等你的事超過一件時,底下顯示「1/N」與「看全部」。
+- **分頁標題**:有事等你時顯示「(2)」,停機時「⏸」。
+
+測試:
+
+- 有 5 個測試在 snap 裝的 node 上會失敗:snap 每次啟動 node 都重新進入 AppArmor 限制,把繼承來的 `/tmp` log 檔切斷,
+  worker 的 log 變成空的,限流 / 沒登入被誤判成一般失敗。程式本身沒問題;測試現在讓子程序用同一個 node 執行檔。
+- 新增 `test/cli-ux.test.mjs`(6 個);主控台的程式要能編譯。主控台的行為另外用無頭 Chrome 逐項檢查過(15 項,含手機寬度)。
+- 已經裝好的專案要 `dlm upgrade` 一次才會用到新的 CLI 與主控台。`npm test` 223 個全部通過。
+
 ## 4.11.0 — 核心不綁任何技術棧;測試棒多兩個檢查;準則總表
 
 - **技術棧包(`stacks/`)**:核心(`tools/lib`、`payload/`)不再認得 TypeScript、vitest、cucumber、stryker、npm。

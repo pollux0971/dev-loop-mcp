@@ -102,7 +102,7 @@ export function renderInbox(root, { markSeen = true } = {}) {
   const s = d.since;
   const c = d.counts;
   out.push('');
-  out.push(`【上次看之後 · ledger #${s.from_seq}–#${s.to_seq}】`);
+  out.push(s.to_seq < s.from_seq ? '【上次看之後 · 沒有新的事】' : `【上次看之後 · ledger #${s.from_seq}–#${s.to_seq}】`);
   out.push(`合併 ${s.accepted} · 退回 ${s.rejected} · Verifier 否決 ${s.verifier_fails} 項 · Critic ${s.critic} 次 · 新節點 ${s.nodes_added} · 失敗 ${s.worker_failed} · 花費 $${s.usd.toFixed(2)}`);
   out.push(`完成 ${c.done}/${c.nodes} · 進行中 ${c.in_progress} · 審核中 ${c.review} · 可派 ${c.dispatchable} · 卡住 ${c.blocked} · 今日 $${d.budget.today_usd}/${d.budget.daily_usd}`);
   for (const w of d.warnings) out.push(`⚠ ${w}`);
@@ -139,10 +139,14 @@ export function show(root, ref) {
   throw new DlmError(`找不到 ${ref}(可以是決定 ref、節點 id 或 dispatch id)`);
 }
 
-function checkDecision(root, ref, choice) {
+export function checkDecision(root, ref, choice) {
   const { state } = load(root);
   const rec = state.decisions.get(ref);
-  if (!rec?.request) throw new DlmError(`沒有待決事項 ${ref}`);
+  if (!rec?.request) {
+    // Say what can be decided right now: a mistyped ref is the usual cause
+    const open = [...state.decisions.values()].filter((r) => r.request && !r.answer && !r.superseded).map((r) => r.request.ref);
+    throw new DlmError(`沒有待決事項 ${ref}(${open.length ? `現在等你決定的:${open.slice(0, 8).join('、')}${open.length > 8 ? ` 等 ${open.length} 件` : ''}` : '現在沒有事情等你決定'})`);
+  }
   if (rec.answer) throw new DlmError(`${ref} 已經決定過了(${rec.answer.choice}),要推翻請開新的決定`);
   if (rec.superseded) throw new DlmError(`${ref} 已經被 ${rec.superseded} 取代,不能再決定;要決定的是 ${rec.superseded}`);
   const keys = rec.request.options.map((o) => o.key);

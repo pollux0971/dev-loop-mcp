@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decide } from '../tools/lib/inbox.mjs';
 import { init } from '../tools/lib/install.mjs';
@@ -12,6 +12,11 @@ import { replay } from '../tools/lib/state.mjs';
 import { pidAlive, readJson, run, writeJson } from '../tools/lib/util.mjs';
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Children started with a bare `node` must be the same binary that runs the tests. A wrapper such as snap's /snap/bin/node
+// re-enters its confinement on every launch, and AppArmor then cuts off an inherited log file under /tmp: the worker log
+// comes out empty and rate-limit / not-logged-in output is misread as a plain worker failure.
+process.env.PATH = `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`;
 
 // Tests do not touch your real ~/.config/dlm/key: the whole test process (including the dlm child processes it starts) uses one temporary key
 if (!process.env.DLM_KEY_FILE) process.env.DLM_KEY_FILE = join(mkdtempSync(join(tmpdir(), 'dlm-key-')), 'key');

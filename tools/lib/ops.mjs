@@ -14,7 +14,7 @@ import { dashboardData } from './dashboard.mjs';
 import { loadDag } from './dag.mjs';
 import { doctor } from './doctor.mjs';
 import { commitAll } from './git.mjs';
-import { confirmE2e, decide, inboxData, resume, show, unblockByUser } from './inbox.mjs';
+import { checkDecision, confirmE2e, decide, inboxData, resume, show, unblockByUser } from './inbox.mjs';
 import { proposeBundle, proposeFeature } from './intake.mjs';
 import { append, readEvents } from './ledger.mjs';
 import { Ctx, commitState, haltWorkers, tick } from './orchestrator.mjs';
@@ -234,6 +234,9 @@ export function decideOp(root, { ref, choice, verbatim } = {}) {
     refs = [...replay(readEvents(root), dg).decisions.values()].filter((r) => r.request && !r.answer && r.request.ref.startsWith('accept:')).map((r) => r.request.ref);
     if (!refs.length) throw new DlmError('沒有等待合併的決定');
   }
+  refs = [...new Set(refs)];
+  // Check every ref before recording any: one bad ref in the list used to leave the earlier ones recorded while the command reported only the error
+  for (const r of refs) checkDecision(root, r, choice);
   const recorded = refs.map((r) => ({ ref: r, choice, seq: decide(root, r, choice, verbatimOf({ verbatim })).seq }));
   refreshRendered(root);
   return { recorded };
