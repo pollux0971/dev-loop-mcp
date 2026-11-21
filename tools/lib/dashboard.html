@@ -880,6 +880,7 @@ function renderPipeline(main){
   });
   data.e2e.forEach(function(x){
     askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', x.id), el('div', { cls:'ar-q' }, ['親手試用', el('small', { text:x.scenarios.map(function(s){ return s.name || (s.file + ':' + s.line); }).join(' · ') })]), cmdCode('dlm confirm ' + x.id + ' yes')]));
+    (x.try || []).forEach(function(c){ askPanel.appendChild(el('div', { cls:'ask-row' }, [span('ar-ref', ''), el('div', { cls:'ar-q' }, ['怎麼跑']), cmdCode(c)])); });
   });
   wrap.appendChild(el('div', { cls:'sect' }, [el('h3', { text:'要你決定 · ' + waiting }), askPanel]));
 

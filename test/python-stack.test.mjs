@@ -251,6 +251,21 @@ describe('python greenfield end to end', { skip: !pyReady && 'set DLM_TEST_PYTHO
     const acc = run('.venv/bin/python scripts/accept.py features/calc/v1.feature', { cwd: proj });
     assert.equal(acc.code, 0, acc.stdout + acc.stderr);
     assert.doesNotMatch(acc.stdout + acc.stderr, /PytestUnknownMarkWarning/);
+
+    // integration point: the hand-try request says how to run it, and that command works from the root
+    addNode(proj, { id: 'I1', kind: 'integration', title: '命令列', intent: '使用者在命令列算 2 加 3', owns: ['src/calc/__main__.py'], depends_on: ['calc/v1'] },
+      '@integration @i1\nFeature: cli\n  @e2e\n  Scenario: user adds from the command line\n    When I run calc with 2 and 3\n    Then it prints 5\n');
+    const s2 = await tickUntil(proj, (st) => ['done', 'blocked'].includes(st.nodes.get('I1')?.status), { max: 30 });
+    assert.equal(s2.nodes.get('I1').status, 'done', JSON.stringify(readEvents(proj).filter((e) => ['reject', 'gates', 'block'].includes(e.type)).slice(-3)));
+    const { renderInbox } = await import('../tools/lib/inbox.mjs');
+    const inbox = renderInbox(proj, { markSeen: false });
+    assert.match(inbox, /E2E:I1/);
+    assert.match(inbox, /怎麼跑:\.venv\/bin\/python scripts\/run\.py calc 2 3/);
+    assert.match(inbox, /怎麼跑:在專案根目錄:\.venv\/bin\/python scripts\/run\.py <套件>/, 'the stack hint too');
+    assert.doesNotMatch(inbox, /怎麼跑:\.venv\/bin\/python scripts\/accept\.py/, 'the acceptance runner is not how to run it');
+    const tryRun = run('.venv/bin/python scripts/run.py calc 2 3', { cwd: proj });
+    assert.equal(tryRun.code, 0, tryRun.stderr);
+    assert.equal(tryRun.stdout.trim(), '5');
   });
 });
 
@@ -294,6 +309,23 @@ describe('review batch 1: fresh projects and stack-neutral payload', () => {
     const py = lines(pyProject());
     for (const l of ['node_modules/', '.mutate.lock', '.stryker-tmp/', 'reports/', 'coverage/']) assert.ok(!py.includes(l), l);
     for (const l of ['.dlm/', '*.tmp-*', '.venv/', '__pycache__/', '.pytest_cache/']) assert.ok(py.includes(l), l);
+  });
+
+  test('scripts/run.py runs a package of this tree\'s own src from the root (and from a copy, the copy\'s)', { skip: !hasPython && 'python3 >= 3.10 not found' }, () => {
+    const proj = pyProject();
+    mkdirSync(join(proj, 'src/greet'), { recursive: true });
+    writeFileSync(join(proj, 'src/greet/__init__.py'), '');
+    writeFileSync(join(proj, 'src/greet/__main__.py'), 'import sys\nprint(f"Hello, {sys.argv[1]}!")\n');
+    const r = run('python3 scripts/run.py greet Grace', { cwd: proj });
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout.trim(), 'Hello, Grace!');
+    assert.notEqual(run('python3 -m greet Grace', { cwd: proj }).code, 0, 'without the launcher the package is not importable from the root');
+    const copy = join(tempDir(), 'copy');
+    sh(proj, `cp -r src scripts '${copy}'/ 2>/dev/null || (mkdir -p '${copy}' && cp -r src scripts '${copy}'/)`);
+    writeFileSync(join(copy, 'src/greet/__main__.py'), 'print("copy")\n');
+    assert.equal(run('python3 scripts/run.py greet Grace', { cwd: copy }).stdout.trim(), 'copy');
+    assert.equal(run('python3 scripts/run.py', { cwd: proj }).code, 2, 'usage without a module');
+    assert.ok(loadConfig(proj).verify.rerun_allow.includes('.venv/bin/python scripts/run.py'));
   });
 
   test('python template silences PytestUnknownMarkWarning (gherkin tags become marks)', () => {

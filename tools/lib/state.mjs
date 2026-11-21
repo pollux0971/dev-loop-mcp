@@ -209,7 +209,7 @@ export function replay(events, dag) {
         break;
       }
       case 'e2e_request':
-        n.e2e = { requestedSeq: ev.seq, scenarios: ev.scenarios, confirm: null };
+        n.e2e = { requestedSeq: ev.seq, scenarios: ev.scenarios, ...(ev.try?.length ? { try: ev.try } : {}), confirm: null };
         touch(n);
         break;
       case 'e2e_confirm':

@@ -27,6 +27,7 @@ dlm 的核心(`tools/lib`、`payload/`)不認得任何語言、測試框架或�
   - `install`:合併樹怎麼裝一份乾淨的依賴:`{ lockfile, argv, label, out_of_sync, out_of_sync_note, hint }`。`null` = 用 symlink。node-ts = `npm ci --offline --ignore-scripts`。
   - `setup`:`dlm setup` / `doctor` 在資料夾不存在時提議的指令:`{ when: { file, keys? }, dir, cmd, retry?, label, commit_files? }`(`setup` 的題目 id 一律是 `npm_install`)。
   - `judge_env`:dlm 要判定結果的每一次執行(驗收副本、證據重跑、合併 gate、基線、Critic)加的環境變數,`{tmp}` = 每次一個新的暫存目錄,跑完刪掉。python 用 `PYTHONPYCACHEPREFIX={tmp}`:指紋不算 `.pyc`,這樣偷放在 `.venv` 裡的 `.pyc` 也不會被讀到。worker 自己的執行不加。
+- `try_hint`(4.12):整合點等你試用時,顯示在「怎麼跑」最後一行的提示(python = `.venv/bin/python scripts/run.py <套件> [參數]`)。
 - `gitignore`(4.12):`dlm init --stack <名稱>` 在第一次 commit 前補進 `.gitignore` 的行(python = `.venv/`、`__pycache__/`、`.pytest_cache/`)。
 - `accept_cmd`:節點沒寫 `accept` 時的預設驗收指令(`{gherkin}` 換成 gherkin 路徑)。`accept_probe`:`{ file, keys? }`,既有專案只在探到時才用 `accept_cmd`(有 `keys`:那個 JSON 檔的某個鍵有非空的值;沒有 `keys`:檔案存在)。探不到時,`accept_cmd` 的前綴也不算證據指令。
 - `layout`:新專案的程式該放哪(`workspaces`、`unit_tests`、`hint`),提案的 owns 不在裡面時 intake 會提醒。

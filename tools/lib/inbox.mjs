@@ -61,7 +61,7 @@ export function inboxData(root, { markSeen = false } = {}) {
     ref: d.ref, question: d.question, options: d.options, recommendation: d.recommendation ?? null, reason: d.reason ?? null,
     ...(d.untrusted_text ? { untrusted_text: d.untrusted_text, untrusted_source: d.untrusted_source ?? 'unknown' } : {}),
   }));
-  const e2e = pendingE2e(state).map((n) => ({ id: n.id, intent: getNode(dag, n.id)?.intent ?? '', scenarios: n.e2e.scenarios }));
+  const e2e = pendingE2e(state).map((n) => ({ id: n.id, intent: getNode(dag, n.id)?.intent ?? '', scenarios: n.e2e.scenarios, try: n.e2e.try ?? [] }));
   const since = events.filter((e) => e.seq > state.lastInboxSeq);
   const count = (t, f = () => true) => since.filter((e) => e.type === t && f(e)).length;
   const result = {
@@ -96,6 +96,7 @@ export function renderInbox(root, { markSeen = true } = {}) {
   for (const n of d.e2e) {
     out.push(`E2E:${n.id}  ${n.intent} —— 你親手試過了嗎? yes / no(說哪裡不對)`);
     for (const s of n.scenarios) out.push(`    ${s.file}:${s.line} ${s.name}`);
+    for (const c of n.try ?? []) out.push(`    怎麼跑:${c}`);
     if (!n.scenarios.length) out.push('    ⚠ 這個整合點的 gherkin 沒有 @e2e 場景;照理不該發生,請要求補場景');
   }
   if (!d.decisions.length && !d.e2e.length && !d.halted) out.push('(沒有)');

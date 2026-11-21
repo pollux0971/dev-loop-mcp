@@ -51,7 +51,7 @@
 | 確認所有變更都在 allowed_paths 內(不用 commit,dlm 會做)。 | `paths` |
 | 寫 `.dlm/report.json`,格式照 `<output_schema>`,只寫 JSON: | `report` |
 | ↳ `kind`:`done` / `blocked`(做不下去)/ `escalation`(工單本身有問題)。 | 只靠 prompt |
-| ↳ `claims`:每條宣稱附 `evidence`(你實際跑的指令、退出碼、輸出尾巴)。機器會用同一條指令重跑;對不上就退回。 證據指令要能原樣重跑:以工單 `evidence_prefixes` 其中一個開頭(`acceptance` 的指令一定可以), 不要加環境變數前綴、管線或 `&&`;不符合的不會被重跑,只會變成要問使用者的事。 沒跑過的寫成 `{"text": ..., "unverified": true, "why": ...}`。`done` 至少要一條附證據的宣稱。 | `report`、`evidence` |
+| ↳ `claims`:每條宣稱附 `evidence`(你實際跑的指令、退出碼、輸出尾巴)。機器會用同一條指令重跑;對不上就退回。 證據指令要能原樣重跑:以工單 `evidence_prefixes` 其中一個開頭(`acceptance` 的指令一定可以), 不要加環境變數前綴、管線或 `&&`;不符合的不會被重跑,只會變成要問使用者的事。 沒跑過的寫成 `{"text": ..., "unverified": true, "why": ...}`。`done` 至少要一條附證據的宣稱。 **一條宣稱一條指令,只寫那條指令的輸出看得到的事**(退出碼、哪些測試失敗或通過、印出的字)。輸出看不到的原因、比較或範圍 (「同樣的原因」「其他測試維持綠」「包含真的入口」)不要寫進去;要說另一件事,另寫一條附它自己的指令。 例:「`<指令>` exit 1:`a.test` 的 3 個測試失敗(找不到模組 `x`),其他 6 個通過」,不要寫「紅的原因一樣,既有測試維持綠」。 | `report`、`evidence`、`acceptance` |
 | ↳ `ticket_problems`:工單哪裡說不通(沒有就省略)。 | 只靠 prompt |
 | ↳ 發現要先做一個小功能才能完成時:`kind: blocked` 並附 `spawn`(id 用 `<能力>/vX.Y`、`relation: prereq\|followup`、 `owns`、一段 `gherkin_draft`)。已完成的部分留在副本裡,dlm 會一起收。 | 只靠 prompt |
 | 用 Write 工具寫 report 檔,不要用 echo 拼 JSON。 | 只靠 prompt |
@@ -97,7 +97,7 @@
 |---|---|
 | 只在組合層接線:讀輸入、呼叫各能力的公開介面、輸出結果。能力內部要改,回報 blocked,不要自己改。 | 只靠 prompt |
 | 錯誤在入口處理一次(參數錯、檔案不存在),給使用者看得懂的訊息與非 0 的退出碼。 | 只靠 prompt |
-| 交件前用真的入口(命令列或程式進入點)照 @e2e 場景跑一次,把指令與退出碼寫進 claims。 專案有 `.claude/skills/verify-*` 時照它的步驟跑。 | 只靠 prompt |
+| 交件前用真的入口(命令列或程式進入點)照 @e2e 場景跑一次,把指令與退出碼寫進 claims(技術棧規則有入口指令時用它)。 這些指令會原樣顯示給使用者當「怎麼跑」:寫成在專案根目錄就能照打的樣子。 專案有 `.claude/skills/verify-*` 時照它的步驟跑。 | 只靠 prompt |
 
 ### 原則:被退回重做時(加在上面那份之後)
 
@@ -122,7 +122,7 @@
 | 步驟定義放 `features/steps/<能力>.steps.ts`,先讀 `features/steps/README.md` 與 `_world.ts`。 | 只靠 prompt |
 | 步驟定義檔不要在檔頭靜態 import 還不存在的實作,改在步驟裡 `await import('../../packages/x/src/index.js')`,而且**路徑要寫字面字串**: 檔頭 import 失敗會讓整個檔載入不了(dry-run 判「紅的原因不對」);變數路徑會讓 mutation 認不出哪個測試在測哪個檔。兩者都會被退回。 | `acceptance`、`dry-run`、`mutation`、`literal-import` |
 | 測試棒寫的檔也要過 `tsc`(`exactOptionalPropertyTypes` 開著:可選欄位不要明寫 `undefined`)。找不到實作模組的錯誤不算。 | `typecheck` |
-| 證據指令例:`npm run accept -- <gherkin>`、`npm test`、`npx vitest run <檔>`、`node --test`。不要加 `NODE_OPTIONS=…` 這類前綴。 | `evidence` |
+| 證據指令例:`npm run accept -- <gherkin>`、`npm test`、`npx vitest run <檔>`、`node --test`。不要加 `NODE_OPTIONS=…` 這類前綴。宣稱照輸出寫(例「`npx vitest run <檔>` exit 1:2 failed,原因 Cannot find module」),不要寫輸出看不到的原因或範圍。 | `evidence` |
 | 不要碰 `node_modules`,不要改 `package.json`、`tsconfig.json`、`scripts/**`(gate 定義檔)。 | `paths`、`sandbox-escape` |
 
 ### python(Python 3.10+ / pytest / pytest-bdd,依賴在 .venv(requirements-dev.txt))
@@ -134,9 +134,10 @@
 | 程式放 `src/<能力>/`,單元測試 `test_*.py` 放在旁邊(`src` 已經在 import 路徑上:`from <能力>.core import x`)。 | 只靠 prompt |
 | 驗收步驟模組放 `features/steps/<能力>/test_<能力>_<版本>.py`(整合點放 `features/steps/integration/`),檔頭寫 `scenarios("features/<能力>/<版本>.feature")`,**路徑跟節點的 gherkin 一字不差**:`scripts/accept.py` 用這個字串找模組,對不上就等於沒有步驟。 | 只靠 prompt |
 | 步驟定義與 fixture 寫在自己的測試模組裡。**不能加 `conftest.py`**(任何一層都不行:conftest 的 hook 能讓失敗的測試回報通過);真的要共用的 fixture 或句子,在 report 的 `ticket_problems` 提出,由 shared 節點處理。別的模組已經定義的句子不要照抄。 | 只靠 prompt |
-| 證據指令:`.venv/bin/python -m pytest -q src/<能力>`、`.venv/bin/python scripts/accept.py <gherkin>`。不要加環境變數前綴。 | `sandbox-escape`、`evidence` |
+| 證據指令:`.venv/bin/python -m pytest -q src/<能力>`、`.venv/bin/python scripts/accept.py <gherkin>`。不要加環境變數前綴。 宣稱照輸出寫,例:「`.venv/bin/python -m pytest -q src/greet` exit 2:收集 `src/greet/test_core.py` 時 ModuleNotFoundError: No module named 'greet.core'」。`-q` 不會列出通過的測試名稱,不要宣稱「某某測試維持綠」。 | `sandbox-escape`、`evidence`、`acceptance` |
 | 測試棒的紅要是「實作還不存在」(`ModuleNotFoundError` / `ImportError` 可以);步驟沒綁定、縮排錯誤、語法錯誤會被退回。 | `dry-run` |
 | 只用標準庫和 `requirements-dev.txt` 裡有的套件。不要 `pip install`,不要把專案本身裝進 `.venv`,不要碰 `.venv/`。 | `sandbox-escape` |
+| 執行程式(整合點的 @e2e、任何「跑起來」的證據)一律用 `.venv/bin/python scripts/run.py <套件> [參數]`(用這棵樹自己的 `src`);套件要有 `__main__.py`。不要用 `cd src`、`PYTHONPATH=…`。 | `sandbox-escape`、`evidence` |
 | 不要改 `pyproject.toml`、`requirements*.txt`、`conftest.py`、`scripts/**`(gate 定義檔)。 | `paths` |
 
 ## Critic

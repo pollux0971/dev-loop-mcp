@@ -33,9 +33,9 @@
     }
   },
   "add": {
-    "rerun_allow": [".venv/bin/python -m pytest", ".venv/bin/python scripts/accept.py", "python3 -m pytest", "python3 -m unittest"],
+    "rerun_allow": [".venv/bin/python -m pytest", ".venv/bin/python scripts/accept.py", ".venv/bin/python scripts/run.py", "python3 -m pytest", "python3 -m unittest"],
     "forbidden": ["pyproject.toml", "requirements*.txt", "setup.cfg", "setup.py", "pytest.ini", "tox.ini", "conftest.py", "**/conftest.py", "scripts/**"],
-    "critic_bash": [".venv/bin/python -m pytest*", ".venv/bin/python scripts/accept.py*", "python3 -m pytest*", "python3 -m unittest*"],
+    "critic_bash": [".venv/bin/python -m pytest*", ".venv/bin/python scripts/accept.py*", ".venv/bin/python scripts/run.py*", "python3 -m pytest*", "python3 -m unittest*"],
     "tests": ["**/test_*.py", "**/*_test.py"],
     "bad_red": [
       { "pattern": "StepDefinitionNotFoundError", "why": "有步驟沒綁定(pytest-bdd 找不到步驟定義):紅的原因不是實作不存在" },
@@ -43,6 +43,7 @@
     ]
   },
   "gitignore": [".venv/", "__pycache__/", ".pytest_cache/"],
+  "try_hint": "在專案根目錄:.venv/bin/python scripts/run.py <套件> [參數](例 .venv/bin/python scripts/run.py greet Grace)",
   "layout": {
     "workspaces": ["src"],
     "unit_tests": "test_*.py",

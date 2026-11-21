@@ -135,7 +135,7 @@ export function dashboardData(root, extra = {}) {
     budget: snapshot.budget,
     warnings: snapshot.warnings,
     decisions: openDecisions(state).map((d) => ({ ref: d.ref, question: d.question, options: d.options, recommendation: d.recommendation ?? null, reason: d.reason ?? null })),
-    e2e: pendingE2e(state).map((n) => ({ id: n.id, scenarios: n.e2e.scenarios ?? [] })),
+    e2e: pendingE2e(state).map((n) => ({ id: n.id, scenarios: n.e2e.scenarios ?? [], try: n.e2e.try ?? [] })),
     nodes,
     cost: { total_usd: round(costTotal), by_role: mapRound(costByRole), by_node: mapRound(costByNode) },
     // v4.6: subscription account usage (reads only the ledger and this machine's account list; does not call the CLI)

@@ -334,7 +334,8 @@ export const EVENT_FIELDS = {
     required: ['ref', 'choice', 'verbatim'],
     props: { ref: str, choice: str, verbatim: str, delegated: { type: 'boolean' }, utterance_sha: str, auth: { enum: ['utterance', 'tty', 'trust', 'off'] }, },
   },
-  e2e_request: { required: ['node_id', 'scenarios'], props: { node_id: str, scenarios: { type: 'array' } } },
+  // try (v4.12, optional): commands that run the program, shown to the user with the hand-try request
+  e2e_request: { required: ['node_id', 'scenarios'], props: { node_id: str, scenarios: { type: 'array' }, try: { type: 'array', items: { type: 'string' } } } },
   e2e_confirm: { required: ['node_id', 'ok', 'verbatim'], props: { node_id: str, ok: { type: 'boolean' }, verbatim: str, utterance_sha: str, auth: { enum: ['utterance', 'tty', 'trust', 'off'] }, } },
   halt: { required: ['reason'], props: { reason: str } },
   resume: { required: ['verbatim'], props: { verbatim: str, utterance_sha: str, auth: { enum: ['utterance', 'tty', 'trust', 'off'] }, } },

@@ -694,9 +694,32 @@ function finalize(ctx, d, node) {
   deleteBranch(ctx.root, d.branch);
   if (node.kind === 'integration') {
     const scenarios = readScenarios(ctx.root, node.gherkin).filter((s) => s.tags.includes('@e2e')).map((s) => ({ file: s.file, line: s.line, name: s.name }));
-    ctx.append('orchestrator', 'e2e_request', { node_id: node.id, scenarios });
+    const tryCmds = tryCommands(ctx, d);
+    ctx.append('orchestrator', 'e2e_request', { node_id: node.id, scenarios, ...(tryCmds.length ? { try: tryCmds } : {}) });
   }
   ctx.log(`✓ 合併 ${node.id}`);
+}
+
+/**
+ * v4.12: how the user runs the program for the hand try. The integrate leg's claims whose evidence dlm re-ran with exit 0 (this leg was
+ * accepted, so every evidence re-run matched), minus test and acceptance runners (the gate commands, the stack's accept command):
+ * what is left runs the real entry point. Then the stack's try_hint. Seen in review: a python project's E2E request had no command,
+ * and `python3 -m <pkg>` from the root failed with "No module named".
+ */
+function tryCommands(ctx, d) {
+  const cfg = ctx.config;
+  let stack = null;
+  try { stack = loadStack(cfg.project?.stack); } catch { /* none */ }
+  const runners = [
+    ...Object.values(cfg.gates.commands ?? {}).map((c) => c.split(' ').slice(0, c.split(' ')[1] === '-m' ? 3 : 2).join(' ')),
+    ...(stack?.accept_cmd ? [stack.accept_cmd.split('{gherkin}')[0].trim()] : []),
+    'npm test', 'npm run test', 'npm run accept', 'node tools/dlm.mjs', 'git ',
+  ].filter(Boolean);
+  let claims = [];
+  try { claims = readJson(join(ctx.root, d.report_path), {}).claims ?? []; } catch { /* no report */ }
+  const cmds = claims.filter((c) => !c.unverified && c.evidence?.cmd && c.evidence.exit === 0).map((c) => String(c.evidence.cmd).trim())
+    .filter((c) => !runners.some((r) => c === r || c.startsWith(`${r} `)));
+  return [...new Set([...cmds.slice(0, 5), ...(stack?.try_hint ? [stack.try_hint] : [])])];
 }
 
 export async function processDone(ctx) {

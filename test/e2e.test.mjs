@@ -44,6 +44,9 @@ test('完整流程:一個能力 + 一個整合點,從提案到使用者確認', 
   const inbox = renderInbox(proj);
   assert.match(inbox, /E2E:I1/);
   assert.match(inbox, /user runs the app/);
+  // v4.12: the integrate leg's verified run command is shown as how to run it
+  assert.match(inbox, /怎麼跑:node packages\/app\/main\.mjs/);
+  assert.deepEqual(s.nodes.get('I1').e2e.try, ['node packages/app/main.mjs']);
   confirmE2e(proj, 'I1', true, '試過了,可以');
   s = await tickUntil(proj, (st) => st.nodes.get('I1').e2e.confirm?.ok === true);
 
