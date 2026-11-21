@@ -29,8 +29,17 @@ export const TEST_PATTERNS = {
   other: [],
 };
 
+/** v4.12: folders that may hold a Python virtualenv, in the order they are tried. One counts only if it has bin/python. */
+export const VENV_DIRS = ['.venv', 'venv', 'env'];
+
+/** The project's virtualenv folder name (top level), or null. */
+export function findVenv(root) {
+  return VENV_DIRS.find((d) => existsSync(join(root, d, 'bin', 'python'))) ?? null;
+}
+
 function projectFiles(root) {
-  return listFiles(root, { skip: SKIP_DIRS }).filter((f) => !matchAny(f, DLM_PATHS));
+  const venv = findVenv(root);
+  return listFiles(root, { skip: venv ? [...SKIP_DIRS, venv] : SKIP_DIRS }).filter((f) => !matchAny(f, DLM_PATHS));
 }
 
 function packageJson(root) {
@@ -56,6 +65,7 @@ export function detectProject(root) {
   const read = (f) => { try { return readFileSync(join(root, f), 'utf8'); } catch { return ''; } };
   let language = 'other';
   let test = { cmd: null, how: null };
+  let venv = null;
   const py = count(['.py']);
   const js = count(['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx']);
   if (has('go.mod')) {
@@ -66,11 +76,15 @@ export function detectProject(root) {
     test = { cmd: 'cargo test', how: 'Cargo.toml' };
   } else if (py > js || has('pyproject.toml') || has('setup.py') || has('requirements.txt')) {
     language = 'python';
+    // v4.12: an existing virtualenv runs the tests (the system python3 usually has neither pytest nor the project's packages)
+    venv = findVenv(root);
+    const py3 = venv ? `${venv}/bin/python` : 'python3';
     const pytest = has('pytest.ini') || has('conftest.py') || /\[tool\.pytest/.test(read('pyproject.toml')) || /\[tool:pytest\]/.test(read('setup.cfg'))
       || /^pytest\b/m.test(read('requirements.txt')) || /^pytest\b/m.test(read('requirements-dev.txt'));
+    const inVenv = venv ? `(用 ${venv}/ 的 Python)` : '';
     test = pytest
-      ? { cmd: 'python3 -m pytest -q', how: 'pytest 設定' }
-      : { cmd: `python3 -m unittest discover -s ${has('tests') ? 'tests' : '.'} -t .`, how: '沒有 pytest 設定,用標準庫 unittest' };
+      ? { cmd: `${py3} -m pytest -q`, how: `pytest 設定${inVenv}` }
+      : { cmd: `${py3} -m unittest discover -s ${has('tests') ? 'tests' : '.'} -t .`, how: `沒有 pytest 設定,用標準庫 unittest${inVenv}` };
   } else if (pkg || js) {
     language = 'node';
     test = realNpmTest(pkg) ? { cmd: null, how: 'package.json 的 test script' } : { cmd: null, how: null };
@@ -84,6 +98,7 @@ export function detectProject(root) {
     test_files: tests.length,
     suggested_mode: code.length ? 'brownfield' : 'greenfield',
     scripts: Object.keys(pkg?.scripts ?? {}),
+    venv,
   };
 }
 
@@ -208,8 +223,10 @@ export function characterizeCmd(tests, config) {
   if (lang === 'go') return `go test ${[...new Set(tests.map((t) => `./${dirname(t)}`))].join(' ')}`;
   if (lang === 'rust') return `cargo test ${tests.map((t) => `--test ${basename(t, '.rs')}`).join(' ')}`;
   if (lang === 'python') {
-    if (test?.includes('pytest')) return `python3 -m pytest -q ${tests.join(' ')}`;
-    return `python3 -m unittest ${tests.join(' ')}`;
+    // v4.12: the same interpreter as the project's test command (e.g. .venv/bin/python), not always the system python3
+    const py = test?.match(/^(\S+) -m (?:pytest|unittest)\b/)?.[1] ?? 'python3';
+    if (test?.includes('pytest')) return `${py} -m pytest -q ${tests.join(' ')}`;
+    return `${py} -m unittest ${tests.join(' ')}`;
   }
   if (test) return `${test} ${tests.join(' ')}`;
   return `npm test -- ${tests.join(' ')}`;

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { assertNotLegacy } from './legacy.mjs';
-import { loadStack, stackName } from './stack.mjs';
+import { loadStack, probe, stackName } from './stack.mjs';
 import { assertValid } from './schema.mjs';
 import { configSchema } from './schemas.mjs';
 import { DlmError, readJson } from './util.mjs';
@@ -110,7 +110,8 @@ export const DEFAULTS = {
 
 function merge(base, over) {
   if (over === undefined) return base;
-  if (Array.isArray(base) || Array.isArray(over) || typeof base !== 'object' || base === null) return over;
+  // null switches a setting off even where the base has an object (v4.12: deps.setup null over a stack's offer)
+  if (Array.isArray(base) || Array.isArray(over) || typeof base !== 'object' || base === null || over === null || typeof over !== 'object') return over;
   const out = { ...base };
   for (const [k, v] of Object.entries(over)) out[k] = k in base ? merge(base[k], v) : v;
   return out;
@@ -175,9 +176,20 @@ export function loadConfig(root) {
   const stack = loadStack(stackName(root, raw));
   const base = merge(DEFAULTS, stack.defaults ?? {});
   const add = stack.add ?? {};
-  base.verify = { ...base.verify, rerun_allow: [...base.verify.rerun_allow, ...(add.rerun_allow ?? [])] };
+  // v4.12: when the project lacks what the stack's accept command runs (accept_probe fails: an existing project without the template),
+  // that command is not a default (intake) and not evidence either
+  const acceptPrefix = stack.accept_cmd?.split('{gherkin}')[0].trim();
+  const noAccept = acceptPrefix && stack.accept_probe && !probe(root, stack.accept_probe);
+  const stackRerun = (add.rerun_allow ?? []).filter((r) => !(noAccept && r.trim() === acceptPrefix));
+  base.verify = { ...base.verify, rerun_allow: [...base.verify.rerun_allow, ...stackRerun] };
   base.paths = { ...base.paths, forbidden: [...base.paths.forbidden, ...(add.forbidden ?? [])], tests: [...base.paths.tests, ...(add.tests ?? [])] };
   const config = merge(base, raw);
+  // v4.12: a command the stack maps for a chain name the project dropped is not a gate (an existing Python project's chain has no accept,
+  // and the stack's `.venv/bin/python scripts/accept.py` would otherwise land in the evidence allowlist and the Critic's tools)
+  const own = raw.gates?.commands ?? {};
+  for (const name of Object.keys(stack.defaults?.gates?.commands ?? {})) {
+    if (!(name in own) && !(config.gates.chain ?? []).includes(name)) delete config.gates.commands[name];
+  }
   config.project = { ...config.project, stack: stack.name };
   config.stack_add = add;
   // v4.5: the command for a gate (e.g. python3 -m pytest -q) is also a command the worker uses as evidence, so it is added to the rerun allowlist automatically.

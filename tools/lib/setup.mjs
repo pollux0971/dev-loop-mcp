@@ -199,6 +199,14 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     };
     const tests = [...new Set([...(raw.paths?.tests ?? DEFAULTS.paths.tests), ...(TEST_PATTERNS[proj.language] ?? [])])];
     next.paths = { ...(raw.paths ?? {}), tests };
+    // v4.12: an existing Python project uses the python stack (it is never detected, see stacks/python), with its own virtualenv as the
+    // dependency folder (linked into every copy, fingerprinted) or none. The stack's .venv offer is for its template, so it is switched off;
+    // the gate commands above still win over the stack's (they run the project's own tests).
+    if (proj.language === 'python' && (!raw.project?.stack || raw.project.stack === 'python')) {
+      next.project = { ...next.project, stack: 'python' };
+      next.deps = { ...(raw.deps ?? {}), dirs: proj.venv ? [proj.venv] : [], setup: null };
+      log(proj.venv ? `  Python 依賴:${proj.venv}/(每個副本裡都是 symlink,施工前後比對指紋)` : '  沒找到 virtualenv(.venv / venv / env):測試用系統的 python3 跑');
+    }
   }
   const before = existsSync(join(root, 'dlm.config.json')) ? readFileSync(join(root, 'dlm.config.json'), 'utf8') : null;
   writeJson(join(root, 'dlm.config.json'), next);

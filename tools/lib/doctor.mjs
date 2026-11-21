@@ -3,9 +3,9 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { keyPath } from './auth.mjs';
-import { loadConfig, stripRemovedSettings } from './config.mjs';
+import { depDirs, loadConfig, stripRemovedSettings } from './config.mjs';
 import { loadDag } from './dag.mjs';
-import { gateCommand, readBaseline } from './brownfield.mjs';
+import { findVenv, gateCommand, readBaseline } from './brownfield.mjs';
 import { CLIS, ROLES, accountsFile, loadAccounts, loginStatus } from './accounts.mjs';
 import { hasTestGate } from './gates.mjs';
 import { isLegacyProject, legacyEnvVars } from './legacy.mjs';
@@ -154,6 +154,12 @@ function checkGates(root, config) {
   if (depSetup && probe(root, depSetup.when) && !existsSync(join(root, depSetup.dir))) {
     const what = depSetup.when.keys ? `${depSetup.when.file} 有依賴` : `有 ${depSetup.when.file}`;
     out.push(warn('依賴', `${what}但沒有 ${depSetup.dir}:gate 會失敗`, depSetup.cmd));
+  }
+  // v4.12: an existing Python project whose virtualenv is not a dependency folder: the copies do not have it, so tests that need it fail
+  // (and a worker could change it unseen). Projects set up before 4.12 land here
+  const venv = config.project?.mode === 'brownfield' && config.project?.language === 'python' ? findVenv(root) : null;
+  if (venv && !depDirs(config).includes(venv)) {
+    out.push(warn('依賴', `找到 ${venv}/,但它不在 deps.dirs(${JSON.stringify(depDirs(config))}):worker 的副本和合併樹裡沒有這個 virtualenv`, '重跑 dlm setup(會改用 python 技術棧,把它設成依賴資料夾)'));
   }
   // v4: cucumber.js is your file (dlm upgrade does not overwrite it). The v3 version made the acceptance of one node run together with other nodes, and the full gate got stuck on nodes not finished yet
   const cuc = join(root, 'cucumber.js');

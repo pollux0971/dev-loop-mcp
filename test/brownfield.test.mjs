@@ -1,12 +1,13 @@
 // v4.5 existing project (brownfield): mode switch, the gate runs the project's own tests, test baseline, characterize leg, onboard.
 // Uses a Python project with no package.json (stdlib unittest, nothing to install).
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
-import { characterizeTestPath, detectProject, failingTests, knownRed, onboard } from '../tools/lib/brownfield.mjs';
+import { characterizeCmd, characterizeTestPath, detectProject, failingTests, knownRed, onboard } from '../tools/lib/brownfield.mjs';
 import { loadConfig } from '../tools/lib/config.mjs';
 import { dashboardData } from '../tools/lib/dashboard.mjs';
+import { doctor } from '../tools/lib/doctor.mjs';
 import { decide } from '../tools/lib/inbox.mjs';
 import { init } from '../tools/lib/install.mjs';
 import { proposeFeature } from '../tools/lib/intake.mjs';
@@ -20,6 +21,7 @@ after(cleanup);
 
 const FAKE_BF = join(REPO, 'test', 'fixtures', 'fake-bf-worker.mjs');
 const HAS_PY = run('python3 -c "import unittest"').code === 0;
+const PY3 = HAS_PY ? run('command -v python3').stdout.trim() : null;
 const quiet = () => {};
 
 const FILES = {
@@ -41,10 +43,18 @@ const FILES = {
   'README.md': '# budget\n',
 };
 
-/** An existing Python project (with git history): install dlm, and pick brownfield in setup. */
-async function existingPython(mode = 'good') {
+/** A stand-in virtualenv: <dir>/bin/python is the system python3 (enough for unittest; brownfield detection only looks for bin/python). */
+function fakeVenv(proj, dir) {
+  mkdirSync(join(proj, dir, 'bin'), { recursive: true });
+  symlinkSync(PY3, join(proj, dir, 'bin', 'python'));
+  writeFileSync(join(proj, dir, 'pyvenv.cfg'), 'home = /usr/bin\n');
+}
+
+/** An existing Python project (with git history): install dlm, and pick brownfield in setup. venv = make a virtualenv folder with that name. */
+async function existingPython(mode = 'good', { venv = null } = {}) {
   const proj = join(tempDir('dlm-bf-'), 'budget');
   for (const [f, t] of Object.entries(FILES)) { mkdirSync(dirname(join(proj, f)), { recursive: true }); writeFileSync(join(proj, f), t); }
+  if (venv) { fakeVenv(proj, venv); writeFileSync(join(proj, '.gitignore'), `${venv}/\n`); }
   sh(proj, 'git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm "existing project"');
   const r = init(proj, { name: 'budget', existing: true });
   // v4.7.3: for a project that already has git, init commits dlm's files itself (before, this had to be committed by hand, and a real user would not know to do that)
@@ -225,4 +235,96 @@ test('onboard 不覆蓋已經有的 AS-IS 與 ROADMAP', { skip: !HAS_PY && '沒�
   const r = onboard(proj, loadConfig(proj));
   assert.deepEqual(r.written, ['docs/dlm-baseline.json', 'docs/ROADMAP.md']);
   assert.equal(readFileSync(join(proj, 'docs/AS-IS.md'), 'utf8'), '# mine\n');
+});
+
+// ------------------------------------------------------------------ v4.12: brownfield Python with a virtualenv
+
+test('detect: a virtualenv (.venv / venv / env with bin/python) runs the tests; its files are not counted as code', { skip: !HAS_PY && '沒有 python3' }, () => {
+  const proj = tempDir();
+  for (const [f, t] of Object.entries(FILES)) { mkdirSync(dirname(join(proj, f)), { recursive: true }); writeFileSync(join(proj, f), t); }
+  const plain = detectProject(proj);
+  assert.equal(plain.venv, null);
+  assert.equal(plain.test.cmd, 'python3 -m unittest discover -s tests -t .');
+  fakeVenv(proj, 'env');
+  mkdirSync(join(proj, 'env/lib/site-packages/pkg'), { recursive: true });
+  writeFileSync(join(proj, 'env/lib/site-packages/pkg/mod.py'), 'x = 1\n');
+  const d = detectProject(proj);
+  assert.equal(d.venv, 'env');
+  assert.equal(d.test.cmd, 'env/bin/python -m unittest discover -s tests -t .');
+  assert.match(d.test.how, /env\/ 的 Python/);
+  assert.equal(d.code_files, plain.code_files, 'site-packages is not the project\'s code');
+  writeFileSync(join(proj, 'pyproject.toml'), '[tool.pytest.ini_options]\n');
+  fakeVenv(proj, '.venv');
+  assert.equal(detectProject(proj).test.cmd, '.venv/bin/python -m pytest -q', '.venv is tried first');
+  mkdirSync(join(proj, 'venv'));
+  assert.equal(detectProject(proj).venv, '.venv', 'a folder without bin/python is not a virtualenv');
+});
+
+test('characterize uses the interpreter of the project\'s test command', () => {
+  const cfg = (test) => ({ project: { language: 'python' }, gates: { commands: { test } } });
+  assert.equal(characterizeCmd(['tests/test_a.py'], cfg('venv/bin/python -m unittest discover -s tests -t .')), 'venv/bin/python -m unittest tests/test_a.py');
+  assert.equal(characterizeCmd(['tests/test_a.py'], cfg('.venv/bin/python -m pytest -q')), '.venv/bin/python -m pytest -q tests/test_a.py');
+  assert.equal(characterizeCmd(['tests/test_a.py'], cfg('python3 -m pytest -q')), 'python3 -m pytest -q tests/test_a.py');
+  assert.equal(characterizeCmd(['tests/test_a.py'], cfg('make test')), 'python3 -m unittest tests/test_a.py');
+});
+
+test('setup, brownfield Python with venv/: python stack, deps.dirs = [venv], no stack accept left over', { skip: !HAS_PY && '沒有 python3' }, async () => {
+  const { proj } = await existingPython('good', { venv: 'venv' });
+  const raw = readJson(join(proj, 'dlm.config.json'));
+  assert.equal(raw.project.stack, 'python');
+  assert.deepEqual(raw.deps, { dirs: ['venv'], setup: null });
+  const cfg = loadConfig(proj);
+  assert.equal(cfg.project.stack, 'python');
+  assert.deepEqual(cfg.deps.dirs, ['venv']);
+  assert.equal(cfg.deps.setup, null);
+  assert.deepEqual(cfg.deps.judge_env, { PYTHONPYCACHEPREFIX: '{tmp}' });
+  // brownfield gates win over the stack's: the project's own test command, and no accept (there is no scripts/accept.py)
+  assert.deepEqual(cfg.gates.chain, ['check:dlm', 'test']);
+  assert.deepEqual(cfg.gates.commands, { test: 'venv/bin/python -m unittest discover -s tests -t .' });
+  assert.ok(cfg.verify.rerun_allow.includes('venv/bin/python -m unittest'));
+  assert.ok(!cfg.verify.rerun_allow.some((r) => r.includes('scripts/accept.py')), 'the stack\'s accept is not evidence here');
+  const { accept, ...noAccept } = SPEC;
+  assert.throws(() => proposeFeature(proj, noAccept, GHERKIN), /沒有預設的驗收指令/, 'no scripts/accept.py: no stack accept default');
+  const rep = await doctor(proj);
+  assert.ok(!rep.results.some((r) => r.name === '依賴'), JSON.stringify(rep.results.filter((r) => r.name === '依賴')));
+  assert.match(rep.results.find((r) => r.name === '合併 gate').detail, /test\(venv\/bin\/python -m unittest/);
+});
+
+test('setup, brownfield Python without a virtualenv: deps.dirs = [] (nothing linked)', { skip: !HAS_PY && '沒有 python3' }, async () => {
+  const { proj } = await existingPython();
+  const cfg = loadConfig(proj);
+  assert.equal(cfg.project.stack, 'python');
+  assert.deepEqual(cfg.deps.dirs, []);
+  assert.equal(cfg.gates.commands.test, 'python3 -m unittest discover -s tests -t .');
+});
+
+test('doctor: an existing Python project whose venv is not in deps.dirs (set up before 4.12) → warn, rerun setup', { skip: !HAS_PY && '沒有 python3' }, async () => {
+  const { proj } = await existingPython();
+  fakeVenv(proj, '.venv');
+  const raw = readJson(join(proj, 'dlm.config.json'));
+  delete raw.project.stack;
+  delete raw.deps;
+  writeJson(join(proj, 'dlm.config.json'), raw);
+  assert.equal(loadConfig(proj).project.stack, 'none', 'pre-4.12 config: python is never detected');
+  const w = (await doctor(proj)).results.find((r) => r.name === '依賴' && /\.venv\//.test(r.detail));
+  assert.equal(w?.status, 'warn');
+  assert.match(w.fix, /dlm setup/);
+});
+
+test('brownfield with venv/ from proposal to merge: every copy runs venv/bin/python through the link', { skip: !HAS_PY && '沒有 python3' }, async () => {
+  const { proj } = await existingPython('good', { venv: 'venv' });
+  assert.equal(run('node tools/dlm.mjs onboard', { cwd: proj }).code, 0);
+  const b = readJson(join(proj, 'docs/dlm-baseline.json'));
+  assert.equal(b.gates[0].cmd, 'venv/bin/python -m unittest discover -s tests -t .');
+  assert.deepEqual(b.gates[0].failing, ['tests.test_core.CoreTest.test_rounding'], 'the baseline tree had venv/ linked');
+  const p = proposeFeature(proj, { ...SPEC, accept: 'venv/bin/python -m unittest tests/test_export.py' }, GHERKIN);
+  assert.equal(readJson(join(proj, p.path)).nodes[0].characterize.cmd, 'venv/bin/python -m unittest tests/test_core_characterize.py');
+  decide(proj, `node:${p.id}`, 'yes', '好');
+  const s = await tickUntil(proj, (st) => st.nodes.get('budget/v1')?.status === 'done');
+  assert.equal(s.nodes.get('budget/v1').status, 'done');
+  const escape = readEvents(proj).some((e) => e.type === 'reject' && e.findings.some((f) => f.check === 'sandbox-escape'));
+  assert.equal(escape, false);
+  const gates = readEvents(proj).filter((e) => e.type === 'gates').at(-1);
+  assert.equal(gates.ok, true);
+  assert.match(sh(proj, 'cat budget/core.py'), /def to_csv/);
 });
