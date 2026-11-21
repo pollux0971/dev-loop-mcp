@@ -12,7 +12,8 @@ import { setup } from '../tools/lib/setup.mjs';
 import { loadStack, stackName } from '../tools/lib/stack.mjs';
 import { readJson, run, writeJson } from '../tools/lib/util.mjs';
 import { badRedReason, checkAcceptance, hostExecutor } from '../tools/lib/verify/script-checks.mjs';
-import { cleanup, sh, tempDir } from './helpers.mjs';
+import { readEvents } from '../tools/lib/ledger.mjs';
+import { FAKE_VERIFIER, REPO, addNode, cleanup, sh, tempDir, tickUntil } from './helpers.mjs';
 
 after(cleanup);
 
@@ -210,5 +211,40 @@ describe('scripts/accept.py', { skip: !hasPython && 'python3 >= 3.10 not found' 
     writeJson(join(proj, '.dlm/pending-features.json'), ['features/b/v1.feature']);
     assert.equal(env('').stdout.trim(), 'RAN features/steps/a/test_a_v1.py');
     assert.equal(env('features/b/v1.feature').stdout.trim(), 'RAN features/steps/b/test_b_v1.py', 'an explicit feature still runs');
+  });
+});
+
+// Optional end to end: needs a Python whose virtualenv has pytest + pytest-bdd (nothing is downloaded in the test suite).
+// DLM_TEST_PYTHON=/path/to/venv/bin/python npm test
+const TEST_PY = process.env.DLM_TEST_PYTHON;
+const pyReady = !!TEST_PY && run(`"${TEST_PY}" -c "import pytest, pytest_bdd"`).code === 0;
+
+describe('python greenfield end to end', { skip: !pyReady && 'set DLM_TEST_PYTHON to a venv python with pytest + pytest-bdd' }, () => {
+  test('test leg red (missing module) → dev leg green → merge gates check:dlm, pytest src, accept', async () => {
+    const proj = pyProject();
+    // .venv/bin/python forwards to the given interpreter (sys.executable stays the real venv, so accept.py runs its pytest)
+    mkdirSync(join(proj, '.venv', 'bin'), { recursive: true });
+    writeFileSync(join(proj, '.venv', 'bin', 'python'), `#!/bin/sh\nexec "${TEST_PY}" "$@"\n`, { mode: 0o755 });
+    const cfg = readJson(join(proj, 'dlm.config.json'));
+    cfg.agents.worker.cmd = `node ${join(REPO, 'test', 'fixtures', 'fake-py-worker.mjs')}`;
+    cfg.agents.verifier = { ...cfg.agents.verifier, backend: 'cmd', cmd: `FV=ok node ${FAKE_VERIFIER}` };
+    cfg.auth = { window_minutes: 30 };
+    writeJson(join(proj, 'dlm.config.json'), cfg);
+    sh(proj, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm config');
+    assert.equal(sh(proj, 'git status --porcelain'), '', '.venv/ is ignored');
+    addNode(proj, { id: 'calc/v1', title: '加法', intent: '提供 run(a, b) 回傳兩數之和', owns: ['src/calc/**'] },
+      'Feature: calc\n  Scenario: adds two numbers\n    When I add 2 and 3\n    Then the result is 5\n');
+    const s = await tickUntil(proj, (st) => ['done', 'blocked'].includes(st.nodes.get('calc/v1')?.status), { max: 30 });
+    const evs = readEvents(proj);
+    assert.equal(s.nodes.get('calc/v1').status, 'done', JSON.stringify(evs.filter((e) => ['reject', 'gates'].includes(e.type)).slice(-3)));
+    const ds = [...s.dispatches.values()].filter((d) => d.node_id === 'calc/v1');
+    assert.deepEqual(ds.map((d) => d.leg), ['test', 'dev']);
+    const testEnv = readJson(join(proj, 'ledger/dispatch', ds[0].dispatch_id, 'envelope.json'));
+    assert.deepEqual(testEnv.acceptance, [{ cmd: '.venv/bin/python scripts/accept.py features/calc/v1.feature', expect_exit: -1 }]);
+    assert.ok(testEnv.allowed_paths.includes('src/calc/**/test_*.py'));
+    const gates = evs.filter((e) => e.type === 'gates').at(-1);
+    assert.equal(gates.ok, true);
+    assert.deepEqual(gates.results.map((g) => [g.name, g.exit]), [['check:dlm', 0], ['test', 0], ['accept', 0]]);
+    assert.match(sh(proj, 'git show main:src/calc/core.py'), /return a \+ b/);
   });
 });
