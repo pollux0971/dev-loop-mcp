@@ -294,6 +294,8 @@ export const EVENT_FIELDS = {
             model: { type: 'string' },
             // v4.12 (optional, additive): when the Verifier's two forms disagree, each form's verdict and reason
             forms: { type: 'array', items: { type: 'object', properties: { form: str, verdict: str, reason: { type: 'string' } } } },
+            // v4.12 (optional, additive): for an evidence check, the command dlm itself re-ran (as argv) and the exit code it got
+            rerun: { type: 'object', properties: { cmd: str, exit: { type: 'integer' } } },
           },
         },
       },

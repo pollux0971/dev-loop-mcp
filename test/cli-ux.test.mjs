@@ -173,3 +173,31 @@ describe('Verifier forms disagree: both reasons are kept', () => {
     assert.match(shown, /ModuleNotFoundError 表示實作還不存在/);
   });
 });
+
+describe('hand-try "how to run" lines come only from dlm\'s own re-runs', () => {
+  test('an unsafe claim and a non-allowlisted claim are never shown; the allowlisted re-run one is', async () => {
+    const { I1, I1_GHERKIN, addNode, tickUntil } = await import('./helpers.mjs');
+    const { renderInbox } = await import('../tools/lib/inbox.mjs');
+    const proj = makeProject({ mode: 'try-mixed' });
+    addNode(proj, CALC, CALC_GHERKIN);
+    await tickUntil(proj, (st) => st.nodes.get('calc/v1')?.status === 'done');
+    addNode(proj, I1, I1_GHERKIN);
+    // the unsafe claim could not be re-run, so the leg is not sure and asks the user; the user accepts it anyway
+    const { decide } = await import('../tools/lib/inbox.mjs');
+    const { openDecisions } = await import('../tools/lib/state.mjs');
+    let s = await tickUntil(proj, (st) => st.nodes.get('I1')?.status === 'done' || openDecisions(st).some((r) => r.ref.startsWith('accept:')));
+    const ask = openDecisions(s).find((r) => r.ref.startsWith('accept:'));
+    if (ask) {
+      decide(proj, ask.ref, 'yes', '可以,合併');
+      s = await tickUntil(proj, (st) => st.nodes.get('I1')?.status === 'done');
+    }
+    assert.deepEqual(s.nodes.get('I1').e2e.try, ['node packages/app/main.mjs']);
+    const inbox = renderInbox(proj, { markSeen: false });
+    assert.match(inbox, /怎麼跑:node packages\/app\/main\.mjs/);
+    assert.doesNotMatch(inbox, /curl|ls packages/);
+    const integ = [...s.dispatches.values()].find((d) => d.node_id === 'I1' && d.leg === 'integrate');
+    const ev = integ.verify.results.filter((r) => r.check === 'evidence');
+    assert.ok(ev.some((r) => r.outcome === 'PASS' && r.rerun?.cmd === 'node packages/app/main.mjs' && r.rerun.exit === 0));
+    assert.ok(!ev.some((r) => r.rerun && /curl|ls/.test(r.rerun.cmd)), 'the others were never run');
+  });
+});

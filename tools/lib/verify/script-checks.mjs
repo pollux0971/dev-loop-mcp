@@ -214,9 +214,11 @@ export function checkEvidence(ex, report, config) {
     }
     const res = ex.argv(ok.argv, config.verify.rerun_timeout_seconds * 1000);
     reruns.push({ claim: c.text, cmd, exit: res.code, output: tail(res.stdout + res.stderr, 3000) });
+    // v4.12: what dlm itself ran and got (not the worker's claimed exit); the hand-try "how to run" lines are taken only from these
+    const rerun = { cmd: ok.argv.join(' '), exit: res.code };
     results.push(res.code === exit
-      ? r('evidence', 'PASS', `重跑 ${cmd} 得到相同退出碼 ${exit}`)
-      : r('evidence', 'FAIL', `宣稱「${c.text.slice(0, 200)}」:${cmd} 聲稱 exit ${exit},重跑得到 ${res.code}`));
+      ? { ...r('evidence', 'PASS', `重跑 ${cmd} 得到相同退出碼 ${exit}`), rerun }
+      : { ...r('evidence', 'FAIL', `宣稱「${c.text.slice(0, 200)}」:${cmd} 聲稱 exit ${exit},重跑得到 ${res.code}`), rerun });
   }
   return { results, reruns };
 }

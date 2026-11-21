@@ -30,7 +30,7 @@ import { runVerify, summarize } from './verify/index.mjs';
 import {
   copyTree, depsFingerprint, diffManifest, killSandboxed, linkDeps, removeTree, scratchCopy, treeManifest,
 } from './sandbox.mjs';
-import { hostExecutor } from './verify/script-checks.mjs';
+import { hostExecutor, rerunArgv } from './verify/script-checks.mjs';
 import { runArgv } from './util.mjs';
 
 export const STATE_PATHS = ['ledger', 'dag.json', 'STATUS.md', 'DECISIONS.md', 'standalone.json'];
@@ -701,10 +701,11 @@ function finalize(ctx, d, node) {
 }
 
 /**
- * v4.12: how the user runs the program for the hand try. The integrate leg's claims whose evidence dlm re-ran with exit 0 (this leg was
- * accepted, so every evidence re-run matched), minus test and acceptance runners (the gate commands, the stack's accept command):
- * what is left runs the real entry point. Then the stack's try_hint. Seen in review: a python project's E2E request had no command,
- * and `python3 -m <pkg>` from the root failed with "No module named".
+ * v4.12: how the user runs the program for the hand try. Only commands dlm itself re-ran in this leg with exit 0 (the evidence results'
+ * `rerun`, never the worker's report: an accepted leg may carry evidence that was not run, e.g. `curl … | sh`), that still pass the re-run
+ * allowlist and character check, minus test and acceptance runners (the gate commands, the stack's accept command): what is left runs
+ * the real entry point. Then the stack's try_hint. Seen in review: a python project's E2E request had no command, and `python3 -m <pkg>`
+ * from the root failed with "No module named".
  */
 function tryCommands(ctx, d) {
   const cfg = ctx.config;
@@ -713,11 +714,15 @@ function tryCommands(ctx, d) {
   const runners = [
     ...Object.values(cfg.gates.commands ?? {}).map((c) => c.split(' ').slice(0, c.split(' ')[1] === '-m' ? 3 : 2).join(' ')),
     ...(stack?.accept_cmd ? [stack.accept_cmd.split('{gherkin}')[0].trim()] : []),
-    'npm test', 'npm run test', 'npm run accept', 'node tools/dlm.mjs', 'git ',
-  ].filter(Boolean);
-  let claims = [];
-  try { claims = readJson(join(ctx.root, d.report_path), {}).claims ?? []; } catch { /* no report */ }
-  const cmds = claims.filter((c) => !c.unverified && c.evidence?.cmd && c.evidence.exit === 0).map((c) => String(c.evidence.cmd).trim())
+    'npm test', 'npm run test', 'npm run accept', 'node tools/dlm.mjs', 'git',
+  ].map((r) => r.trim()).filter(Boolean);
+  let results = d.verify?.results;
+  if (!Array.isArray(results)) {
+    try { results = readJson(join(ctx.dispatchDir(d.dispatch_id), 'verify.json'), []); } catch { results = []; }
+  }
+  const cmds = results.filter((x) => x.check === 'evidence' && x.outcome === 'PASS' && x.rerun?.exit === 0 && typeof x.rerun.cmd === 'string')
+    .map((x) => x.rerun.cmd)
+    .filter((c) => rerunArgv(c, cfg.verify.rerun_allow).argv)
     .filter((c) => !runners.some((r) => c === r || c.startsWith(`${r} `)));
   return [...new Set([...cmds.slice(0, 5), ...(stack?.try_hint ? [stack.try_hint] : [])])];
 }

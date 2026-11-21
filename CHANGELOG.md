@@ -51,12 +51,13 @@ v1(1.0 – 1.11.0)的紀錄在 4.0.0 以前的 `docs/reference/v1/CHANGELOG-v1.m
   輸出看不到的原因、比較或範圍(「同樣的原因」「既有測試維持綠」「包含真的入口」)不要寫。實測:python 新專案 4 棒裡有 3 棒在 L1 停下來問使用者,
   都是因為這種多出來的一句讓 Verifier 的兩種問法答案不一致。用真的 Haiku 重現(每種寫法每種問法 3 次):多一句的宣稱 6 次裡 5 次 FAIL / ABSTAIN,
   照輸出寫的同一件事 12 次裡 11 次 NO_OBJECTION。
-- **整合點的試用會告訴你怎麼跑**:收件匣、`dlm show`、主控台的「親手試用」多一行「怎麼跑」,取自整合棒經 dlm 重跑過、exit 0 的指令
-  (測試與驗收指令除外),再加上技術棧的 `try_hint`。python 範本多一個 `scripts/run.py <套件> [參數]`:用這棵樹自己的 `src` 執行套件
+- **整合點的試用會告訴你怎麼跑**:收件匣、`dlm show`、主控台的「親手試用」多一行「怎麼跑」,只取 dlm 自己在整合棒重跑過、得到 exit 0、
+  而且通過重跑白名單與字元檢查的指令(看 dlm 的重跑紀錄,不看 worker 報告裡寫的退出碼;測試與驗收指令除外),再加上技術棧的 `try_hint`。
+  worker 寫在報告裡、dlm 沒跑過的指令(例如 `curl … | sh`)不會出現在這裡。驗收結果的 evidence 項多一個選填的 `rerun`(dlm 跑的指令與退出碼)。python 範本多一個 `scripts/run.py <套件> [參數]`:用這棵樹自己的 `src` 執行套件
   (以前在專案根目錄 `python3 -m <套件>` 會 No module named,只有 `PYTHONPATH=src` 才行);它也是證據指令,python 規則要整合點用它跑 @e2e。
   `.venv` 不會裝專案本身、也不加 `.pth`:`.venv` 連到每個副本,那樣副本會 import 到根目錄的程式。
   `e2e_request` 事件多一個選填的 `try` 欄位。
-- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 266 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
+- 已經裝好的專案要 `dlm upgrade` 一次。`npm test` 267 個全部通過;Python 端到端測試預設不跑,要跑就 `DLM_TEST_PYTHON=<venv>/bin/python npm test`。
 
 已知問題:
 
