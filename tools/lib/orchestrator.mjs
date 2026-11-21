@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { globalUsage, isAccountLimit, limitedUntil, logAccountEvent, pickAccount } from './accounts.mjs';
 import { callAgent, criticConfigured, launchWorker, parseCost, workerConfigured } from './agents.mjs';
 import { acceptRoute, escalationRoute, spawnRoute } from './autonomy.mjs';
-import { buildConfigPaths, loadConfig } from './config.mjs';
+import { buildConfigPaths, depDirs, loadConfig } from './config.mjs';
 import { loadStack, stackRules } from './stack.mjs';
 import { capabilityOf, contractMajor, getNode, loadDag, saveDag, scopeContained, validateDag, withSpawn } from './dag.mjs';
 import { readScenarios } from './gherkin.mjs';
@@ -28,7 +28,7 @@ import {
 } from './util.mjs';
 import { runVerify, summarize } from './verify/index.mjs';
 import {
-  copyTree, diffManifest, killSandboxed, linkDeps, nodeModulesFingerprint, removeTree, scratchCopy, treeManifest,
+  copyTree, depsFingerprint, diffManifest, killSandboxed, linkDeps, removeTree, scratchCopy, treeManifest,
 } from './sandbox.mjs';
 import { hostExecutor } from './verify/script-checks.mjs';
 import { runArgv } from './util.mjs';
@@ -85,7 +85,7 @@ export function commitState(ctx, message) {
 //
 // The worker does not work inside the git worktree: dlm exports the worktree as a copy with no .git (.dlm/sandboxes/<dispatch>/),
 // and the worker sees only that copy. When it finishes, dlm compares outside the sandbox "the copy vs the manifest taken at dispatch" (including ignored files),
-// syncs in-scope changes back into the worktree and commits them itself; anything touching .git, .dlm, node_modules or symlinks is always recorded as a violation.
+// syncs in-scope changes back into the worktree and commits them itself; anything touching .git, .dlm, a dependency folder (deps.dirs) or symlinks is always recorded as a violation.
 
 // Files in the sandbox copy that dlm manages itself (work order, prompt, report, log); they do not count as worker changes
 const SANDBOX_DLM_FILES = ['.dlm/envelope.json', '.dlm/prompt.md', '.dlm/report.json', '.dlm/worker.log'];
@@ -94,31 +94,35 @@ const manifestPath = (ctx, id) => join(ctx.root, '.dlm', 'manifests', `${id}.jso
 function prepareSandbox(ctx, wt, dispatchId, envelope, prompt) {
   const sbx = join(ctx.root, '.dlm', 'sandboxes', dispatchId);
   // .mcp.json is not given to the worker (v4.6): it registers dlm's own MCP, and if the worker's CLI loaded it the worker could decide on behalf of the user
-  copyTree(wt, sbx, { skip: ['.git', 'node_modules', '.dlm', '.mcp.json'] });
+  const dirs = depDirs(ctx.config);
+  copyTree(wt, sbx, { skip: ['.git', ...dirs, '.dlm', '.mcp.json'] });
   ensureDir(join(sbx, '.dlm'));
   writeJson(join(sbx, '.dlm', 'envelope.json'), envelope);
   atomicWrite(join(sbx, '.dlm', 'prompt.md'), prompt);
-  linkDeps(ctx.root, sbx);
-  writeJson(manifestPath(ctx, dispatchId), treeManifest(sbx, { skipPaths: SANDBOX_DLM_FILES }));
+  linkDeps(ctx.root, sbx, dirs);
+  writeJson(manifestPath(ctx, dispatchId), treeManifest(sbx, { skip: dirs, skipPaths: SANDBOX_DLM_FILES }));
   return sbx;
 }
 
 /** After the worker finishes: compare the copy, sync in-scope changes, dlm commits. Returns { changed, violations }. */
 function syncSandbox(ctx, d, message) {
   const before = readJson(manifestPath(ctx, d.dispatch_id), {});
-  const after = treeManifest(d.sandbox, { skipPaths: SANDBOX_DLM_FILES });
+  const dirs = depDirs(ctx.config);
+  const after = treeManifest(d.sandbox, { skip: dirs, skipPaths: SANDBOX_DLM_FILES });
   const changed = diffManifest(before, after);
+  const underDep = (p) => dirs.find((n) => p === `${n}/` || p === n || p.startsWith(`${n}/`));
   const violations = [];
   const safe = [];
   for (const p of changed) {
     if (p === '.git' || p.startsWith('.git/')) violations.push(`${p}(在副本裡建立 .git)`);
     else if (p.startsWith('.dlm/')) violations.push(`${p}(寫到 dlm 的工作目錄)`);
-    else if (p === 'node_modules/' || p.startsWith('node_modules/')) violations.push(`${p}(把 node_modules 換掉了)`);
+    else if (underDep(p)) violations.push(`${underDep(p)}/(把依賴資料夾換掉了)`);
     else if (String(after[p] ?? '').startsWith('link:')) violations.push(`${p}(建立 symlink,可能指到範圍外)`);
     else safe.push(p);
   }
-  if (d.nm_fingerprint && nodeModulesFingerprint(ctx.root) !== d.nm_fingerprint) {
-    violations.push('node_modules/(根目錄的依賴在施工期間被改了,例如測試框架被換掉)');
+  // The ledger field keeps its pre-4.12 name nm_fingerprint; for ['node_modules'] the value is the same as before
+  if (d.nm_fingerprint && depsFingerprint(ctx.root, dirs) !== d.nm_fingerprint) {
+    violations.push(`${dirs.length === 1 ? dirs[0] : dirs.join('、')}/(根目錄的依賴在施工期間被改了,例如測試框架被換掉)`);
   }
   for (const p of safe) {
     const src = join(d.sandbox, p);
@@ -589,29 +593,35 @@ function reject(ctx, d, reason, findings) {
 }
 
 /**
- * Dependencies for the merge tree. No longer always a symlink to the root node_modules: the worker (when there is no sandbox) can write to it,
- * and breaking the test framework would defeat the last gate. If there is a lockfile, install a clean copy from the local cache (--ignore-scripts, runs no install scripts).
+ * Dependencies for the merge tree. No longer always a symlink to the root's dependency folders: the worker (when there is no sandbox) can write to them,
+ * and breaking the test framework would defeat the last gate. v4.12: how to install a clean copy comes from config.deps.install (the stack's;
+ * node-ts = `npm ci --offline --ignore-scripts` from the local cache, which runs no install scripts). Without an install spec, with gates.install
+ * link, or (auto) when the spec's lockfile is missing from the tree, link the root's folders instead.
  */
 function installDeps(ctx, dir) {
   const mode = ctx.config.gates.install ?? 'auto';
-  const lock = existsSync(join(dir, 'package-lock.json'));
-  if (mode === 'link' || (mode === 'auto' && !lock)) {
-    linkDeps(ctx.root, dir);
+  const spec = ctx.config.deps?.install ?? null;
+  const dirs = depDirs(ctx.config);
+  const lock = !spec?.lockfile || existsSync(join(dir, spec.lockfile));
+  if (mode === 'link' || !spec || (mode === 'auto' && !lock)) {
+    linkDeps(ctx.root, dir, dirs);
     return { ok: true };
   }
-  const r = runArgv('npm', ['ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, timeoutMs: ctx.config.gates.timeout_minutes * 60000 });
-  ctx.log(`  [merge-tree] install=npm-ci-offline exit=${r.code} ms=${r.ms}`);
+  const [file, ...args] = spec.argv;
+  const r = runArgv(file, args, { cwd: dir, timeoutMs: ctx.config.gates.timeout_minutes * 60000 });
+  ctx.log(`  [merge-tree] install=${spec.label ?? spec.argv.join('-')} exit=${r.code} ms=${r.ms}`);
   if (r.code === 0) return { ok: true };
   // v4: when the worker adds a package.json for a new package under workspaces (packages/*, apps/*), the lockfile no longer matches and npm ci always fails,
-  // and the worker cannot change package-lock.json (a gate definition file). In that case fall back to a symlink to the root node_modules and do not count it as a red gate (v4 real run)
-  if (mode === 'auto' && /can only install packages when your package\.json and package-lock\.json/.test(r.stdout + r.stderr)) {
-    ctx.log('  [merge-tree] lockfile 跟新增的 workspace 套件對不上,改用根目錄的 node_modules(之後在根目錄 npm install 更新 lockfile)');
-    linkDeps(ctx.root, dir);
+  // and the worker cannot change package-lock.json (a gate definition file). In that case fall back to a symlink to the root's folders and do not count it as a red gate (v4 real run).
+  // v4.12: the pattern meaning "out of sync" is the stack's (deps.install.out_of_sync)
+  if (mode === 'auto' && spec.out_of_sync && new RegExp(spec.out_of_sync).test(r.stdout + r.stderr)) {
+    ctx.log(`  [merge-tree] ${spec.out_of_sync_note ?? 'lockfile 對不上,改用根目錄的依賴資料夾'}`);
+    linkDeps(ctx.root, dir, dirs);
     return { ok: true, note: 'lockfile-out-of-sync' };
   }
   return {
     ok: false, code: r.code, ms: r.ms,
-    output: `npm ci --offline 失敗(本機快取缺套件、或沒有 lockfile)。先在根目錄跑一次 npm install 填快取,或把 gates.install 設成 link:\n${tail(r.stdout + r.stderr, 2000)}`,
+    output: `${spec.hint ?? `${spec.argv.join(' ')} 失敗。先在根目錄裝好依賴,或把 gates.install 設成 link`}:\n${tail(r.stdout + r.stderr, 2000)}`,
   };
 }
 
@@ -964,9 +974,9 @@ export function buildWorkerPrompt(ctx, node, envelope, wt) {
  */
 export function integrationAlreadyGreen(ctx, d, node) {
   if (!d || d.leg !== 'test' || node?.kind !== 'integration' || !node.accept || !d.worktree || !existsSync(d.worktree)) return null;
-  const scratch = scratchCopy(ctx.root, d.worktree, `${d.dispatch_id}-green`);
+  const scratch = scratchCopy(ctx.root, d.worktree, `${d.dispatch_id}-green`, depDirs(ctx.config));
   try {
-    linkDeps(ctx.root, scratch);
+    linkDeps(ctx.root, scratch, depDirs(ctx.config));
     const res = hostExecutor(scratch).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
     return { green: res.code === 0, cmd: node.accept, exit: res.code };
   } finally {
@@ -982,9 +992,9 @@ function integrationGreenBeforeTest(ctx, node, cand, wt) {
   if (cand.leg !== 'test' || node.kind !== 'integration' || !node.accept) return null;
   if (ctx.config.integration?.precheck_green === false) return null;
   if (cand.findings?.length || [...ctx.state.dispatches.values()].some((x) => x.node_id === node.id)) return null;
-  const scratch = scratchCopy(ctx.root, wt, `precheck-${slug(node.id)}`);
+  const scratch = scratchCopy(ctx.root, wt, `precheck-${slug(node.id)}`, depDirs(ctx.config));
   try {
-    linkDeps(ctx.root, scratch);
+    linkDeps(ctx.root, scratch, depDirs(ctx.config));
     const res = hostExecutor(scratch).sh(node.accept, ctx.config.verify.rerun_timeout_seconds * 1000);
     return res.code === 0 ? { cmd: node.accept } : null;
   } finally {
@@ -1119,7 +1129,7 @@ export async function dispatchPhase(ctx) {
         sandbox: sbx,
         ...(account ? { account: account.name } : {}),
       });
-      const nm = nodeModulesFingerprint(ctx.root);
+      const nm = depsFingerprint(ctx.root, depDirs(cfg));
       const launched = launchWorker(cfg, {
         cwd: sbx, promptPath: join(sbx, '.dlm', 'prompt.md'), reportPath: join(sbx, '.dlm', 'report.json'),
         logPath: join(sbx, '.dlm', 'worker.log'), dispatchId, account,

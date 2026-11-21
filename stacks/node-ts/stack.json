@@ -19,6 +19,26 @@
         "cmd": "npx stryker run --mutate {files} --reporters json,clear-text",
         "include": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"]
       }
+    },
+    "deps": {
+      "$comment": "node_modules 在每個副本裡是 symlink;合併樹用 npm ci --offline 從本機快取裝一份乾淨的(lockfile 對不上新的 workspace 套件時改用 symlink);dlm setup 沒有 node_modules 時問要不要 npm install",
+      "dirs": ["node_modules"],
+      "install": {
+        "lockfile": "package-lock.json",
+        "argv": ["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+        "label": "npm-ci-offline",
+        "out_of_sync": "can only install packages when your package\\.json and package-lock\\.json",
+        "out_of_sync_note": "lockfile 跟新增的 workspace 套件對不上,改用根目錄的 node_modules(之後在根目錄 npm install 更新 lockfile)",
+        "hint": "npm ci --offline 失敗(本機快取缺套件、或沒有 lockfile)。先在根目錄跑一次 npm install 填快取,或把 gates.install 設成 link"
+      },
+      "setup": {
+        "when": {"file": "package.json", "keys": [["dependencies"], ["devDependencies"]]},
+        "dir": "node_modules",
+        "cmd": "npm install --no-audit --no-fund",
+        "retry": "npm install --no-audit --no-fund --legacy-peer-deps",
+        "label": "npm install",
+        "commit_files": ["package-lock.json"]
+      }
     }
   },
   "add": {

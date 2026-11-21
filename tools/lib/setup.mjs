@@ -8,7 +8,7 @@ import { hostHas } from './doctor.mjs';
 import { DLM_CLAUDE_HOOKS } from './hooks.mjs';
 import { assertNotLegacy } from './legacy.mjs';
 import { git } from './git.mjs';
-import { existingProjectOff, loadStack } from './stack.mjs';
+import { existingProjectOff, loadStack, probe } from './stack.mjs';
 import { DlmError, atomicWrite, readJson, run, stableJson, tail, writeJson } from './util.mjs';
 
 /**
@@ -218,20 +218,22 @@ export async function setup(root, { ask, detect, project: projectDetect, log = c
     log(`提醒:${next.platform} 沒有 hooks。Front 轉達的決定照樣記錄,只是不會附上你原話的簽章。`);
   }
 
-  // 5. Dependencies: the merge gate runs tests, and without node_modules everything would be red
-  const pkg = readJson(join(root, 'package.json'), null);
-  const hasDeps = pkg && Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length > 0;
-  if (hasDeps && !existsSync(join(root, 'node_modules')) && await yesno('npm_install', '還沒裝依賴(合併前的測試要用)。現在 npm install?(要下載,幾分鐘)', true)) {
-    log('  npm install 中…');
-    let r = run('npm install --no-audit --no-fund', { cwd: root, timeoutMs: 30 * 60000 });
-    if (r.code !== 0) {
-      // npm 10 crashes on the optional peer dependencies of some packages (Cannot read properties of null (reading 'edgesOut')),
-      // retry in compatibility mode
-      log(`  npm install 失敗(${tail(r.stderr || r.stdout, 200).trim().split('\n').pop()}),改用 --legacy-peer-deps 再試一次…`);
-      r = run('npm install --no-audit --no-fund --legacy-peer-deps', { cwd: root, timeoutMs: 30 * 60000 });
+  // 5. Dependencies: the merge gate runs tests, and without the dependency folder everything would be red.
+  // v4.12: what to install comes from the stack (deps.setup; node-ts = npm install, python = a .venv from requirements-dev.txt), read from the config
+  // just written. The answer id stays npm_install so existing answers files keep working.
+  const depSetup = loadConfig(root).deps?.setup ?? null;
+  if (depSetup && probe(root, depSetup.when) && !existsSync(join(root, depSetup.dir))
+    && await yesno('npm_install', `還沒裝依賴(合併前的測試要用)。現在 ${depSetup.label}?(要下載,幾分鐘)`, true)) {
+    log(`  ${depSetup.label} 中…`);
+    let r = run(depSetup.cmd, { cwd: root, timeoutMs: 30 * 60000 });
+    if (r.code !== 0 && depSetup.retry) {
+      // node-ts: npm 10 crashes on the optional peer dependencies of some packages (Cannot read properties of null (reading 'edgesOut')),
+      // the stack's retry is compatibility mode
+      log(`  ${depSetup.label} 失敗(${tail(r.stderr || r.stdout, 200).trim().split('\n').pop()}),改用 ${depSetup.retry} 再試一次…`);
+      r = run(depSetup.retry, { cwd: root, timeoutMs: 30 * 60000 });
     }
-    log(r.code === 0 ? '  ✓ 依賴裝好了' : `  ✗ npm install 失敗(exit ${r.code}):${tail(r.stderr || r.stdout, 300)}\n    之後自己跑一次:npm install --legacy-peer-deps`);
-    if (r.code === 0 && existsSync(join(root, 'package-lock.json'))) written.push('package-lock.json');
+    log(r.code === 0 ? '  ✓ 依賴裝好了' : `  ✗ ${depSetup.label} 失敗(exit ${r.code}):${tail(r.stderr || r.stdout, 300)}\n    之後自己跑一次:${depSetup.retry ?? depSetup.cmd}`);
+    if (r.code === 0) for (const f of depSetup.commit_files ?? []) if (existsSync(join(root, f))) written.push(f);
   }
 
   // 6. commit (tick refuses to run when the root has uncommitted changes)

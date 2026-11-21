@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { git, headSha, removeWorktree } from './git.mjs';
+import { depDirs } from './config.mjs';
 import { linkDeps, sandboxExec } from './sandbox.mjs';
 import { atomicWrite, listFiles, matchAny, readJson, tail, writeJson } from './util.mjs';
 
@@ -154,7 +155,7 @@ export function recordBaseline(root, config, { log = () => {}, run } = {}) {
   git(root, `worktree add --detach '${dir}' ${main}`);
   const gates = [];
   try {
-    linkDeps(root, dir);
+    linkDeps(root, dir, depDirs(config));
     const exec = run ?? ((cmd) => sandboxExec(config, 'gates', cmd, { cwd: dir, timeoutMs: config.gates.timeout_minutes * 60000 }));
     const scripts = packageJson(dir)?.scripts ?? {};
     for (const name of config.gates.chain) {

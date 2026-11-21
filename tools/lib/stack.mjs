@@ -66,11 +66,21 @@ export function defaultAcceptFor(stack, gherkin) {
   return stack?.accept_cmd ? stack.accept_cmd.replaceAll('{gherkin}', gherkin) : null;
 }
 
-/** Whether a probe ({ file, keys: [[...path]] }) finds any of its key paths in that JSON file of the project. */
+/**
+ * Whether a probe ({ file, keys?: [[...path]] }) matches the project. With keys: one of the key paths in that JSON file has a non-empty value
+ * (v4.12: a non-empty string, an object with keys, a non-empty array or true; `"dependencies": {}` used to count). Without keys: the file exists
+ * (works for files that are not JSON, e.g. pyproject.toml).
+ */
 export function probe(root, p) {
   if (!p?.file) return false;
-  const json = readJson(join(root, p.file), null);
-  return (p.keys ?? []).some((path) => path.reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), json) !== undefined);
+  if (!p.keys) return existsSync(join(root, p.file));
+  let json;
+  try { json = readJson(join(root, p.file), null); } catch { return false; }
+  const filled = (v) => (typeof v === 'string' ? v.length > 0
+    : Array.isArray(v) ? v.length > 0
+      : v && typeof v === 'object' ? Object.keys(v).length > 0
+        : v === true);
+  return p.keys.some((path) => filled(path.reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), json)));
 }
 
 /**

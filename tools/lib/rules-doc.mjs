@@ -12,7 +12,7 @@ import { listStacks, loadStack, stackRules } from './stack.mjs';
  */
 export const MACHINE_CHECKS = [
   { id: 'paths', by: 'verify', when: '每棒', what: '改到 allowed_paths 以外或 forbidden_paths(測試棒不能寫實作、實作棒不能改測試與 gherkin、誰都不能改 gate 定義檔)', match: /allowed_paths|forbidden_paths|寫入範圍|範圍外|不改任何(測試|實作|原始碼)|不改 gherkin|不寫實作|只寫 .allowed_paths|不要改 .package\.json/ },
-  { id: 'sandbox-escape', by: 'verify', when: '每棒', what: '在副本裡碰了 .git、.dlm/、依賴目錄、建 symlink', match: /\.git|symlink|依賴目錄|node_modules/ },
+  { id: 'sandbox-escape', by: 'verify', when: '每棒', what: '在副本裡碰了 .git、.dlm/、依賴目錄、建 symlink', match: /\.git|symlink|依賴目錄|依賴資料夾|node_modules|\.venv/ },
   { id: 'report', by: 'orchestrator', when: '每棒', what: '.dlm/report.json 照 output_schema 驗證;done 至少一條附證據的宣稱', match: /report\.json|output_schema|合法 JSON|附證據的宣稱/ },
   { id: 'evidence', by: 'verify', when: '每條宣稱', what: 'dlm 用同一條指令以 argv 重跑,退出碼要一樣;前綴不在 evidence_prefixes 就不重跑、交上一層', match: /evidence|證據|重跑|unverified/ },
   { id: 'acceptance', by: 'verify', when: '有 accept 時', what: '測試棒必須紅、紅的原因不能是載入或語法錯誤;其他棒必須綠', match: /\*\*紅\*\*|\*\*綠\*\*|紅的原因|變綠|全綠|維持綠|在現在的程式上要是/ },

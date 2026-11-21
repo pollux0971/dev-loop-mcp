@@ -10,6 +10,7 @@ import { CLIS, ROLES, accountsFile, loadAccounts, loginStatus } from './accounts
 import { hasTestGate } from './gates.mjs';
 import { isLegacyProject, legacyEnvVars } from './legacy.mjs';
 import { checkLedger } from './ledger.mjs';
+import { probe } from './stack.mjs';
 import { lockHolder, readJson, run } from './util.mjs';
 
 const ok = (name, detail) => ({ name, status: 'ok', detail });
@@ -148,8 +149,12 @@ function checkGates(root, config) {
       else out.push(ok('測試基線', red.length ? `${red.map((g) => `${g.name} 有 ${g.failing.length} 個本來就紅`).join('、')}(合併時不算到 worker 頭上)` : '主線上專案的測試全綠'));
     }
   }
-  const hasDeps = pkg && Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length > 0;
-  if (hasDeps && !existsSync(join(root, 'node_modules'))) out.push(warn('依賴', 'package.json 有依賴但沒有 node_modules:gate 會失敗', 'npm install'));
+  // v4.12: which dependency folder the project needs comes from the stack (deps.setup)
+  const depSetup = config.deps?.setup;
+  if (depSetup && probe(root, depSetup.when) && !existsSync(join(root, depSetup.dir))) {
+    const what = depSetup.when.keys ? `${depSetup.when.file} 有依賴` : `有 ${depSetup.when.file}`;
+    out.push(warn('依賴', `${what}但沒有 ${depSetup.dir}:gate 會失敗`, depSetup.cmd));
+  }
   // v4: cucumber.js is your file (dlm upgrade does not overwrite it). The v3 version made the acceptance of one node run together with other nodes, and the full gate got stuck on nodes not finished yet
   const cuc = join(root, 'cucumber.js');
   if (chain.some((n) => n.startsWith('accept')) && existsSync(cuc) && !readFileSync(cuc, 'utf8').includes('pending-features')) {

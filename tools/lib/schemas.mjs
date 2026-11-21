@@ -102,6 +102,49 @@ export const configSchema = {
         commands: { type: 'object', additionalProperties: str },
       },
     },
+    // v4.12: dependency folders (see DEFAULTS.deps in config.mjs)
+    deps: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        $comment: { type: 'string' },
+        dirs: { type: 'array', items: { type: 'string', pattern: '^[^/\\\\]+$' } },
+        install: {
+          anyOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              required: ['argv'],
+              additionalProperties: false,
+              properties: {
+                // lockfile: install only when it exists in the merge tree (gates.install auto); absent = always install
+                lockfile: str, argv: { type: 'array', items: str, minItems: 1 },
+                // label: the name in the merge-tree log line; out_of_sync: regex on the output meaning "the lockfile does not match", fall back to the link
+                label: str, out_of_sync: str, out_of_sync_note: str, hint: str,
+              },
+            },
+          ],
+        },
+        setup: {
+          anyOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              required: ['when', 'dir', 'cmd', 'label'],
+              additionalProperties: false,
+              properties: {
+                // when: offered only if this file exists (and, with keys, one of the JSON key paths is non-empty)
+                when: {
+                  type: 'object', required: ['file'], additionalProperties: false,
+                  properties: { file: str, keys: { type: 'array', items: strArr } },
+                },
+                dir: str, cmd: str, retry: str, label: str, commit_files: strArr,
+              },
+            },
+          ],
+        },
+      },
+    },
     auth: {
       type: 'object',
       additionalProperties: false,

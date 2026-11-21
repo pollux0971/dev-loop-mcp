@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from '../git.mjs';
 import { fillTemplate } from '../prompt.mjs';
+import { depDirs } from '../config.mjs';
 import { linkDeps, removeTree, scratchCopy } from '../sandbox.mjs';
 import { pipelineFor } from '../state.mjs';
 import { matchAny, readJson, tail } from '../util.mjs';
@@ -60,7 +61,7 @@ export async function runVerify(ctx) {
   const changed = legDiff(wt, legBase, commit);
   const paths = checkPaths(changed, envelope);
   results.push(paths);
-  // Anything touched in the sandbox copy under .git / .dlm / node_modules / symlink was not synced back by dlm, but this leg still does not count
+  // Anything touched in the sandbox copy under .git / .dlm / a dependency folder / symlink was not synced back by dlm, but this leg still does not count
   const violations = dispatch.violations_path ? readJson(join(root, dispatch.violations_path), []) : [];
   if (violations.length) results.push({ check: 'sandbox-escape', outcome: 'FAIL', detail: `在沙箱副本裡碰了不該碰的地方:${violations.slice(0, 10).join(', ')}` });
   results.push(checkReportSanity(report));
@@ -71,8 +72,8 @@ export async function runVerify(ctx) {
     return { results, commit, changed };
   }
   // Checks that execute code all run on a throwaway copy, inside the verify profile sandbox: tests written by the worker cannot touch the worktree or the host
-  const scratch = scratchCopy(root, wt, dispatch.dispatch_id);
-  linkDeps(root, scratch);
+  const scratch = scratchCopy(root, wt, dispatch.dispatch_id, depDirs(config));
+  linkDeps(root, scratch, depDirs(config));
   const ex = hostExecutor(scratch);
   const leg = dispatch.leg;
   const isLast = leg === pipelineFor(node, config).at(-1);

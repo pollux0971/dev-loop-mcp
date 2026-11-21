@@ -12,6 +12,13 @@ import { DlmError, readJson } from './util.mjs';
  */
 export const BUILD_CONFIG_PATHS = ['.mcp.json', '.github/**', '.gitattributes', '.gitignore'];
 
+/**
+ * v4.12: the dependency folders of this config (deps.dirs), ['node_modules'] when unset. '.', '..', .git and .dlm are never dependency folders
+ * (linking them into the copy would hand the worker the real repository or dlm's state).
+ */
+const NOT_DEP_DIRS = ['.', '..', '.git', '.dlm'];
+export const depDirs = (config) => (Array.isArray(config?.deps?.dirs) ? config.deps.dirs : ['node_modules']).filter((d) => !NOT_DEP_DIRS.includes(d));
+
 /** The gate definition files of this config: the core's plus the stack's. */
 export const buildConfigPaths = (config) => [...BUILD_CONFIG_PATHS, ...(config?.stack_add?.forbidden ?? [])];
 
@@ -44,6 +51,11 @@ export const DEFAULTS = {
   // (unaffected by changes to the root node_modules); only without a lockfile, symlink the root.
   // commands (v4.5): the command each chain name maps to, for existing projects that do not run tests through npm scripts (e.g. { test: 'python3 -m pytest -q' }).
   gates: { chain: ['check:dlm', 'test'], timeout_minutes: 30, install: 'auto', commands: {} },
+  // v4.12: the project's dependency folders (top-level names). They are linked into every copy instead of copied, their fingerprint is
+  // compared around each dispatch, and a worker writing under them is a violation. node_modules is the default so a project with stack 'none'
+  // keeps the old behavior; each stack sets its own. install = how the merge tree gets a clean copy ({ lockfile, argv, out_of_sync, hint };
+  // null = link the root's). setup = what dlm setup / doctor offer when the folder is missing ({ when: { file, keys? }, dir, cmd, retry?, label, commit_files? })
+  deps: { dirs: ['node_modules'], install: null, setup: null },
   autonomy: { level: 1 },
   // User authorization (decide / confirm / resume / unblock): trust what Front relays; --verbatim may be omitted.
   // When verbatim words signed by the hook and matching are given (within the last window_minutes minutes), the event records the hash of that sentence
@@ -163,7 +175,7 @@ export function loadConfig(root) {
   const base = merge(DEFAULTS, stack.defaults ?? {});
   const add = stack.add ?? {};
   base.verify = { ...base.verify, rerun_allow: [...base.verify.rerun_allow, ...(add.rerun_allow ?? [])] };
-  base.paths = { ...base.paths, forbidden: [...base.paths.forbidden, ...(add.forbidden ?? [])] };
+  base.paths = { ...base.paths, forbidden: [...base.paths.forbidden, ...(add.forbidden ?? [])], tests: [...base.paths.tests, ...(add.tests ?? [])] };
   const config = merge(base, raw);
   config.project = { ...config.project, stack: stack.name };
   config.stack_add = add;

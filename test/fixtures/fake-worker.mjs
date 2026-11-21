@@ -14,6 +14,9 @@
 //   nm         the dev leg edits the test framework through node_modules (without a container, node_modules is a symlink)
 //   hardcode   the dev leg hardcodes the test value (run always returns 5)
 //   badtest    the test leg writes the wrong expected value (2+3=6); the dev leg notices and reports fix_leg=test; the test-fix leg corrects it (v4)
+//   venv-patch the dev leg patches pytest inside the root .venv through the symlink (v4.12: any deps.dirs folder is guarded)
+//   venv-write the dev leg creates files under .venv in the copy (a real folder where the symlink should be)
+//   venv-cache the dev leg only leaves Python bytecode caches under .venv, like a pytest run does (not a violation)
 //   hang       sleeps 30 seconds (tests whether halt terminates the worker)
 //   already-green integration point's test leg: acceptance is already green before any work, so it honestly reports stuck (no faked red); the integrate leg changes nothing and hands in as is; other legs act like good (v4.7.3)
 import { execSync } from 'node:child_process';
@@ -109,6 +112,13 @@ if (mode === 'escalate') {
   if (mode === 'git-hook') write('.git/hooks/post-merge', '#!/bin/sh\ntouch /tmp/dlm-pwned\n');
   if (mode === 'ignored') write('reports/leak.txt', 'x\n');
   if (mode === 'nm' && existsSync('node_modules/vitest/index.js')) appendFileSync('node_modules/vitest/index.js', '\n// 永遠回報通過\n');
+  const pytestRunner = '.venv/lib/python3.12/site-packages/_pytest/runner.py';
+  if (mode === 'venv-patch' && existsSync(pytestRunner)) appendFileSync(pytestRunner, '\n# always report pass\n');
+  if (mode === 'venv-write') write('.venv/lib/python3.12/site-packages/evil.py', 'x = 1\n');
+  if (mode === 'venv-cache' && existsSync(pytestRunner)) {
+    write('.venv/lib/python3.12/site-packages/_pytest/__pycache__/runner.cpython-312.pyc', 'bytecode');
+    write('.venv/lib/python3.12/site-packages/stray.cpython-312.pyc', 'bytecode');
+  }
   if (mode === 'forbidden') appendFileSync(testFile, '// 偷改測試\n');
   if (mode === 'breaker' && cap !== 'calc') write('packages/calc/src/calc.mjs', 'export function run(a, b) { return a * b; }\n');
   if (mode === 'pkg') {

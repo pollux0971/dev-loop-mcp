@@ -56,33 +56,44 @@ export function killSandboxed({ pid }) {
 
 // ------------------------------------------------------------------ working directory copy and dependencies
 
-/** node_modules is a symlink to the one in the root (compare fingerprints when collecting; see nodeModulesFingerprint). */
-export function linkDeps(root, dir) {
-  const src = join(root, 'node_modules');
-  const dst = join(dir, 'node_modules');
-  if (existsSync(src) && !existsSync(dst)) {
-    try { symlinkSync(src, dst, 'dir'); } catch { /* no permission: give up, the gate will report the error itself */ }
+/**
+ * v4.12: the dependency folders of this project (config.deps.dirs: node-ts = node_modules, python = .venv). Each one that exists in the root
+ * is a symlink in the copy (compare fingerprints when collecting; see depsFingerprint). dirs defaults to ['node_modules'] for old callers.
+ */
+export function linkDeps(root, dir, dirs = ['node_modules']) {
+  for (const name of dirs) {
+    const src = join(root, name);
+    const dst = join(dir, name);
+    if (existsSync(src) && !existsSync(dst)) {
+      try { symlinkSync(src, dst, 'dir'); } catch { /* no permission: give up, the gate will report the error itself */ }
+    }
   }
 }
 
+// The tool's own cache (when vitest loads its config it creates node_modules/.vite-temp; if not skipped, every worker that ran vitest would be judged sandbox-escape)
+const DEP_CACHE_NAMES = ['.cache', '.vite', '.vite-temp', '.vitest'];
+
 /**
- * Fingerprint of node_modules (path + size + mtime). The worker can write the root node_modules through the symlink,
- * for example changing vitest to always report pass; compare before and after dispatch, and a mismatch is judged FAIL.
+ * Fingerprint of one dependency folder (path + size + mtime). legacy = the exact pre-4.12 node_modules algorithm (directories count too).
+ * Otherwise directories are recorded by path only and Python bytecode caches are skipped: running pytest in a venv writes __pycache__ under
+ * site-packages, which changes the parent directory's mtime, and every worker that ran the tests would be judged sandbox-escape.
  */
-export function nodeModulesFingerprint(root) {
-  const base = join(root, 'node_modules');
+function dirFingerprint(base, { legacy }) {
   if (!existsSync(base)) return null;
   const parts = [];
+  const skip = legacy ? DEP_CACHE_NAMES : [...DEP_CACHE_NAMES, ...TOOL_CACHE_DIRS];
   const walk = (dir) => {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       const p = join(dir, e.name);
-      // The tool's own cache (when vitest loads its config it creates node_modules/.vite-temp; if not skipped, every worker that ran vitest would be judged sandbox-escape)
-      if (['.cache', '.vite', '.vite-temp', '.vitest'].includes(e.name)) continue;
+      if (skip.includes(e.name)) continue;
+      if (!legacy && e.name.endsWith('.pyc')) continue;
       let st;
       try { st = lstatSync(p); } catch { continue; }
-      parts.push(`${toPosix(relative(base, p))}\0${st.size}\0${Math.floor(st.mtimeMs)}`);
+      const rel = toPosix(relative(base, p));
+      if (!legacy && e.isDirectory()) parts.push(`${rel}/`);
+      else parts.push(`${rel}\0${st.size}\0${Math.floor(st.mtimeMs)}`);
       if (e.isDirectory()) walk(p);
     }
   };
@@ -90,7 +101,29 @@ export function nodeModulesFingerprint(root) {
   return sha256(parts.sort().join('\n'));
 }
 
-/** Copy a tree (without .git and node_modules) to dest. Returns dest. */
+/**
+ * Fingerprint of node_modules. The worker can write the root node_modules through the symlink,
+ * for example changing vitest to always report pass; compare before and after dispatch, and a mismatch is judged FAIL.
+ */
+export function nodeModulesFingerprint(root) {
+  return dirFingerprint(join(root, 'node_modules'), { legacy: true });
+}
+
+/**
+ * v4.12: fingerprint of all dependency folders. For ['node_modules'] it is exactly nodeModulesFingerprint (dispatches in flight across an
+ * upgrade recorded that value as nm_fingerprint). null = none of the folders exists.
+ */
+export function depsFingerprint(root, dirs = ['node_modules']) {
+  if (dirs.length === 1 && dirs[0] === 'node_modules') return nodeModulesFingerprint(root);
+  const parts = [];
+  for (const name of [...dirs].sort()) {
+    const fp = dirFingerprint(join(root, name), { legacy: name === 'node_modules' });
+    if (fp) parts.push(`${name}\0${fp}`);
+  }
+  return parts.length ? sha256(parts.join('\n')) : null;
+}
+
+/** Copy a tree (without .git and the dependency folders) to dest. Returns dest. */
 export function copyTree(src, dest, { skip = ['.git', 'node_modules'] } = {}) {
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
@@ -109,13 +142,14 @@ export const TOOL_CACHE_DIRS = ['__pycache__', '.pytest_cache', '.mypy_cache', '
 
 /** File list + content sha (symlinks are not followed; for a symlink record where it points). */
 export function treeManifest(dir, { skip = ['node_modules'], skipPaths = [] } = {}) {
+  // skip = the top-level dependency folders (config.deps.dirs)
   const out = {};
   const walk = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       const relPath = toPosix(relative(dir, p));
       if (d === dir && skip.includes(e.name)) {
-        // Top-level node_modules: only allowed if it is the symlink we made
+        // Top-level dependency folder: only allowed if it is the symlink we made
         const st = lstatSync(p);
         if (!st.isSymbolicLink() && !(st.isDirectory() && readdirSync(p).length === 0)) out[`${relPath}/`] = 'replaced';
         continue;
@@ -139,10 +173,10 @@ export function diffManifest(before, after) {
   return [...new Set(changed)].sort();
 }
 
-/** Temporary copy (for verification): one per runVerify, deleted after use. */
-export function scratchCopy(root, src, label) {
+/** Temporary copy (for verification): one per runVerify, deleted after use. dirs = the dependency folders, left out (linked afterwards). */
+export function scratchCopy(root, src, label, dirs = ['node_modules']) {
   const dest = join(root, '.dlm', 'scratch', `${label}-${process.pid}-${Date.now()}`);
-  copyTree(src, dest, { skip: ['.git', 'node_modules'] });
+  copyTree(src, dest, { skip: ['.git', ...dirs] });
   return dest;
 }
 
